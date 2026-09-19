@@ -1,0 +1,98 @@
+{
+  ".?AVCFuncVoice@@": {
+    "vtable": "0x544da4",
+    "dispatcher": "0x4b6bb0"
+  },
+  ".?AVCFuncEffect@@": {
+    "vtable": "0x544fb4",
+    "dispatcher": "0x4b6bb0"
+  },
+  ".?AVCFuncMusic@@": {
+    "vtable": "0x544f44",
+    "dispatcher": "0x4b6bb0"
+  },
+  ".?AVCFuncFlag@@": {
+    "vtable": "0x545700",
+    "dispatcher": "0x4f9080"
+  },
+  ".?AVCFuncAnime@@": {
+    "vtable": "0x545da4",
+    "dispatcher": "0x4fee60"
+  },
+  ".?AVCFuncAnimeEx@@": {
+    "vtable": "0x545e14",
+    "dispatcher": "0x4fee60"
+  },
+  ".?AVCFuncBackLog@@": {
+    "vtable": "0x545e80",
+    "dispatcher": "0x4fe5f0"
+  },
+  ".?AVCFuncExec@@": {
+    "vtable": "0x545e88",
+    "dispatcher": "0x4fd950"
+  },
+  ".?AVCFuncFile@@": {
+    "vtable": "0x545e9c",
+    "dispatcher": "0x4f9530"
+  },
+  ".?AVCFuncFont@@": {
+    "vtable": "0x545ebc",
+    "dispatcher": "0x4f7580"
+  },
+  ".?AVCFuncIni@@": {
+    "vtable": "0x545ec4",
+    "dispatcher": "0x4f73d0"
+  },
+  ".?AVCFuncLayer@@": {
+    "vtable": "0x545ecc",
+    "dispatcher": "0x4f6ea0"
+  },
+  ".?AVCFuncMouse@@": {
+    "vtable": "0x545ed4",
+    "dispatcher": "0x4b6ff0"
+  },
+  ".?AVCFuncMovie@@": {
+    "vtable": "0x545edc",
+    "dispatcher": "0x4f5b90"
+  },
+  ".?AVCFuncOneMes@@": {
+    "vtable": "0x545f44",
+    "dispatcher": "0x4f5720"
+  },
+  ".?AVCFuncSave@@": {
+    "vtable": "0x545f4c",
+    "dispatcher": "0x4f50b0"
+  },
+  ".?AVCFuncScreen@@": {
+    "vtable": "0x545f54",
+    "dispatcher": "0x4f46a0"
+  },
+  ".?AVCFuncScript@@": {
+    "vtable": "0x545f5c",
+    "dispatcher": "0x4f4040"
+  },
+  ".?AVCFuncSprite@@": {
+    "vtable": "0x545f64",
+    "dispatcher": "0x4f3d40"
+  },
+  ".?AVCFuncString@@": {
+    "vtable": "0x545f6c",
+    "dispatcher": "0x41ff80"
+  },
+  ".?AVCFuncTrans@@": {
+    "vtable": "0x545f74",
+    "dispatcher": "0x4f39b0"
+  },
+  ".?AVCFuncUI@@": {
+    "vtable": "0x545f7c",
+    "dispatcher": "0x4f3470"
+  },
+  ".?AVCFuncValue@@": {
+    "vtable": "0x545f84",
+    "dispatcher": "0x4f3150"
+  },
+  ".?AVCFuncWait@@": {
+    "vtable": "0x545f8c",
+    "dispatcher": "0x4f2970"
+  }
+}

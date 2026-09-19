@@ -1,0 +1,16 @@
+{
+  "exe_sha256": "bb12a3faa7f2147b772a4e8d2235e815c3207e16c57b82882280bc08ce61f3a9",
+  "functions": 5307,
+  "decompiled": 5307,
+  "limitations": "Recovered pseudocode requires assembly verification; indirect calls and types may be unresolved.",
+  "method": "Static PE analysis with radare2 6.2.0 and locally built r2ghidra 6.2.2; no target execution",
+  "output_directory": "local/decompiled",
+  "class_count": 181,
+  "switch_port_complete": false,
+  "startup_handled_calls": 160,
+  "startup_stop": "Japanese CTitle mode 0 ready at liblary.lib+0x24e; gameplay incomplete",
+  "note": "All identified functions yielded pseudocode after retrying 104 with independent analysis. This does not prove that all code was identified or that the recovered types and control flow are correct.",
+  "startup_frames": 481,
+  "new_game_handled_calls": 166,
+  "new_game_stop": "open.mes+0xb81 syscall 31/528/0, arguments [0,0,0,800,0,528]"
+}

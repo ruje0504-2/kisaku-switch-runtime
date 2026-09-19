@@ -1,0 +1,48 @@
+{
+  "patch_directory": "汉化补丁",
+  "encoding_strategy": "CP932 character substitution via uif_config.json; not plain GBK",
+  "source_character_count": 1014,
+  "target_character_count": 1014,
+  "runtime_support": "not integrated; original data used in current package",
+  "standard_valid_scripts": 213,
+  "standard_failures": 468,
+  "failed_entries_valid_as_raw": 0,
+  "failed_examples": [
+    {
+      "name": "aoi_h1.mes",
+      "packed": 342405,
+      "declared_size": 304353,
+      "raw_structurally_valid": false,
+      "error": "LZSS output exceeds declared size"
+    },
+    {
+      "name": "aoi_h2.mes",
+      "packed": 319041,
+      "declared_size": 283590,
+      "raw_structurally_valid": false,
+      "error": "LZSS output exceeds declared size"
+    },
+    {
+      "name": "aoi_o.mes",
+      "packed": 62118,
+      "declared_size": 55212,
+      "raw_structurally_valid": false,
+      "error": "LZSS output exceeds declared size"
+    },
+    {
+      "name": "ayano_h1.mes",
+      "packed": 380061,
+      "declared_size": 337828,
+      "raw_structurally_valid": false,
+      "error": "LZSS output exceeds declared size"
+    },
+    {
+      "name": "ayano_h2.mes",
+      "packed": 341505,
+      "declared_size": 303555,
+      "raw_structurally_valid": false,
+      "error": "LZSS output exceeds declared size"
+    }
+  ],
+  "original_backup_valid_scripts": 681
+}

@@ -1,0 +1,287 @@
+{
+  "archives": {
+    "data.arc": {
+      "bytes": 13808426,
+      "entries": 572,
+      "extensions": {
+        ".area": 20,
+        ".ax": 496,
+        ".bin": 51,
+        ".bmp": 5
+      },
+      "compressed_entries": 572,
+      "payloads_checked": 572,
+      "samples": {
+        ".area": {
+          "entry": {
+            "name": "config_00.area",
+            "packed": 267,
+            "size": 444,
+            "offset": 155588
+          },
+          "magic_hex": "1600000000000000850100006c0000006902000078000000"
+        },
+        ".ax": {
+          "entry": {
+            "name": "A00.ax",
+            "packed": 1491,
+            "size": 4156,
+            "offset": 159733
+          },
+          "magic_hex": "500600007c080000a80a0000d40c0000000f0000010f0000"
+        },
+        ".bin": {
+          "entry": {
+            "name": "00.bin",
+            "packed": 57095,
+            "size": 480000,
+            "offset": 973685
+          },
+          "magic_hex": "000000000000000000000000000000000000000000000000"
+        },
+        ".bmp": {
+          "entry": {
+            "name": "hage1024.bmp",
+            "packed": 911259,
+            "size": 2359352,
+            "offset": 8113926
+          },
+          "magic_hex": "424d38002400000000003600000028000000000400000003"
+        }
+      }
+    },
+    "effect.arc": {
+      "bytes": 32456576,
+      "entries": 318,
+      "extensions": {
+        ".wav": 318
+      },
+      "compressed_entries": 0,
+      "payloads_checked": 1,
+      "samples": {
+        ".wav": {
+          "entry": {
+            "name": "Akikaze.wav",
+            "packed": 1468560,
+            "size": 1468560,
+            "offset": 86500
+          },
+          "magic_hex": "524946468868160057415645666d74201000000001000100"
+        }
+      }
+    },
+    "layer.arc": {
+      "bytes": 765751791,
+      "entries": 2191,
+      "extensions": {
+        ".akb": 2191
+      },
+      "compressed_entries": 0,
+      "payloads_checked": 1,
+      "samples": {
+        ".akb": {
+          "entry": {
+            "name": "a00.akb",
+            "packed": 180650,
+            "size": 180650,
+            "offset": 595956
+          },
+          "magic_hex": "414b42208002e00100000080000000000000000026000000"
+        }
+      }
+    },
+    "mes.arc": {
+      "bytes": 7169185,
+      "entries": 682,
+      "extensions": {
+        ".lib": 1,
+        ".mes": 681
+      },
+      "compressed_entries": 682,
+      "payloads_checked": 682,
+      "samples": {
+        ".lib": {
+          "entry": {
+            "name": "liblary.lib",
+            "packed": 7891,
+            "size": 27725,
+            "offset": 185508
+          },
+          "magic_hex": "01000000723f00003200000000320000000016000000c132"
+        },
+        ".mes": {
+          "entry": {
+            "name": "aoi_d.mes",
+            "packed": 158,
+            "size": 300,
+            "offset": 193399
+          },
+          "magic_hex": "0000000032000000320432000010003c32000000000e3200"
+        }
+      }
+    },
+    "movie.arc": {
+      "bytes": 346004049,
+      "entries": 566,
+      "extensions": {
+        ".mov": 376,
+        ".vsd": 190
+      },
+      "compressed_entries": 376,
+      "payloads_checked": 377,
+      "samples": {
+        ".mov": {
+          "entry": {
+            "name": "ev119gr_12.mov",
+            "packed": 230,
+            "size": 1638,
+            "offset": 153956
+          },
+          "magic_hex": "02000000657631313967725f31322e767364000000000000"
+        },
+        ".vsd": {
+          "entry": {
+            "name": "endfilm.VSD",
+            "packed": 8059916,
+            "size": 8059916,
+            "offset": 198261
+          },
+          "magic_hex": "5653443100b40400f081fd6f1b03b6cbaf899de62ce25a99"
+        }
+      }
+    },
+    "music.arc": {
+      "bytes": 216394162,
+      "entries": 20,
+      "extensions": {
+        ".wav": 20
+      },
+      "compressed_entries": 0,
+      "payloads_checked": 1,
+      "samples": {
+        ".wav": {
+          "entry": {
+            "name": "BGM01.wav",
+            "packed": 14942068,
+            "size": 14942068,
+            "offset": 5444
+          },
+          "magic_hex": "524946466cffe30057415645666d74201000000001000200"
+        }
+      }
+    },
+    "voice.arc": {
+      "bytes": 2205035659,
+      "entries": 21374,
+      "extensions": {
+        ".ogg": 21374
+      },
+      "compressed_entries": 0,
+      "payloads_checked": 1,
+      "samples": {
+        ".ogg": {
+          "entry": {
+            "name": "a0001.ogg",
+            "packed": 17279,
+            "size": 17279,
+            "offset": 5813732
+          },
+          "magic_hex": "4f676753000200000000000000003b5a496c000000002e24"
+        }
+      }
+    }
+  },
+  "mes_candidates": {
+    "0": {
+      "parsed": 681,
+      "valid": 681,
+      "failures": [],
+      "opcodes": {
+        "32": 2881266,
+        "04": 193646,
+        "3c": 102933,
+        "0e": 111873,
+        "43": 5102,
+        "14": 154412,
+        "18": 347392,
+        "34": 49154,
+        "0f": 104276,
+        "0c": 15250,
+        "02": 35687,
+        "42": 338088,
+        "17": 162979,
+        "15": 154983,
+        "00": 81434,
+        "03": 5516,
+        "0d": 4758,
+        "05": 81953,
+        "36": 101867,
+        "33": 173673,
+        "19": 73394,
+        "3d": 100903,
+        "0a": 75676,
+        "3a": 81851,
+        "1a": 1402,
+        "3b": 7867,
+        "3e": 637,
+        "3f": 896,
+        "35": 1153,
+        "37": 403,
+        "38": 210,
+        "39": 24,
+        "1b": 98,
+        "11": 366
+      }
+    },
+    "1": {
+      "parsed": 680,
+      "valid": 680,
+      "failures": [
+        {
+          "name": "tokuten.mes",
+          "error": "unknown opcode 64 at 0x5ea"
+        }
+      ],
+      "opcodes": {
+        "32": 2879705,
+        "04": 193617,
+        "3c": 102930,
+        "0e": 111858,
+        "43": 5101,
+        "14": 154399,
+        "18": 347359,
+        "34": 49021,
+        "0f": 104269,
+        "0c": 15247,
+        "02": 35874,
+        "42": 338079,
+        "17": 162959,
+        "15": 154970,
+        "00": 84620,
+        "03": 5514,
+        "0d": 4757,
+        "05": 81955,
+        "36": 101855,
+        "01": 590,
+        "33": 173653,
+        "19": 73394,
+        "0a": 75864,
+        "3a": 81851,
+        "1a": 1402,
+        "3b": 7867,
+        "3e": 637,
+        "3f": 893,
+        "35": 1030,
+        "08": 188,
+        "37": 210,
+        "07": 201,
+        "38": 206,
+        "39": 24,
+        "3d": 44,
+        "06": 2,
+        "1b": 98,
+        "11": 366
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+鬼作/
+reference/
+local/
+build/
+build-switch/
+交付/
+.DS_Store
+__pycache__/
+*.pyc
+汉化补丁/

@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")"
+python3 tools/native_media_tables.py "${KISAKU_EXE:-鬼作/AI6WIN.exe}" build/media_tables.h
+mkdir -p build
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c runtime/ax.c runtime/mam.c runtime/video.c runtime/flags.c runtime/gallery.c runtime/control_store.c runtime/save_slot.c runtime/scene.c runtime/scene_view.c runtime/title.c runtime/flag_dialog.c runtime/scene_history.c runtime/text_encoding.c runtime/text_layout.c runtime/font.c runtime/read_flags.c runtime/voice_worker.c runtime/image_worker.c runtime/bootstrap.c runtime/switch_hos.c tools/bootstrap_probe.c $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample freetype2) -o build/kisaku-bootstrap
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror runtime/lzss.c runtime/ai6arc.c runtime/probe.c -o build/kisaku-probe
+  ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime $(pkg-config --cflags sdl2) \
+    runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c runtime/ax.c runtime/mam.c runtime/video.c runtime/flags.c runtime/gallery.c runtime/control_store.c runtime/save_slot.c runtime/scene.c runtime/scene_view.c runtime/title.c runtime/flag_dialog.c runtime/scene_history.c runtime/text_encoding.c runtime/text_layout.c runtime/font.c runtime/read_flags.c runtime/voice_worker.c runtime/image_worker.c runtime/bootstrap.c runtime/switch_hos.c runtime/image_sdl.c tools/runtime_viewer.c \
+    -lSDL2_test $(pkg-config --libs sdl2) $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample freetype2) -o build/kisaku-runtime
+
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c runtime/ax.c runtime/mam.c runtime/video.c runtime/flags.c runtime/gallery.c runtime/control_store.c runtime/save_slot.c runtime/scene.c runtime/scene_view.c runtime/title.c runtime/flag_dialog.c runtime/scene_history.c runtime/text_encoding.c runtime/text_layout.c runtime/font.c runtime/read_flags.c runtime/voice_worker.c runtime/image_worker.c runtime/bootstrap.c runtime/switch_hos.c tests/kisaku_bootstrap_test.c $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample freetype2) -o build/kisaku-bootstrap-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c tools/akb_probe.c -o build/kisaku-akb-probe
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/rmt.c runtime/akb.c tests/akb_test.c -o build/akb-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/image_sdl.c tools/image_viewer.c $(pkg-config --cflags --libs sdl2) -lSDL2_test -o build/kisaku-image-viewer
+
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/vm.c tests/vm_memory_test.c -o build/vm-memory-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/flags.c tests/flags_test.c -o build/flags-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_test.c -o build/bowling-test
