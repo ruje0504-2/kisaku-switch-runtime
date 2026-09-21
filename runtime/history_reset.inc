@@ -18,7 +18,7 @@ int bootstrap_history_reset(KBootstrap *b,int confirm){
     KVM *v=b->vm;KFlagDialog *dialog=&b->flag_dialog;
     unsigned all=dialog->checked[3]==1,read=all||dialog->checked[0]==1,choice=all||dialog->checked[1]==1,nav=all||dialog->checked[2]==1;
     if(!read&&!choice&&!nav)return -1;
-    /* The live VM declares 9192 bytes through 31/14/0; 8192 is only
+    /* The live VM declares 9192 bytes through 14/0; 8192 is only
        kvm_create's initial value.  The staging copy below is the same size as
        the native byte area, so accepting the runtime here cannot truncate it. */
     if(v->byte_count!=9192||v->word_count<600||v->global_count[1]<100||b->raw_size<6000||!b->read_size)return error(b,"history reset state invalid");

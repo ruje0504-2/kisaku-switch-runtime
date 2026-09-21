@@ -7,7 +7,7 @@ int bootstrap_scene_replay_begin(KBootstrap *b,const KBootstrap *owner,unsigned 
     int id=module(b,target.module);size_t offset;
     if(id<0||kvm_checkpoint_offset(b->vm,id,target.checkpoint,&offset))return -1;
     const KVM *source=owner->vm;KVM *v=b->vm;
-    /* The live story VM declares its capacity through 31/14/0 (a=9192, c=600,
+    /* The live story VM declares its capacity through 14/0 (a=9192, c=600,
        d=15000, e=100); 8192 is only kvm_create's initial value.  This check
        must accept the real runtime, not the reference game's default. */
     if(source->byte_count!=9192||source->word_count<381||source->global_count[0]<=50||source->global_count[1]<=69)return -1;

@@ -501,7 +501,7 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 
 ### 2026-09-22：包 1a —— 回想回放与 New Game 初期化的堆容量检查（8192 → 9192）
 
-- `runtime/scene_replay.inc`：`bootstrap_scene_replay_begin` 原先要求源 VM `byte_count == 8192`。8192 只是 `kvm_create` 的初始值；《鬼作》运行时在 `31/14/0` 之后实际声明 9192 字节（word 600 / global 15000 / bank1 100），因此该检查对真实运行时**恒为假**，回想回放每次都直接返回失败、根本起不来。改为接受 9192，并在注释中写明 8192 的来源与不再作为判定依据的理由。
+- `runtime/scene_replay.inc`：`bootstrap_scene_replay_begin` 原先要求源 VM `byte_count == 8192`。8192 只是 `kvm_create` 的初始值；《鬼作》运行时在 `14/0` 之后实际声明 9192 字节（word 600 / global 15000 / bank1 100），因此该检查对真实运行时**恒为假**，回想回放每次都直接返回失败、根本起不来。改为接受 9192，并在注释中写明 8192 的来源与不再作为判定依据的理由。
 - `runtime/history_reset.inc`：`bootstrap_history_reset` 同一个 8192 判定让 New Game 的"初期化"四个勾选框永久报 `history reset state invalid`。同时该函数的暂存缓冲 `uint8_t bytes[8192]` 与逐字节清零长度一并改为 `sizeof(bytes)`（9192），使暂存区与原生 byte 区等长，不再截断。
 - 验证：`build-host.sh` 在 `-Werror` 下通过；`test-host.sh` 完整主机回归 51 项全部通过（`local/ds-test.log`），其中 `kisaku-bootstrap-test`、`save-runtime-test`、`letter-save-test` 覆盖本次两处改动的存档合并与回放路径；资源审计 0 失败、AKB 2191/2191 解码。日志写在 `local/ds-test.log`（本次重跑）与 `local/deepseek-cadence-regression.log`（当轮）。
 - 边界：本轮只修容量判定，**没有**把回想回放与初期化的下游脚本路径当作已验证的完整流程；`31/1012`（681 个 MES、2479 次调用）等未接通接口继续保留参数并明确报错。未启动 PC 程序，Switch 实机未验证。
