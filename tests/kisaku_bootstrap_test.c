@@ -14,6 +14,11 @@ static int call(KBootstrap *b,int sub,int action){
     kvm_push(b->vm,(KValue){action,NULL});kvm_push(b->vm,(KValue){sub,NULL});
     return bootstrap_dispatch(b);
 }
+static int call_gallery_mark(KBootstrap *b,const char *name){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    kvm_push(b->vm,(KValue){0,name});kvm_push(b->vm,(KValue){1012,NULL});
+    return bootstrap_dispatch(b);
+}
 static int call_527(KBootstrap *b){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     kvm_push(b->vm,(KValue){0,NULL});kvm_push(b->vm,(KValue){0,NULL});
@@ -1378,5 +1383,10 @@ int main(int argc,char **argv){
     }
     assert(!b->choice_active&&b->choice_selected==-1);
     puts("Kisaku choice initialization and independent animation state: PASS");
+    assert(!kgallery_load(&b->gallery,&b->data,bootstrap_save_dir(b),0));
+    char gallery_name[sizeof(b->gallery.names[0])];strcpy(gallery_name,b->gallery.names[0]);
+    assert(!call_gallery_mark(b,gallery_name)&&!b->vm->sp&&b->vm->bytes[4001]&&b->vm->bytes[4004]);
+    b->vm->sp=0;assert(call_gallery_mark(b,"missing-gallery-resource.rmt")<0&&b->vm->sp==2);
+    puts("Kisaku 31/1012 gallery unlock registration and ABI preservation: PASS");
     bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
 }

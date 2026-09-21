@@ -1174,6 +1174,25 @@ int bootstrap_dispatch(KBootstrap *b){
         }
         v->sp-=2;b->handled++;return kvm_resume(v);
     }
+    if(main==31&&sub==1012){
+        /* 4f98b0 -> 5040a0 receives one CP932/RMT resource name.  The
+           gallery catalog owns the name-to-unlock-ID mapping; a successful
+           native lookup sets byte 4001 and byte 4004 as well as the
+           per-entry persistent flag.  Validate before consuming the three
+           stack values so malformed calls remain diagnosable. */
+        if(v->sp<3||!v->stack[v->sp-3].string)
+            return error(b,"31/1012 gallery resource name required (arguments preserved)");
+        if(v->byte_count<=4004||v->byte_count<=8100)
+            return error(b,"31/1012 gallery flag storage missing (arguments preserved)");
+        unsigned selector=v->bytes[8100];if(selector>3)selector=3;
+        if(!b->gallery.loaded&&kgallery_load(&b->gallery,&b->data,bootstrap_save_dir(b),selector))
+            return error(b,"31/1012 gallery catalog load failed (arguments preserved)");
+        const char *name=v->stack[v->sp-3].string;
+        if(!kgallery_mark(&b->gallery,name))
+            return error(b,"31/1012 unknown gallery resource (arguments preserved)");
+        v->bytes[4001]=1;v->bytes[4004]=1;
+        v->sp-=3;b->handled++;return kvm_resume(v);
+    }
     if(main==31&&sub==320){
         /* 4fae70 constructs CScMode/CHageScMode with no script arguments.
            The native modal returns its selected scene value through the VM
