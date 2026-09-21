@@ -1,0 +1,165 @@
+/* Package 1 staging-cadence fixture.
+ *
+ * The 演出基础层 primitives (31/17 black-band blink, 31/21 colour fade,
+ * 31/30 canvas transition) are what every later interface package inherits.
+ * Until now they were only covered indirectly, by pixel assertions inside
+ * other suites, so "帧数和时长" was never stated as a number.
+ *
+ * This fixture drives each primitive through the real bootstrap frame loop
+ * and pins the frame count, then prints it, so a review can compare the
+ * measured cadence against the PC reference instead of re-deriving it.
+ * It does not launch the PC program and it is not a Switch hardware test.
+ */
+#include "bootstrap.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+static KBootstrap *open_runtime(const char *root, const char *saves)
+{
+    KBootstrap *b = bootstrap_create_split(root, saves);
+    assert(b && !b->error[0]);
+    assert(bootstrap_run(b, 100000) >= 0);
+    assert(b->layers[0].pixels && b->canvas.pixels);
+    /* The startup script arms its own fade before the title settles; run it
+       out so every fixture below starts from a clean overlay state. */
+    unsigned frames = 0;
+    while (b->fade_steps || b->helper_steps || b->blink_active || b->transition_steps) {
+        assert(frames++ < 8192);
+        bootstrap_frame(b);
+    }
+    return b;
+}
+
+/* main is read from v->syscall and sub is the stack top, so callers push the
+ * arguments in reverse script order and the subcall last. */
+static void dispatch_native(KBootstrap *b, int main_id, const int *args, unsigned count)
+{
+    b->error[0] = 0;
+    b->vm->status = KVM_SYSCALL;
+    b->vm->syscall = main_id;
+    b->vm->sp = 0;
+    for (unsigned i = 0; i < count; i++) assert(!kvm_push(b->vm, (KValue){args[i], NULL}));
+    if (bootstrap_dispatch(b)) {
+        fprintf(stderr, "native %d/%d rejected: %s\n", main_id, args[count - 1], b->error);
+        abort();
+    }
+}
+
+/* The overlay is only opaque when the band surface covers every pixel and the
+ * fade alpha is fully in; that composite is what "200 ms of black" means. */
+static int overlay_fully_black(const KBootstrap *b)
+{
+    if (!b->fade_visible || b->fade_alpha != 255) return 0;
+    const uint8_t *p = b->fade_surface.pixels;
+    assert(p);
+    for (size_t i = 0; i < 640u * 480u; i++) if (p[i * 4 + 3] != 255) return 0;
+    return 1;
+}
+
+/* 42c890: black bands close from both edges, hold, reopen. Ten closing steps
+ * of 24 rows per edge make the last closing frame already fully black, so the
+ * black hold is twelve frames (200 ms at 60 Hz) and the whole effect is 31
+ * frames once the opening steps are counted. */
+static void test_blink(KBootstrap *b)
+{
+    const int args[] = {17};
+    dispatch_native(b, 31, args, 1);
+    assert(b->blink_active);
+    assert(b->fade_visible);
+    unsigned frames = 0, black = 0;
+    while (b->blink_active) {
+        assert(frames < 4096);
+        bootstrap_frame(b);
+        frames++;
+        if (overlay_fully_black(b)) black++;
+    }
+    printf("31/17 blink        : %u frames, %u black (10 close + 12 black + 10 open)\n", frames, black);
+    assert(frames == 31);
+    assert(black == 12);
+    assert(!b->fade_visible && !b->fade_steps);
+}
+
+static void test_fade(KBootstrap *b)
+{
+    /* 31/21/0 consumes colour (a) then duration (c); a = -1 keeps the
+     * allocated black surface and only fills an explicit colour otherwise. */
+    const int in[] = {64, -1, 0};
+    dispatch_native(b, 21, in, 3);
+    unsigned steps = b->fade_steps;
+    assert(steps == 64 && b->fade_visible && b->fade_alpha == 0);
+    unsigned frames = 0;
+    while (b->fade_steps) { assert(frames < 4096); bootstrap_frame(b); frames++; }
+    printf("31/21/0 fade in    : %u frames for %u steps\n", frames, steps);
+    assert(frames == steps && b->fade_alpha == 255);
+
+    /* 31/21/1 consumes duration only and is ignored unless the overlay is
+     * currently visible, which is exactly the state reached above. */
+    const int out[] = {32, 1};
+    dispatch_native(b, 21, out, 2);
+    steps = b->fade_steps;
+    assert(steps == 32 && b->fade_visible);
+    frames = 0;
+    while (b->fade_steps) { assert(frames < 4096); bootstrap_frame(b); frames++; }
+    printf("31/21/1 fade out   : %u frames for %u steps\n", frames, steps);
+    assert(frames == steps && b->fade_alpha == 0 && !b->fade_visible);
+
+    /* A hidden overlay must not arm a new animation from the fade-out call. */
+    dispatch_native(b, 21, out, 2);
+    assert(!b->fade_steps && !b->fade_visible);
+}
+
+/* 31/30/0 dissolves the private canvas into page 0. Display/EffectSpeed and
+ * flag 0x4000 scale the requested step count before the runtime stores it, so
+ * the fixture measures twice: once exactly as configured, then once with both
+ * scalings neutralised, which pins the arithmetic itself rather than the
+ * player's speed preference. */
+static void test_canvas_transition(KBootstrap *b)
+{
+    const int args[] = {48, 0};
+
+    dispatch_native(b, 30, args, 2);
+    unsigned configured = b->transition_steps;
+    assert(configured >= 1);
+    unsigned frames = 0;
+    while (b->transition_steps) { assert(frames < 8192); bootstrap_frame(b); frames++; }
+    printf("31/30/0 canvas     : %u frames for %u configured steps\n", frames, configured);
+    assert(frames == configured && b->transition_frame == configured);
+
+    int slot = -1;
+    char saved[512];
+    for (unsigned i = 0; i < b->setting_count; i++) {
+        if (!strcmp(b->settings[i].section, "Display") && !strcmp(b->settings[i].key, "EffectSpeed")) {
+            memcpy(saved, b->settings[i].value, sizeof(saved));
+            slot = (int)i;
+        }
+    }
+    if (slot >= 0) memcpy(b->settings[slot].value, "0", 2);
+    int32_t flags = b->vm->globals[0][50].number;
+    b->vm->globals[0][50].number = flags & ~0x4000;
+
+    dispatch_native(b, 30, args, 2);
+    unsigned steps = b->transition_steps;
+    frames = 0;
+    while (b->transition_steps) { assert(frames < 8192); bootstrap_frame(b); frames++; }
+    printf("31/30/0 canvas     : %u frames for %u unscaled steps\n", frames, steps);
+    assert(steps == 49 && frames == steps && b->transition_frame == steps);
+
+    b->vm->globals[0][50].number = flags;
+    if (slot >= 0) memcpy(b->settings[slot].value, saved, sizeof(saved));
+}
+
+int main(int argc, char **argv)
+{
+    assert(argc == 3);
+    KBootstrap *b = open_runtime(argv[1], argv[2]);
+    /* Order matters: the startup script leaves the fade overlay visible, so
+       the fade fixture runs first and hands a hidden overlay to the other
+       two, which the native entry points require. */
+    test_fade(b);
+    test_blink(b);
+    test_canvas_transition(b);
+    bootstrap_destroy(b);
+    puts("Kisaku staging cadence: blink/fade/canvas frame counts and black hold duration: PASS");
+    return 0;
+}

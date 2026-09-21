@@ -65,7 +65,11 @@ static void blink_frame(KBootstrap *b){
             b->fade_surface.pixels[(y+row)*2560+x*4+3]=closing?255:0;
             b->fade_surface.pixels[(456-y+row)*2560+x*4+3]=closing?255:0;
         }
+        /* 42c890 holds the closed overlay for 200 ms. Re-arm the clock with the
+           new wait: carrying the remainder of the previous 900-unit step left
+           only eleven fully black frames (183 ms at 60 Hz), not twelve. */
         b->blink_wait=b->blink_step==10?12000:900;
+        b->blink_clock=0;
         if(b->blink_step==20){b->blink_active=0;b->fade_visible=0;}
     }
 }
