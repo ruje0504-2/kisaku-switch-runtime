@@ -16,7 +16,7 @@ static int generation(const char *base,uint32_t *value,unsigned *version){
     if(kstore_recover(path))return -1;
     FILE *f=fopen(path,"rb");if(!f)return errno==ENOENT?1:-1;
     unsigned format=0;
-    int bad=!fgets(line,sizeof(line),f)||sscanf(line,"KISAKU-SLOT-%u %" SCNu32 " %c",&format,value,&extra)!=2||(format<1||format>4)||fgetc(f)!=EOF||ferror(f);
+    int bad=!fgets(line,sizeof(line),f)||sscanf(line,"KISAKU-SLOT-%u %" SCNu32 " %c",&format,value,&extra)!=2||(format<1||format>5)||fgetc(f)!=EOF||ferror(f);
     fclose(f);if(!bad&&version)*version=format;return bad?-1:0;
 }
 int kslot_read(const char *root,unsigned selector,unsigned slot,KFlags **flags,KControlStore **controls){
@@ -31,7 +31,7 @@ int kslot_read(const char *root,unsigned selector,unsigned slot,KFlags **flags,K
     unsigned frames=0;if(*controls)for(unsigned i=0;i<(*controls)->count;i++)frames+=(*controls)->records[i].type==0xfffc;
     if(!*flags||!*controls||(version==4&&frames!=1)){kflags_free(*flags);kcontrol_free(*controls);*flags=NULL;*controls=NULL;return -1;}return 0;
 }
-int kslot_write_image(const char *root,unsigned selector,unsigned slot,const KFlags *flags,const KControlRecord *records,unsigned count,const KImage *image){
+int kslot_write_state(const char *root,unsigned selector,unsigned slot,const KFlags *flags,const KControlRecord *records,unsigned count,const KImage *image,const KImage *scene){
     char base[3800],flag[4096],control[4096],index[4096],temp[4100];uint32_t gen=0;
     if(paths(root,selector,slot,base,sizeof(base))||generation(base,&gen,NULL)<0||gen==UINT32_MAX)return -1;
     uint32_t next=gen+1;
@@ -54,12 +54,41 @@ int kslot_write_image(const char *root,unsigned selector,unsigned slot,const KFl
         if(fclose(pf))failed=1;
         if(failed){remove(preview);return -1;}
     }
+    char scene_path[4096];snprintf(scene_path,sizeof(scene_path),"%s-%" PRIu32 ".scene",base,next);
+    if(scene){
+        if(!scene->pixels||scene->width!=640||scene->height<480||scene->stride<2560)return -1;
+        FILE *sf=fopen(scene_path,"wb");if(!sf)return -1;
+        int failed=fwrite("KASCENE1",1,8,sf)!=8;
+        for(unsigned y=0;y<480&&!failed;y++)failed=fwrite(scene->pixels+y*scene->stride,1,2560,sf)!=2560;
+        if(fclose(sf))failed=1;
+        if(failed){remove(scene_path);return -1;}
+    }else if(remove(scene_path)&&errno!=ENOENT)return -1;
     FILE *f=fopen(temp,"wb");if(!f)return -1;
     unsigned format=1;for(unsigned i=0;i<count;i++){if(records[i].type==0xfffc)format=4;else if(records[i].type==0xfffd&&format<3)format=3;else if(records[i].type==0xfffe&&format<2)format=2;}
+    if(scene)format=5;
     int bad=fprintf(f,"KISAKU-SLOT-%u %" PRIu32 "\n",format,next)<0;if(fclose(f))bad=1;
     if(bad||kstore_replace(temp,index)){remove(temp);return -1;}
-    if(gen){snprintf(flag,sizeof(flag),"%s-%" PRIu32 ".flag",base,gen);snprintf(control,sizeof(control),"%s-%" PRIu32 ".control",base,gen);remove(flag);remove(control);snprintf(flag,sizeof(flag),"%s-%" PRIu32 ".preview",base,gen);remove(flag);}
+    if(gen){snprintf(flag,sizeof(flag),"%s-%" PRIu32 ".flag",base,gen);snprintf(control,sizeof(control),"%s-%" PRIu32 ".control",base,gen);remove(flag);remove(control);snprintf(flag,sizeof(flag),"%s-%" PRIu32 ".preview",base,gen);remove(flag);snprintf(flag,sizeof(flag),"%s-%" PRIu32 ".scene",base,gen);remove(flag);}
     return 0;
+}
+
+int kslot_write_image(const char *root,unsigned selector,unsigned slot,const KFlags *flags,const KControlRecord *records,unsigned count,const KImage *image){
+    return kslot_write_state(root,selector,slot,flags,records,count,image,NULL);
+}
+/* 1 means a legacy save has no resident scene; malformed new saves fail. */
+int kslot_scene(const char *root,unsigned selector,unsigned slot,KImage *scene){
+    char base[3800],path[4096];uint32_t gen=0;unsigned version=0;
+    if(paths(root,selector,slot,base,sizeof(base)))return -1;
+    int status=generation(base,&gen,&version);
+    if(status<0)return -1;
+    if(status||version<5)return 1;
+    snprintf(path,sizeof(path),"%s-%" PRIu32 ".scene",base,gen);
+    FILE *f=fopen(path,"rb");if(!f)return -1;
+    uint8_t header[8],*pixels=malloc(480*2560);if(!pixels){fclose(f);return -1;}
+    int bad=fread(header,1,8,f)!=8||memcmp(header,"KASCENE1",8)||
+        fread(pixels,1,480*2560,f)!=480*2560||fgetc(f)!=EOF||ferror(f);
+    fclose(f);if(bad){free(pixels);return -1;}
+    rmt_free(scene);*scene=(KImage){0,0,640,480,2560,pixels};return 0;
 }
 
 int kslot_write(const char *root,unsigned selector,unsigned slot,const KFlags *flags,const KControlRecord *records,unsigned count){
@@ -83,20 +112,22 @@ int kslot_preview(const char *root,unsigned selector,unsigned slot,KImage *image
     free(image->pixels);*image=(KImage){0,0,336,252,336*4,pixels};return 0;
 }
 
-/* AI6WIN 483693: 100 records of 54 bytes. Date fields are deliberately
+/* Kisaku 478240: raw+1002, 100 records of 45 bytes. Date fields are deliberately
    unaligned; copying a C struct here would corrupt the original layout. */
 int kslot_info(const KFlags *f,unsigned slot,KSlotInfo *info){
     if(!info)return -1;
     memset(info,0,sizeof(*info));
-    if(!f||slot<1||slot>100||f->raw_count<slot*54)return -1;
-    const uint8_t *p=f->raw+(slot-1)*54;
+    if(!f||!f->raw||slot<1||slot>100||f->raw_count<1002+slot*45)return -1;
+    const uint8_t *p=f->raw+1002+(slot-1)*45;
     if(p[0]!=1)return -1;
-    info->scene=(unsigned)p[1]|(unsigned)p[2]<<8;
-    const uint8_t *end=memchr(p+12,0,42);if(end)memcpy(info->comment,p+12,(size_t)(end-p-12));
-    unsigned year=(unsigned)p[3]|(unsigned)p[4]<<8,day=(unsigned)p[6]|(unsigned)p[7]<<8;
-    unsigned hour=(unsigned)p[8]|(unsigned)p[9]<<8,minute=(unsigned)p[10]|(unsigned)p[11]<<8;
-    if(year>=1970&&year<=9999&&p[5]>=1&&p[5]<=12&&day>=1&&day<=31&&hour<24&&minute<60){
-        struct tm tm={0};tm.tm_year=(int)year-1900;tm.tm_mon=p[5]-1;tm.tm_mday=(int)day;tm.tm_hour=(int)hour;tm.tm_min=(int)minute;tm.tm_isdst=-1;
+    info->stage=(unsigned)p[1]|(unsigned)p[2]<<8;
+    info->scene=(unsigned)p[3]|(unsigned)p[4]<<8;
+    const uint8_t *end=memchr(p+17,0,28);if(!end)return -1;
+    memcpy(info->comment,p+17,(size_t)(end-p-17));
+    unsigned year=(unsigned)p[5]|(unsigned)p[6]<<8,month=(unsigned)p[7]|(unsigned)p[8]<<8,day=(unsigned)p[9]|(unsigned)p[10]<<8;
+    unsigned hour=(unsigned)p[11]|(unsigned)p[12]<<8,minute=(unsigned)p[13]|(unsigned)p[14]<<8,second=(unsigned)p[15]|(unsigned)p[16]<<8;
+    if(year>=1970&&year<=9999&&month>=1&&month<=12&&day>=1&&day<=31&&hour<24&&minute<60&&second<60){
+        struct tm tm={0};tm.tm_year=(int)year-1900;tm.tm_mon=(int)month-1;tm.tm_mday=(int)day;tm.tm_hour=(int)hour;tm.tm_min=(int)minute;tm.tm_sec=(int)second;tm.tm_isdst=-1;
         time_t stamp=mktime(&tm);if(stamp!=(time_t)-1)info->saved_time=(int64_t)stamp;
     }
     return 0;

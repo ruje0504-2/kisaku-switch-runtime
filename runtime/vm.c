@@ -11,8 +11,22 @@ static uint32_t le32(const uint8_t *p) { return p[0]|(uint32_t)p[1]<<8|(uint32_t
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0]<<24|(uint32_t)p[1]<<16|(uint32_t)p[2]<<8|p[3]; }
 static int fail(KVM *v,const char *s) { snprintf(v->error,sizeof(v->error),"%s @0x%zx op=0x%02x: %s",v->module>=0?v->modules[v->module].name:"<none>",v->instruction_ip,v->opcode,s);v->status=KVM_ERROR;return -1; }
 KVM *kvm_create(void) { KVM *v=calloc(1,sizeof(*v));if(v){v->random_state=(uint32_t)time(NULL)^(uint32_t)clock();v->module=-1;v->current_list=-1;v->byte_count=8192;v->word_count=600;v->global_count[0]=100;v->global_count[1]=100;}return v; }
-void kvm_destroy(KVM *v) { if(!v)return;for(unsigned i=0;i<v->module_count;i++)free(v->modules[i].boundaries);free(v); }
-int kvm_push(KVM *v,KValue x) { if(v->sp==4096)return fail(v,"stack overflow");v->stack[v->sp++]=x;return 0; }
+void kvm_destroy(KVM *v) { if(!v)return;for(unsigned i=0;i<v->module_count;i++)free(v->modules[i].boundaries);free(v->stack);free(v); }
+int kvm_push(KVM *v,KValue x) {
+    /* 46f390 -> 402720 -> 402c30 grows the native variant vector by 50%.
+       Message return values may remain on this stack across library calls. */
+    if(v->sp==v->stack_capacity){
+        size_t limit=SIZE_MAX/sizeof(*v->stack);if(limit>UINT_MAX)limit=UINT_MAX;
+        if(v->sp>=limit)return fail(v,"operand stack capacity overflow");
+        size_t capacity=v->stack_capacity?(size_t)v->stack_capacity+v->stack_capacity/2:64;
+        if(capacity<=v->sp)capacity=(size_t)v->sp+1;
+        if(capacity>limit)capacity=limit;
+        KValue *stack=realloc(v->stack,capacity*sizeof(*stack));
+        if(!stack)return fail(v,"operand stack allocation failed");
+        v->stack=stack;v->stack_capacity=(unsigned)capacity;
+    }
+    v->stack[v->sp++]=x;return 0;
+}
 int kvm_pop(KVM *v,KValue *x) { if(!v->sp)return fail(v,"stack underflow");*x=v->stack[--v->sp];return 0; }
 static int number(KVM *v,int32_t *n) { KValue x;if(kvm_pop(v,&x))return -1;if(x.string)return fail(v,"integer required");*n=x.number;return 0; }
 static int pushn(KVM *v,int32_t n) { return kvm_push(v,(KValue){n,NULL}); }

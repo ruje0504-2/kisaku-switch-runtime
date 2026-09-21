@@ -1,19 +1,38 @@
 #include "bootstrap.h"
+#include "dialog.h"
+#include "voice_character.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 static unsigned bowling_released;
+static void test_setting(KBootstrap *b,const char *section,const char *key,const char *value);
 static void bowling_free(void *p){bowling_released++;free(p);}
 static int call(KBootstrap *b,int sub,int action){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     kvm_push(b->vm,(KValue){action,NULL});kvm_push(b->vm,(KValue){sub,NULL});
     return bootstrap_dispatch(b);
 }
+static int call_527(KBootstrap *b){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    kvm_push(b->vm,(KValue){0,NULL});kvm_push(b->vm,(KValue){0,NULL});
+    kvm_push(b->vm,(KValue){527,NULL});
+    return bootstrap_dispatch(b);
+}
 static int call_overlay524(KBootstrap *b,int packed,int third,int action){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     if(action==0){kvm_push(b->vm,(KValue){third,NULL});kvm_push(b->vm,(KValue){packed,NULL});}
     kvm_push(b->vm,(KValue){action,NULL});kvm_push(b->vm,(KValue){524,NULL});
+    return bootstrap_dispatch(b);
+}
+static int call_location_create(KBootstrap *b,int x,int y,int w,int h,int right_bytes){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    /* VM call sites push variants in reverse order; the dispatcher reads
+       them back as source-x, source-y, width, height, right-bytes. */
+    kvm_push(b->vm,(KValue){right_bytes,NULL});kvm_push(b->vm,(KValue){h,NULL});
+    kvm_push(b->vm,(KValue){w,NULL});kvm_push(b->vm,(KValue){y,NULL});
+    kvm_push(b->vm,(KValue){x,NULL});kvm_push(b->vm,(KValue){0,NULL});kvm_push(b->vm,(KValue){526,NULL});
     return bootstrap_dispatch(b);
 }
 static int call_anime520(KBootstrap *b,const KValue *args,unsigned count){
@@ -25,6 +44,270 @@ static int call_layer(KBootstrap *b,const KValue *args,unsigned count,int sub){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=19;b->vm->sp=0;
     for(unsigned i=0;i<count;i++)kvm_push(b->vm,args[i]);
     kvm_push(b->vm,(KValue){sub,NULL});return bootstrap_dispatch(b);
+}
+static void test_scene_context(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    memset(b->vm->bytes+3569,0xa5,26);
+    char text[25]="scene01.mes";b->vm->globals[0][70]=(KValue){0,text};
+    assert(!call(b,812,0)&&!b->vm->sp&&!memcmp(b->vm->bytes+3570,"scene01.mes",11));
+    for(unsigned i=11;i<24;i++)assert(!b->vm->bytes[3570+i]);
+    assert(b->vm->bytes[3569]==0xa5&&b->vm->bytes[3594]==0xa5);
+    assert(!call(b,812,1)&&!strcmp(b->vm->globals[0][70].string,"scene01.mes"));
+    const char *owned=b->vm->globals[0][70].string;memset(b->vm->bytes+3570,'x',24);
+    assert(!strcmp(owned,"scene01.mes"));assert(!call(b,812,1)&&strlen(b->vm->globals[0][70].string)==23);
+    assert(b->vm->bytes[3593]=='x'); /* Read termination never modifies the stored bytes. */
+    memset(text,'a',23);text[23]=0;b->vm->globals[0][70]=(KValue){0,text};assert(!call(b,812,0));
+    text[23]='b';text[24]=0;assert(call(b,812,0)<0&&b->vm->sp==2&&b->vm->bytes[3593]==0);
+    b->vm->globals[0][70]=(KValue){0,""};assert(!call(b,812,0));assert(!call(b,812,1)&&!b->vm->globals[0][70].string[0]);
+    b->vm->globals[0][70]=(KValue){0,NULL};assert(call(b,812,0)<0&&b->vm->sp==2);
+    assert(call(b,812,9)<0&&b->vm->sp==2);unsigned count=b->vm->byte_count;b->vm->byte_count=3593;
+    assert(call(b,812,1)<0&&b->vm->sp==2);b->vm->byte_count=count;
+    /* Original hage_scmode.mes loads bg04 directly onto display layer0. */
+    uint8_t *data=NULL;size_t size=0;KImage expected={0};
+    assert(!ai6_read_named(&b->images,"bg04.akb",&data,&size)&&!rmt_decode(data,size,&expected));free(data);
+    for(unsigned async=0;async<2;async++){
+        if(async)assert(!bootstrap_enable_async_images(b));
+        KValue args[]={{0,NULL},{0,"bg04.akb"}};assert(!call_layer(b,args,2,1));
+        for(unsigned i=0;b->image_loading&&i<1000000;i++)bootstrap_frame(b);
+        assert(!b->image_loading&&!b->error[0]&&b->last_loaded_layer==0);
+        for(unsigned y=0;y<expected.height;y++)assert(!memcmp(b->layers[0].pixels+(y+expected.y)*2560+expected.x*4,expected.pixels+y*expected.stride,expected.width*4));
+        assert(b->vm->globals[0][40].number==expected.x+(int)expected.width);
+    }
+    rmt_free(&expected);bootstrap_destroy(b);
+    puts("Kisaku scene context: native 24-byte name storage, owned readback, bounds/error operands and display-layer0 sync/async image loading: PASS");
+}
+
+static void test_location_label(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=7;
+    for(unsigned i=0;i<2;i++){
+        unsigned layer=i?7:0;rmt_free(&b->layers[layer]);
+        b->layers[layer]=(KImage){0,0,640,480,2560,calloc(480,2560)};assert(b->layers[layer].pixels);
+    }
+    memset(b->layers[0].pixels,127,480*2560);
+    for(unsigned y=304;y<336;y++)for(unsigned x=160;x<192;x++){
+        uint8_t *p=b->layers[7].pixels+y*2560+x*4;p[2]=255;p[3]=255;
+        if(x==160){p[1]=255;p[2]=0;}
+    }
+    b->font_width=b->font_height=16;b->vm->globals[0][30].number=16;b->vm->globals[0][31].number=18;
+    b->vm->globals[0][33].number=0xffffff;
+    test_setting(b,"Msg","Alpha","92");test_setting(b,"Msg","Red","0");test_setting(b,"Msg","Green","0");test_setting(b,"Msg","Blue","0");
+    uint8_t *frame=malloc(480*2560);assert(frame);
+    for(int place=0;place<40;place++){
+        b->vm->globals[0][0].number=place;
+        assert(!call(b,526,2)&&!b->vm->sp&&b->exec526_active);
+        unsigned bytes=(unsigned)(b->vm->globals[0][46].number-168)/8;
+        assert(bytes>0&&bytes<=30&&b->exec526_x==608-(int)bytes*8&&b->exec526_y==16);
+        assert(b->vm->globals[0][49].number==7&&b->vm->globals[0][42].number==168);
+        assert(b->exec526_surfaces[0].pixels[3]==0&&b->exec526_surfaces[0].pixels[7]==182);
+        unsigned glyphs=0;for(unsigned p=0;p<336*32;p++)glyphs+=b->exec526_surfaces[1].pixels[p*4+3]!=0;assert(glyphs);
+        bootstrap_frame(b);assert(b->exec526_drawn&&!b->error[0]);
+        unsigned offset=16*2560+(unsigned)b->exec526_x*4;
+        assert(b->layers[0].pixels[offset]==127&&b->layers[0].pixels[offset+4]==127*(255-182)/255);
+        assert(b->layers[0].pixels[offset+7]==127); /* Native blend keeps destination alpha. */
+        memcpy(frame,b->layers[0].pixels,480*2560);bootstrap_frame(b);
+        assert(!memcmp(frame,b->layers[0].pixels,480*2560)); /* No repeated blend darkening. */
+        b->layers[0].pixels[479*2560]=99;bootstrap_frame(b);
+        assert(b->layers[0].pixels[479*2560]==99); /* Do not restore unrelated UI writes. */
+        b->layers[0].pixels[479*2560]=127;
+        assert(!call(b,526,1)&&!b->exec526_active&&!b->exec526_drawn);
+        for(unsigned p=0;p<480*2560;p++)assert(b->layers[0].pixels[p]==127);
+    }
+    b->vm->globals[0][0].number=-1;assert(call(b,526,2)<0&&b->vm->sp==2);
+    assert(!call_location_create(b,160,304,16,16,0)&&!b->vm->sp&&b->exec526_active);
+    assert(b->exec526_width==16&&b->exec526_height==16&&b->exec526_x==608&&b->exec526_y==16);
+    bootstrap_frame(b);assert(b->exec526_drawn&&!b->error[0]);
+    assert(!call(b,526,1)&&!b->exec526_active&&!b->exec526_drawn);
+    free(frame);bootstrap_destroy(b);
+    puts("Kisaku location labels: all 40 CP932 names, native caps/key/alpha, clipped position, stable overlay and release: PASS");
+}
+static int call_anime13(KBootstrap *b,int action,int bank,int cell){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=13;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){73,NULL}));
+    if(action!=6&&action!=7&&action!=10&&action!=11){
+        assert(!kvm_push(b->vm,(KValue){cell,NULL}));assert(!kvm_push(b->vm,(KValue){bank,NULL}));
+    }
+    assert(!kvm_push(b->vm,(KValue){action,NULL}));
+    int result=bootstrap_dispatch(b);
+    if(!result)assert(b->vm->sp==1&&b->vm->stack[0].number==73);
+    return result;
+}
+static void test_animation_registration(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    uint8_t data[0x620]={0};
+    for(unsigned i=0;i<3;i++){data[i*4]=0;data[i*4+1]=6;}data[0x600]=255;
+    assert(ax_load(&b->ax,"registry.ax",data,sizeof(data)));
+    assert(!call(b,1011,0));strcpy(b->media_background_name,"EV14A.AKB");
+    /* Real duplicate-name records 5001/5002 require different tracks. */
+    assert(!call_anime13(b,2,0,1)&&b->ax_registered[1]==1);
+    assert(!call(b,1011,11)&&b->vm->bytes[5001]&&!b->vm->bytes[5002]);
+    b->vm->bytes[5001]=0;
+    assert(!call_anime13(b,2,0,1)&&b->ax_registered[1]==2);
+    assert(!call(b,1011,11)&&!b->vm->bytes[5001]); /* Duplicates count. */
+    assert(!call_anime13(b,4,0,1)&&b->ax_registered[1]==1&&b->ax.cells[1].state==AX_STOPPED);
+    assert(!call(b,1011,11)&&b->vm->bytes[5001]); /* State is not registration. */
+    assert(!call_anime13(b,4,0,1)&&!b->ax_registered[1]);
+    assert(!call_anime13(b,2,0,2));assert(!call(b,1011,11)&&b->vm->bytes[5002]);
+    strcpy(b->media_background_name,"EV01.AKB");
+    assert(!call(b,1011,11)&&!b->vm->bytes[6231]); /* Unconditional needs empty list. */
+    b->vm->globals[0][50].number=0;b->wait_input=1;
+    assert(!call_anime13(b,8,0,2)&&b->ax_registered[2]==1);
+    assert(bootstrap_run(b,1)==1&&!b->ax_modal&&!b->ax_registered[2]);
+    assert(!call(b,1011,11)&&b->vm->bytes[6231]);
+    assert(!call_anime13(b,9,0,2)&&b->ax_registered[2]==1);
+    assert(!call_anime13(b,10,0,0));assert(bootstrap_run(b,1)==1&&!b->ax_registered[2]);
+    assert(!call_anime13(b,11,0,0)&&b->ax_registered[2]==1);
+    assert(!call_anime13(b,6,0,0)&&!b->ax_registered[2]);
+    assert(!call_anime13(b,7,0,0));
+    assert(!call_anime13(b,5,0,0)&&!b->ax_registered[0]); /* Direct wait doesn't register. */
+    b->vm->globals[0][50].number=0x20;bootstrap_cancel(b);assert(!b->ax_modal);
+    assert(call_anime13(b,2,10,0)<0&&b->vm->sp==4&&b->vm->stack[0].number==73);
+    b->ax_registered[2]=UINT32_MAX;
+    assert(call_anime13(b,2,0,2)<0&&b->vm->sp==4&&b->ax_registered[2]==UINT32_MAX);
+    bootstrap_destroy(b);
+    puts("Kisaku CG registration: real conditional variants, duplicate count, stop/pause/resume, unconditional gating and transactional operands: PASS");
+}
+static void test_animation_waits(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* A real instruction stream: delay two ticks, boundary, then finish.
+       Use distinct nonzero indices to detect accidentally waiting on normal AX. */
+    uint8_t data[0x640]={0};unsigned index=2*32+5,start=0x600;
+    for(unsigned j=0;j<4;j++)data[index*4+j]=(uint8_t)(start>>(j*8));
+    data[start]=2;data[start+1]=2;data[start+5]=1;data[start+6]=1;data[start+10]=255;
+    assert(ax_load(&b->ax_extra,"wait.ax",data,sizeof(data)));
+    b->vm->globals[0][50].number=0x10;b->wait_input=1;
+    b->ax.cells[17].state=0;
+    const KValue play[]={{5,NULL},{2,NULL},{5,NULL},{520,NULL}};
+    assert(!call_anime520(b,play,4)&&!b->vm->sp&&b->ax_extra_modal==1);
+    assert(bootstrap_run(b,1)==1&&b->ax_extra_modal==1);
+    bootstrap_cancel(b);assert(b->ax_extra_modal==1); /* No skip permission. */
+    b->vm->globals[0][50].number|=0x20;
+    bootstrap_confirm(b);assert(b->ax_extra_modal==1); /* Native 0x101 is cancel. */
+    bootstrap_cancel(b);assert(!b->ax_extra_modal&&!b->ax_extra.wait_cell&&b->ax_extra.cells[index].state==AX_STOPPED&&b->wait_input);
+    assert(!call_anime520(b,play,4));
+    for(unsigned frame=0;frame<16&&b->ax_extra_modal;frame++){bootstrap_frame(b);assert(bootstrap_run(b,1)==1);}
+    assert(!b->error[0]&&!b->ax_extra_modal&&!b->ax_extra.wait_cell&&b->ax.cells[17].state==0);
+    /* Pause reaches opcode 1 without executing the final stop. */
+    assert(ax_load(&b->ax_extra,"wait.ax",data,sizeof(data)));
+    KValue command[]={{5,NULL},{2,NULL},{2,NULL},{520,NULL}};
+    assert(!call_anime520(b,command,4));command[2].number=8;
+    assert(!call_anime520(b,command,4)&&b->ax_extra_modal==2);
+    bootstrap_cancel(b);assert(b->ax_extra_modal==2);
+    for(unsigned frame=0;frame<16&&b->ax_extra_modal;frame++){bootstrap_frame(b);assert(bootstrap_run(b,1)==1);}
+    struct ax_cell paused=b->ax_extra.cells[index];
+    assert(!b->error[0]&&!b->ax_extra_modal&&paused.state==4&&paused.ip==10);
+    command[2].number=9;assert(!call_anime520(b,command,4));paused.state=0;
+    assert(!memcmp(&paused,&b->ax_extra.cells[index],sizeof(paused)));
+    bootstrap_frame(b);bootstrap_frame(b);assert(b->ax_extra.cells[index].state==AX_STOPPED);
+    /* Action 8 scans other tracks too; disabled animation settles pending
+       pauses instead of hanging forever waiting for a disabled clock. */
+    b->ax_extra.cells[index].state=4;b->ax_extra.cells[index+1]=b->ax_extra.cells[index];
+    b->ax_extra.cells[index+1].state=0;b->vm->globals[0][50].number=0;
+    command[2].number=8;assert(!call_anime520(b,command,4));
+    assert(bootstrap_run(b,1)==1&&b->ax_extra_modal==2&&b->ax_extra.cells[index+1].state==3);
+    assert(bootstrap_run(b,1)==1&&!b->ax_extra_modal&&b->ax_extra.cells[index+1].state==4);
+    b->ax_extra.cells[index+2].state=1;
+    assert(!call(b,520,11)&&b->ax_extra.cells[index].state==0&&b->ax_extra.cells[index+1].state==0&&b->ax_extra.cells[index+2].state==1);
+    assert(!call(b,520,10)&&b->ax_extra_modal==2);
+    assert(bootstrap_run(b,1)==1&&!b->ax_extra_modal&&b->ax_extra.cells[index].state==4&&b->ax_extra.cells[index+2].state==1);
+    /* Stop and replacement clear pending waits; failures consume nothing. */
+    assert(!call(b,520,7)&&!b->ax_extra_modal&&!b->ax_extra.wait_cell);
+    command[0].number=32;command[2].number=5;
+    assert(call_anime520(b,command,4)<0&&b->vm->sp==4&&!b->ax_extra_modal);
+    command[0].number=5;command[1].string="bad";
+    assert(call_anime520(b,command,4)<0&&b->vm->sp==4&&!b->ax_extra_modal);
+    command[1].string=NULL;command[0].number=7;
+    assert(call_anime520(b,command,4)<0&&b->vm->sp==4&&!b->ax_extra_modal);
+    bootstrap_destroy(b);
+    puts("Kisaku AX waits: completion, cancel permission, boundary pause/resume, disabled clock, independent manager, preserved invalid operands: PASS");
+}
+static void test_graphics_windows(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);
+    b->layer_count=9;b->vm->globals[0][50].number=0x10;
+    for(unsigned layer=0;layer<=9;layer++){
+        rmt_free(&b->layers[layer]);b->layers[layer]=(KImage){0,0,640,480,2560,malloc(480*2560)};
+        assert(b->layers[layer].pixels);memset(b->layers[layer].pixels,20+layer,480*2560);
+    }
+    /* Two nonzero bank/cell values and distinct source/destination colors
+       distinguish argument reversal, wrong atlas, and a leaked target. */
+    uint8_t ax[0x680]={0};unsigned track=2*32+5,start=0x600;
+    for(unsigned j=0;j<4;j++)ax[track*4+j]=(uint8_t)(start>>(j*8));
+    uint32_t descriptor[7]={0,11,12,3,2,40,50};memcpy(ax+0x500,descriptor,sizeof(descriptor));
+    ax[start]=1;ax[start+1]=20;ax[start+5]=9;ax[start+10]=255;
+    assert(ax_load(&b->ax_extra,"synthetic.ax",ax,sizeof(ax))&&ax_load(&b->ax,"synthetic.ax",ax,sizeof(ax)));
+    const KValue first[]={{3,NULL},{5,NULL},{2,NULL},{12,NULL},{520,NULL}};
+    assert(!call_anime520(b,first,5)&&!b->vm->sp&&!b->animation_target_layer);
+    for(unsigned y=50;y<52;y++)for(unsigned x=40;x<43;x++){
+        const uint8_t *d=b->layers[3].pixels+y*2560+x*4;
+        assert(d[0]==29&&d[1]==29&&d[2]==29&&d[3]==23);
+        assert(b->layers[0].pixels[y*2560+x*4]==20);
+    }
+    KValue start_args[]={{5,NULL},{2,NULL},{2,NULL},{520,NULL}};
+    assert(!call_anime520(b,start_args,4));
+    for(unsigned frame=0;frame<32;frame++)bootstrap_frame(b);
+    assert(!b->error[0]&&b->layers[0].pixels[50*2560+40*4]==29);
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=13;b->vm->sp=0;
+    const int normal[]={4,5,2,12};for(unsigned i=0;i<4;i++)assert(!kvm_push(b->vm,(KValue){normal[i],NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->ax_destination);
+    assert(b->layers[4].pixels[50*2560+40*4]==28&&b->layers[4].pixels[50*2560+40*4+3]==24);
+    /* Values update all private rows. Only the selected client rectangle
+       may reach the display; rows below it remain the captured scene. */
+    for(unsigned rows=1;rows<=4;rows++){
+        const KValue setup[]={{(int32_t)rows,NULL},{0,NULL},{10,NULL},{528,NULL}};
+        assert(!call_anime520(b,setup,4));
+        const KValue values[]={{10,NULL},{30,NULL},{50,NULL},{802,NULL},{0,NULL},{528,NULL}};
+        assert(!call_anime520(b,values,6));
+        memset(b->layers[0].pixels,87,480*2560);
+        if(!b->param_backing.pixels)b->param_backing=(KImage){18,340,602,112,2408,malloc(112*2408)};
+        assert(b->param_backing.pixels);memset(b->param_backing.pixels,87,112*2408);
+        b->param_animation_window=1;bootstrap_frame(b);assert(!b->error[0]);
+        unsigned height=rows==4?112:30+29*(rows-1);
+        for(unsigned y=0;y<112;y++)for(unsigned x=0;x<602;x++){
+            const uint8_t *d=b->layers[0].pixels+(340+y)*2560+(18+x)*4;
+            if(y<height)assert(!memcmp(d,b->param_surface.pixels+y*2408+x*4,4));
+            else for(unsigned c=0;c<4;c++)assert(d[c]==87);
+        }
+        if(rows<4){
+            b->layers[0].pixels[451*2560+18*4]=66;bootstrap_frame(b);
+            assert(b->layers[0].pixels[451*2560+18*4]==66);
+        }
+        /* A completed chime must close the window instead of restarting. */
+        b->param_animation_active=1;b->param_animation_phase=3;b->param_animation_chime=1;
+        for(unsigned i=0;i<4;i++)b->param_animation_plan.target[i]=b->param_values[i];
+        b->param_animation_plan.total_target=b->param_total;
+        bootstrap_frame(b);assert(!b->error[0]&&!b->param_animation_active&&!b->param_animation_window);
+        assert(!memcmp(b->layers[0].pixels+340*2560+18*4,b->param_backing.pixels,602*4));
+    }
+    bootstrap_destroy(b);
+    puts("Kisaku parameter client clipping and AX bank/cell/target/source/first-frame restoration: PASS");
+}
+static void test_portrait_key(const char *root,const char *saves,const char *name,unsigned key){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    uint8_t *data=NULL;size_t size=0;KImage image={0};
+    assert(!ai6_read_named(&b->images,name,&data,&size)&&!rmt_decode(data,size,&image));free(data);
+    b->layer_count=2;b->layers[2]=image;
+    size_t bytes=image.stride*image.height;
+    b->layers[1]=(KImage){0,0,image.width,image.height,image.stride,malloc(bytes)};assert(b->layers[1].pixels);
+    /* Original 19/4 pop order ends with key=0x00ff00, copyAlpha=0/1.
+       An opaque light backdrop makes dropped black/near-black pixels visible. */
+    KValue args[]={{0,NULL},{(int32_t)key,NULL},{2,NULL},{0,NULL},{0,NULL},{1,NULL},
+        {(int32_t)image.height,NULL},{(int32_t)image.width,NULL},{0,NULL},{0,NULL}};
+    unsigned transparent=0,darks=0,near_black=0;
+    for(unsigned alpha=0;alpha<=1;alpha++){
+        for(size_t i=0;i<bytes;i+=4){uint8_t *p=b->layers[1].pixels+i;p[0]=211;p[1]=223;p[2]=239;p[3]=73;}
+        args[0].number=(int32_t)alpha;assert(!call_layer(b,args,10,4)&&!b->vm->sp);
+        for(size_t i=0;i<bytes;i+=4){
+            const uint8_t *s=image.pixels+i,*d=b->layers[1].pixels+i;
+            unsigned rgb=s[0]|(unsigned)s[1]<<8|(unsigned)s[2]<<16;
+            if(rgb==key){assert(d[0]==211&&d[1]==223&&d[2]==239&&d[3]==73);transparent++;}
+            else {assert(!memcmp(s,d,3)&&d[3]==(alpha?s[3]:73));if(s[0]<8&&s[1]<8&&s[2]<8)darks++;if(rgb==1)near_black++;}
+        }
+    }
+    assert(darks);
+    if(!strcmp(name,"ev01.akb"))assert(near_black==49*2);
+    else assert(transparent);
+    printf("Kisaku %s key=%06x: %u keyed, %u dark, %u RGB=000001 pixels checked twice: PASS\n",name,key,transparent/2,darks/2,near_black/2);
+    bootstrap_destroy(b);
 }
 static int call_music_start(KBootstrap *b,const char *name,int channel,int leftover){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=15;b->vm->sp=0;
@@ -40,14 +323,585 @@ static int param_values(KBootstrap *b,int a,int c,int d,int e){
     return bootstrap_dispatch(b);
 }
 static void check_small_glyph(KBootstrap *b,unsigned x,unsigned glyph){
-    (void)b;(void)x;(void)glyph;
-    /* Atlas compositing is keyed and may preserve transparent destination
-       pixels; geometry is covered by the renderer's bounds checks. */
-    return;
-/*
     unsigned sx=glyph<10?524+8*glyph:524+8*(glyph-10),sy=glyph<10?112:128;
-    for(unsigned y=0;y<16;y++)for(unsigned x0=0;x0<8;x0++){const uint8_t*d=b->param_surface.pixels+(92+y)*b->param_surface.stride+(x+x0)*4,*s=b->param_atlas.pixels+(sy+y)*b->param_atlas.stride+(sx+x0)*4;if((s[0]==0&&s[1]==255&&s[2]==0)||s[3]==0)continue;assert(d[0]==s[0]&&d[1]==s[1]&&d[2]==s[2]);}
-*/
+    for(unsigned y=0;y<16;y++)assert(!memcmp(b->param_surface.pixels+(92+y)*b->param_surface.stride+x*4,
+        b->param_atlas.pixels+(sy+y)*b->param_atlas.stride+sx*4,32));
+}
+static void test_message_fade(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=1;
+    for(unsigned i=0;i<2;i++)b->layers[i]=(KImage){0,0,640,480,2560,calloc(480,2560)};
+    unsigned idx=0;for(;idx<b->setting_count;idx++)if(!strcmp(b->settings[idx].section,"Display")&&!strcmp(b->settings[idx].key,"EffectSpeed"))break;
+    if(idx==b->setting_count)b->setting_count++;
+    strcpy(b->settings[idx].section,"Display");strcpy(b->settings[idx].key,"EffectSpeed");
+    b->vm->globals[0][49].number=1;b->vm->globals[0][46].number=2;
+    b->vm->globals[0][47].number=2;b->vm->globals[0][31].number=1;
+    const size_t pixel=2*2560+319*4;
+    KValue fade[]={{71,NULL},{1,NULL},{-1,NULL},{8,NULL},{3,NULL},{43,NULL}};
+    for(unsigned speed=0;speed<3;speed++){
+        snprintf(b->settings[idx].value,sizeof(b->settings[idx].value),"%u",speed);
+        assert(!call(b,43,0));
+        for(unsigned i=0;i<640*480;i++){
+            uint8_t *d=b->layers[0].pixels+i*4;d[0]=50;d[1]=50;d[2]=50;d[3]=77;
+        }
+        uint8_t *src=b->layers[1].pixels+2*2560;
+        src[0]=100;src[1]=100;src[2]=100;src[3]=192;
+        uint8_t *old=b->mes_fade_surfaces[1].pixels+pixel;
+        old[0]=200;old[1]=200;old[2]=200;old[3]=128;
+        assert(!call_anime520(b,fade,6)&&b->vm->sp==1&&b->vm->stack[0].number==71);
+        unsigned steps=speed==0?4:speed==1?2:0;
+        assert(b->mes_fade_steps==steps);
+        if(steps){
+            assert(b->mes_fade_surfaces[0].pixels[pixel]==100);
+            assert(b->mes_fade_surfaces[0].pixels[pixel+16]==0);
+            assert(bootstrap_run(b,1)==1); /* VM must wait, with its stack intact. */
+            bootstrap_frame(b);
+            unsigned op=255-255/steps,a=128*op/255,na=192*(255-op)/255;
+            unsigned expected=(50*(255-a)/255+200*a/255)*(255-na)/255+100*na/255;
+            assert(b->layers[0].pixels[pixel]==expected&&b->layers[0].pixels[pixel+3]==77);
+        }
+        unsigned frames=steps?1:0;
+        while(b->mes_fade_transition&&frames<10){bootstrap_frame(b);frames++;}
+        assert(frames==(speed==0?4:speed==1?2:0));
+        bootstrap_frame(b);
+        assert(!b->mes_fade_transition&&b->layers[0].pixels[pixel]==87);
+        assert(b->mes_fade_surfaces[1].pixels[pixel]==100&&!b->mes_fade_surfaces[0].pixels[pixel]);
+        bootstrap_frame(b);assert(b->layers[0].pixels[pixel]==87); /* no repeated blending */
+        KValue hide[]={{0,NULL},{4,NULL},{43,NULL}};
+        assert(!call_anime520(b,hide,3));bootstrap_frame(b);
+        assert(!b->mes_fade_visible&&b->layers[0].pixels[pixel]==50);
+        assert(!call(b,43,1));bootstrap_frame(b);
+    }
+    assert(!call(b,43,0));
+    KValue bad[]={{4,NULL},{-1,NULL},{8,NULL},{3,NULL},{43,NULL}};
+    assert(call_anime520(b,bad,5)<0&&b->vm->sp==5&&!b->mes_fade_transition);
+    b->vm->globals[0][46].number=700;
+    assert(call_anime520(b,fade,6)<0&&b->vm->sp==6&&!b->mes_fade_transition);
+    b->vm->globals[0][46].number=2;
+    b->vm->globals[0][50].number|=0x4000; /* full duration, even with EffectSpeed=2 */
+    assert(!call_anime520(b,fade,6)&&b->mes_fade_steps==8);
+    bootstrap_confirm(b);assert(b->mes_fade_transition==3);
+    b->vm->globals[0][50].number&=~0x4000;
+    bootstrap_confirm(b);assert(!b->mes_fade_transition);
+    KValue shade[]={{0,NULL},{5,NULL},{43,NULL}};
+    assert(!call_anime520(b,shade,3)&&b->mes_fade_shade_visible);
+    bootstrap_frame(b);assert(b->layers[0].pixels[0]==50*155/255&&b->layers[0].pixels[3]==77);
+    assert(!call_anime520(b,shade,3)&&!b->mes_fade_transition);
+    shade[1].number=6;assert(!call_anime520(b,shade,3));bootstrap_frame(b);
+    assert(!b->mes_fade_shade_visible&&b->layers[0].pixels[0]==50);
+    assert(!call_anime520(b,shade,3)&&!b->mes_fade_transition);
+    bootstrap_destroy(b);
+    puts("Kisaku message crossfade: RGB/Alpha, speed/15ms clock, persistent sprites, skip and error stack: PASS");
+}
+static void test_message_reveal(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=1;b->layers[1]=(KImage){0,0,640,480,2560,calloc(480,2560)};
+    assert(b->layers[1].pixels);test_setting(b,"Display","EffectSpeed","0");
+    b->vm->globals[0][49].number=1;b->vm->globals[0][46].number=600;
+    b->vm->globals[0][47].number=210;b->vm->globals[0][31].number=4;
+    uint8_t *mask=NULL;size_t mask_size=0;
+    assert(!ai6_read_named(&b->data,"03.bin",&mask,&mask_size)&&mask_size>=640*480);
+    for(unsigned type=2;type<=3;type++)for(unsigned speed=0;speed<3;speed++){
+        char setting[2]={(char)('0'+speed),0};test_setting(b,"Display","EffectSpeed",setting);
+        assert(!call(b,43,0));b->mes_fade_visible=1;
+        for(unsigned p=0;p<640*480;p++){
+            uint8_t *screen=b->layers[0].pixels+p*4,*old=b->mes_fade_surfaces[1].pixels+p*4,*src=b->layers[1].pixels+p*4;
+            screen[0]=screen[1]=screen[2]=50;screen[3]=77;
+            old[0]=old[1]=old[2]=200;old[3]=128;
+            src[0]=src[1]=src[2]=100;src[3]=192;
+        }
+        KValue args[]={{71,NULL},{(int32_t)type,NULL},{-1,NULL},{8,NULL},{3,NULL},{43,NULL}};
+        assert(!call_anime520(b,args,6)&&b->vm->sp==1&&b->vm->stack[0].number==71);
+        unsigned steps=speed==0?4:speed==1?2:0;
+        if(steps){
+            assert(bootstrap_run(b,1)==1);bootstrap_frame(b);
+            assert(b->mes_fade_type==type&&b->mes_fade_alpha==255);
+            for(unsigned y=210;y<214;y++)for(unsigned x=20;x<622;x++){
+                unsigned a=type==2?192*(255/steps)/255:
+                    mask[y*640+x]>=512/steps?0:512/steps-mask[y*640+x];
+                if(a>192)a=192;
+                unsigned expected=(50*127/255+200*128/255)*(255-a)/255+100*a/255;
+                assert(b->layers[0].pixels[y*2560+x*4]==expected&&b->layers[0].pixels[y*2560+x*4+3]==77);
+            }
+            /* Old pixels outside this line stay visible throughout. */
+            assert(b->layers[0].pixels[0]==124);
+        }
+        for(unsigned frame=0;frame<8&&b->mes_fade_transition;frame++)bootstrap_frame(b);
+        bootstrap_frame(b);assert(!b->mes_fade_transition);
+        assert(b->layers[0].pixels[210*2560+20*4]==87&&b->layers[0].pixels[0]==124);
+        assert(b->mes_fade_surfaces[1].pixels[0]==200&&b->mes_fade_surfaces[1].pixels[210*2560+20*4]==100);
+        assert(!b->mes_fade_surfaces[0].pixels[210*2560+20*4+3]);
+        bootstrap_frame(b);assert(b->layers[0].pixels[0]==124); /* No cumulative blending. */
+        assert(!call(b,43,1));bootstrap_frame(b);assert(!b->mes_fade_mask);
+    }
+    /* Mask failure preserves both the VM arguments and persistent text. */
+    assert(!call(b,43,0));Ai6Archive archive=b->data;b->data=(Ai6Archive){0};
+    KValue bad[]={{3,NULL},{-1,NULL},{8,NULL},{3,NULL},{43,NULL}};
+    assert(call_anime520(b,bad,5)<0&&b->vm->sp==5&&!b->mes_fade_transition&&!b->mes_fade_mask);
+    b->data=archive;free(mask);bootstrap_destroy(b);
+    puts("Kisaku message types 2/3: retained old text, native 03.bin alpha mask, three speeds, line-only commit, RGB/Alpha and missing-mask rejection: PASS");
+}
+static void test_letter_pages(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=1;b->layers[1]=(KImage){0,0,640,480,2560,malloc(480*2560)};assert(b->layers[1].pixels);
+    assert(call(b,525,3)<0&&b->vm->sp==2&&!b->letter_mode);
+    for(unsigned speed=0;speed<3;speed++){
+        char value[2]={(char)('0'+speed),0};test_setting(b,"Display","EffectSpeed",value);
+        for(unsigned p=0;p<640*480;p++){
+            uint8_t *d=b->layers[0].pixels+p*4;d[0]=200;d[1]=90;d[2]=17;d[3]=99;
+        }
+        memset(b->layers[1].pixels,55,480*2560);
+        b->vm->globals[0][50].number=0x4000; /* This fade follows EffectSpeed even here. */
+        assert(!call(b,525,0)&&!b->vm->sp);
+        assert(b->font_width==24&&b->font_height==24&&b->vm->globals[0][43].number==12&&b->vm->globals[0][31].number==24);
+        assert(b->vm->globals[0][46].number==32&&b->vm->globals[0][47].number==12&&b->vm->globals[0][49].number==1);
+        for(unsigned p=0;p<480*2560;p++)assert(!b->layers[1].pixels[p]);
+        assert(b->letter_surfaces[0].pixels[0]==200&&b->letter_surfaces[0].pixels[3]==99);
+        assert(b->letter_surfaces[1].pixels[0]==110&&!b->letter_surfaces[1].pixels[1]&&!b->letter_surfaces[1].pixels[2]);
+        unsigned frames=0;
+        if(b->letter_transition){
+            assert(call(b,525,2)<0&&b->vm->sp==2);b->error[0]=0;
+            assert(bootstrap_run(b,1)==1); /* Fade blocks subsequent script instructions. */
+        }
+        while(b->letter_transition&&frames<9){bootstrap_frame(b);frames++;}
+        assert(frames==(speed==0?7:speed==1?3:0)&&b->letter_mode&&b->layers[0].pixels[0]==110);
+        for(unsigned page=0;page<2;page++){
+            memset(b->layers[1].pixels,88,480*2560);b->layers[0].pixels[0]=250;
+            b->vm->globals[0][46].number=400;b->vm->globals[0][47].number=156;
+            strcpy(b->message_pending,"previous page");b->message_pending_size=strlen(b->message_pending);
+            assert(!call(b,525,3)&&!b->vm->sp&&!b->message_pending_size);
+            assert(b->letter_surfaces[2].pixels[0]==200&&b->letter_surfaces[2].pixels[3]==99);
+            for(unsigned frame=0;b->letter_transition&&frame<9;frame++)bootstrap_frame(b);
+            assert(!b->letter_transition&&b->letter_mode&&b->layers[0].pixels[0]==110);
+            assert(b->letter_surfaces[0].pixels[0]==200&&b->letter_surfaces[0].pixels[3]==99);
+            assert(!b->layers[1].pixels[0]&&b->vm->globals[0][47].number==12);
+        }
+        b->layers[0].pixels[0]=77;assert(!call(b,525,2));
+        for(unsigned frame=0;b->letter_transition&&frame<9;frame++)bootstrap_frame(b);
+        assert(!b->letter_mode&&!b->letter_transition&&b->font_width==16&&b->font_height==16);
+        assert(b->layers[0].pixels[0]==200&&b->layers[0].pixels[1]==90&&b->layers[0].pixels[2]==17&&b->layers[0].pixels[3]==99);
+        assert(b->vm->globals[0][43].number==8&&b->vm->globals[0][31].number==18);
+    }
+    KValue unsupported[]={{123,NULL},{1,NULL},{525,NULL}};
+    assert(call_anime520(b,unsupported,3)<0&&b->vm->sp==3&&b->vm->stack[0].number==123);
+    bootstrap_destroy(b);
+    puts("Kisaku letter pages: native entry/clear/exit, 24px layout, saturating RGB, original background across repeated pages, speeds and error stack: PASS");
+}
+static void test_letter_body(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=1;b->layers[1]=(KImage){0,0,640,480,2560,calloc(480,2560)};assert(b->layers[1].pixels);
+    b->read_size=4096;b->read_flags=calloc(b->read_size,1);assert(b->read_flags);
+    b->audio_counts[2]=1;b->audio_objects[2]=calloc(1,sizeof(*b->audio_objects[2]));assert(b->audio_objects[2]);
+    KValue show[]={{123,NULL},{1,NULL},{525,NULL}};
+    for(unsigned speed=0;speed<3;speed++){
+        test_setting(b,"Display","EffectSpeed","2");
+        test_setting(b,"Msg","IsOneMes","0");test_setting(b,"Msg","IsAutoMes","0");
+        for(unsigned i=0;i<640*480;i++){uint8_t *p=b->layers[0].pixels+i*4;p[0]=200;p[1]=160;p[2]=120;p[3]=99;}
+        assert(!call(b,525,0));
+        for(unsigned i=0;i<640*480;i++)b->layers[0].pixels[i*4+3]=99;
+        for(unsigned y=12;y<60;y++)for(unsigned x=0;x<640;x++){
+            uint8_t *p=b->layers[1].pixels+y*2560+x*4;p[0]=220;p[1]=210;p[2]=200;p[3]=y<36?141:230;
+        }
+        b->vm->globals[0][46].number=80;b->vm->globals[0][47].number=36;b->vm->globals[0][50].number=0x180;
+        strcpy(b->message_pending,"first part and second part");b->message_pending_size=strlen(b->message_pending);
+        if(speed==0){
+            Ai6Archive archive=b->data;b->data=(Ai6Archive){0};
+            assert(call_anime520(b,show,3)<0&&b->vm->sp==3&&!b->letter_active&&!b->letter_mask);
+            assert(b->message_pending_size&&b->vm->globals[0][50].number==0x180);b->data=archive;
+        }
+        char value[2]={(char)('0'+speed),0};test_setting(b,"Display","EffectSpeed",value);
+        assert(!call_anime520(b,show,3)&&!b->vm->sp&&b->letter_active&&b->message_active);
+        assert(b->letter_mask&&b->message_read_id==123&&!(b->vm->globals[0][50].number&0x80));
+        assert(b->read_flags[123>>3]&(0x80u>>(123&7)));
+        assert(!strcmp(b->history[(b->history_next+63)%64],"first part and second part")&&!b->message_pending_size);
+        assert(!bootstrap_can_save(b));
+        unsigned phase=speed==1?64:32;
+        bootstrap_frame(b);
+        for(unsigned x=0;x<640;x++){
+            int a=141,ramp=(int)phase-b->letter_mask[17*640+x];if(ramp<0)ramp=0;if(speed!=2&&a>ramp)a=ramp;
+            const uint8_t *p=b->layers[0].pixels+17*2560+x*4;
+            assert(p[0]==220*a/255+110*(255-a)/255&&p[1]==210*a/255+70*(255-a)/255&&p[3]==99);
+        }
+        if(speed!=2)assert(b->layers[0].pixels[41*2560]==110); /* Next line has not started. */
+        for(unsigned f=0;b->message_revealing&&f<30;f++)bootstrap_frame(b);
+        assert(!b->message_revealing&&b->letter_active&&!b->vm->sp);
+        assert(b->layers[0].pixels[17*2560]==220*141/255+110*114/255);
+        assert(b->layers[0].pixels[41*2560]==220*230/255+110*25/255);
+        assert(b->layers[1].pixels[17*2560+3]==141); /* Reveal never damages glyph coverage. */
+        bootstrap_confirm(b);
+        assert(!b->letter_active&&!b->message_active&&b->letter_cursor_x==80&&b->letter_cursor_y==36);
+        assert(b->vm->sp==1&&b->vm->stack[0].number==0&&(b->vm->globals[0][50].number&0x80));
+        /* A second prompt on this page begins at the previous cursor. */
+        b->layers[1].pixels[41*2560+90*4]=250;b->vm->globals[0][46].number=120;
+        assert(!call_anime520(b,show,3)&&b->letter_reveal_x==80&&b->letter_reveal_y==36);
+        bootstrap_pointer(b,1,470,1); /* No inherited footer menu on a letter. */
+        assert(!b->letter_active&&!b->message_request&&b->vm->sp==1);
+        assert(!call(b,525,2));for(unsigned f=0;b->letter_transition&&f<10;f++)bootstrap_frame(b);
+        assert(!b->letter_mode&&b->layers[0].pixels[0]==200);
+    }
+    test_setting(b,"Display","EffectSpeed","2");assert(!call(b,525,0));
+    b->layers[1].pixels[12*2560+32*4]=255;b->layers[1].pixels[12*2560+32*4+3]=255;
+    b->vm->globals[0][46].number=56;
+    test_setting(b,"Display","EffectSpeed","0");assert(!call_anime520(b,show,3));
+    bootstrap_confirm(b); /* One click during reveal completes AND returns. */
+    assert(!b->message_active&&!b->message_revealing&&b->vm->sp==1);
+    assert(!call_anime520(b,show,3));bootstrap_cancel(b);
+    assert(b->letter_transition==4&&b->letter_active&&!b->message_revealing);
+    bootstrap_confirm(b);assert(!b->vm->sp&&b->letter_active);
+    for(unsigned f=0;b->letter_transition&&f<10;f++)bootstrap_frame(b);
+    assert(b->message_user_hidden&&b->font_height==16&&b->layers[0].pixels[0]==200);
+    bootstrap_cancel(b);for(unsigned f=0;b->letter_transition&&f<10;f++)bootstrap_frame(b);
+    assert(!b->message_user_hidden&&b->letter_active&&b->font_height==24&&!b->vm->sp);
+    bootstrap_cancel(b);for(unsigned f=0;b->letter_transition&&f<10;f++)bootstrap_frame(b);
+    bootstrap_confirm(b);for(unsigned f=0;b->letter_transition&&f<10;f++)bootstrap_frame(b);
+    assert(!b->message_user_hidden&&b->letter_active&&!b->vm->sp);
+    bootstrap_confirm(b);assert(!b->letter_active&&b->vm->sp==1);
+    assert(!call_anime520(b,show,3));bootstrap_message_action(b,7);
+    assert(!b->message_open&&!b->message_buttons_motion);
+    bootstrap_message_action(b,5);assert(b->letter_backlog&&b->letter_transition==4);
+    for(unsigned f=0;b->letter_transition&&f<10;f++)bootstrap_frame(b);
+    assert(b->message_request==5&&b->message_user_hidden&&!b->vm->sp);
+    b->message_request=0;bootstrap_message_hide(b,0);
+    for(unsigned f=0;b->letter_transition&&f<10;f++)bootstrap_frame(b);
+    assert(!b->letter_backlog&&!b->message_user_hidden&&b->letter_active);bootstrap_confirm(b);
+    /* Auto waits for complete text; read-skip can finish a reveal immediately. */
+    test_setting(b,"Msg","IsAutoMes","1");test_setting(b,"Msg","AutoMesSpeed","104");
+    assert(!call_anime520(b,show,3));assert(b->message_auto_delay==500);
+    for(unsigned f=0;f<30;f++)bootstrap_frame(b);
+    assert(b->letter_active);bootstrap_frame(b);assert(!b->letter_active&&b->vm->sp==1);
+    test_setting(b,"Msg","IsAutoMes","0");test_setting(b,"Msg","IsOneMes","1");
+    assert(!call_anime520(b,show,3));bootstrap_frame(b);assert(!b->letter_active&&b->vm->sp==1);
+    test_setting(b,"Msg","IsOneMes","0");show[0].number=-1;
+    assert(!call_anime520(b,show,3)&&b->message_was_read);bootstrap_confirm(b);
+    if(b->vm->byte_count<4011)b->vm->byte_count=4011;
+    b->vm->bytes[4010]=1;show[0].number=32768;
+    assert(!call_anime520(b,show,3)&&b->message_read_id==27680);bootstrap_confirm(b);b->vm->bytes[4010]=0;
+    show[0].number=32768;assert(call_anime520(b,show,3)<0&&b->vm->sp==3&&!b->letter_active);
+    show[0]=(KValue){0,"invalid"};assert(call_anime520(b,show,3)<0&&b->vm->sp==3);
+    bootstrap_destroy(b);
+    puts("Kisaku letter body: real 01.bin, multiline RGB/Alpha, repeated prompts, confirm/hide/restore, auto/read skip, history and invalid operands: PASS");
+}
+
+static void audit_put32(uint8_t *p,uint32_t v){for(unsigned i=0;i<4;i++)p[i]=(uint8_t)(v>>(i*8));}
+static void test_startup_native_ax(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);b->layer_count=8;
+    b->layers[8]=(KImage){0,0,2,1,8,malloc(8)};
+    const uint8_t pixels[8]={19,29,39,49,0,255,0,255};memcpy(b->layers[8].pixels,pixels,8);
+    uint8_t data[0x590]={0};audit_put32(data,0x580);
+    const uint32_t d[7]={0,0,0,2,1,10,20};
+    for(unsigned i=0;i<7;i++)audit_put32(data+0x500+4*i,d[i]);
+    data[0x580]=9;data[0x585]=1;audit_put32(data+0x586,1);data[0x58a]=255;
+    assert(ax_load(&b->ax,"native.ax",data,sizeof(data))&&ax_control(&b->ax,1,0,0));
+    uint8_t *dst=b->layers[0].pixels+20*b->layers[0].stride+40;memset(dst,77,8);
+    b->vm->globals[0][50].number&=~0x10;
+    for(unsigned i=0;i<4;i++)bootstrap_frame(b);
+    assert(!b->ax.cells[0].ip&&dst[0]==77); /* Native animation enable flag. */
+    b->vm->globals[0][50].number|=0x10;
+    bootstrap_frame(b);assert(!b->ax.cells[0].ip);
+    bootstrap_frame(b);assert(!b->error[0]&&b->ax_events[0]==11);
+    assert(!memcmp(dst,pixels,3)&&dst[3]==77&&dst[4]==0&&dst[5]==255&&dst[7]==77);
+    bootstrap_frame(b);assert(b->ax_events[0]==2&&b->ax.cells[0].boundary_delay==0);
+    bootstrap_frame(b);assert(b->ax_events[0]==10&&b->ax.cells[0].state==AX_STOPPED);
+    audit_put32(data+0x500,1);audit_put32(data+0x518,500); /* keyed, second page */
+    assert(ax_load(&b->ax,"keyed.ax",data,sizeof(data))&&ax_control(&b->ax,1,0,0));
+    memset(dst,77,8);b->ax_clock=0;
+    bootstrap_frame(b);bootstrap_frame(b);
+    assert(!b->error[0]&&!memcmp(dst,pixels,3)&&dst[3]==77);
+    for(unsigned i=4;i<8;i++)assert(dst[i]==77);
+    bootstrap_destroy(b);
+    puts("Kisaku startup AX: layer 8, RGB/keyed copy, Y wrap, enable flag and boundary timing: PASS");
+}
+static void test_choice_stack_isolation(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* An unsupported choice body still executes its isolated evaluator first.
+       Force multiple reallocations; the caller's borrowed string must survive. */
+    uint8_t code[4+200*5+1]={0};unsigned at=4;
+    for(unsigned i=0;i<200;i++){code[at++]=0x32;code[at++]=0;code[at++]=0;code[at++]=0;code[at++]=(uint8_t)i;}
+    code[at++]=0;int id=kvm_add_module(b->vm,"choice-stack",code,at);assert(id>=0);
+    b->vm->current_list=0;b->vm->lists[0].count=1;b->vm->lists[0].items[0]=(KListItem){id,0,0};
+    const char sentinel[]="live caller value";assert(!kvm_push(b->vm,(KValue){123,sentinel}));
+    KValue *original=b->vm->stack;unsigned capacity=b->vm->stack_capacity;
+    assert(!kvm_push(b->vm,(KValue){14,NULL}));b->vm->syscall=31;b->vm->status=KVM_SYSCALL;
+    assert(bootstrap_dispatch(b)<0&&strstr(b->error,"choice body unsupported"));
+    assert(b->vm->stack==original&&b->vm->stack_capacity==capacity&&b->vm->sp==1);
+    assert(b->vm->stack[0].number==123&&b->vm->stack[0].string==sentinel);
+    bootstrap_destroy(b);
+    puts("Choice evaluation owns its stack: caller survives growth and rejected body: PASS");
+}
+static void test_setting(KBootstrap *b,const char *section,const char *key,const char *value){
+    unsigned i=0;for(;i<b->setting_count;i++)if(!strcmp(b->settings[i].section,section)&&!strcmp(b->settings[i].key,key))break;
+    if(i==b->setting_count)b->setting_count++;
+    snprintf(b->settings[i].section,sizeof(b->settings[i].section),"%s",section);
+    snprintf(b->settings[i].key,sizeof(b->settings[i].key),"%s",key);
+    snprintf(b->settings[i].value,sizeof(b->settings[i].value),"%s",value);
+}
+static void test_message_timing(KBootstrap *b){
+    test_setting(b,"Msg","ShowSpeed","124");test_setting(b,"Msg","IsAutoMes","0");
+    for(unsigned locked=0;locked<2;locked++)for(unsigned speed=0;speed<3;speed++){
+        char number[4];snprintf(number,sizeof(number),"%u",speed);test_setting(b,"Display","EffectSpeed",number);
+        b->message_active=b->message_visible=0;b->vm->globals[0][50].number=locked?0x4000:0;
+        memset(b->layers[0].pixels,100,640*480*4);assert(!call(b,10,0));
+        assert(!call(b,0,-1));unsigned steps=locked?12:speed==0?6:speed==1?3:0;
+        assert(b->message_slide==(steps?steps+1:0));
+        if(locked){bootstrap_confirm(b);assert(b->message_slide==13&&b->message_active);}
+        unsigned frames=0;
+        while(b->message_slide&&frames<20){
+            bootstrap_frame(b);frames++;
+            if(!locked&&speed==0&&frames==1){
+                assert(b->layers[0].pixels[465*2560+100*4]==100);
+                assert(b->layers[0].pixels[466*2560+100*4]==39);
+            }
+        }
+        assert(frames==(steps*900+999)/1000&&b->message_visible);
+        b->message_active=0;assert(!call(b,10,2));frames=0;
+        while(b->message_slide&&frames<20){bootstrap_frame(b);frames++;}
+        assert(frames==(steps*900+999)/1000&&!b->message_visible);
+        assert(b->layers[0].pixels[470*2560+100*4]==100);
+    }
+    b->vm->globals[0][50].number=0;test_setting(b,"Display","EffectSpeed","0");
+    assert(!call(b,0,-1)&&b->message_slide==7);bootstrap_confirm(b);
+    assert(!b->message_slide&&b->message_active); /* Skip motion, not the dialogue. */
+    test_setting(b,"Display","EffectSpeed","2");test_setting(b,"Msg","ShowSpeed","0");
+    assert(!call(b,10,0));b->vm->globals[0][46].number=64;
+    assert(!call(b,0,-1)&&b->message_delay==250&&b->message_revealing);
+    bootstrap_frame(b);assert(b->message_reveal_x==48);
+    for(unsigned i=0;i<14;i++)bootstrap_frame(b);
+    assert(b->message_reveal_x==48);bootstrap_frame(b);assert(b->message_reveal_x==64);
+    test_setting(b,"Msg","ShowSpeed","86");assert(!call(b,0,-1)&&b->message_delay==63);
+    test_setting(b,"Msg","ShowSpeed","104");assert(!call(b,0,-1)&&!b->message_delay&&b->message_revealing);
+    test_setting(b,"Msg","ShowSpeed","124");assert(!call(b,0,-1)&&!b->message_revealing);
+    /* Auto timing measures the accumulated message, not just its last TEXT,
+       and runs during reveal. 40 encoded bytes at speed52 => 2260 ms. */
+    test_setting(b,"Msg","ShowSpeed","0");test_setting(b,"Msg","AutoMesSpeed","52");test_setting(b,"Msg","IsAutoMes","1");
+    memset(b->message_pending,'a',40);b->message_pending[40]=0;b->message_pending_size=40;
+    assert(!call(b,0,-1)&&b->message_auto_delay==2260);
+    bootstrap_frame(b);assert(b->message_auto_clock==1000&&b->message_revealing);
+    test_setting(b,"Msg","IsAutoMes","0");
+    b->message_active=b->message_visible=0;b->message_voice_pending=0;assert(!call(b,10,0));
+    assert(bootstrap_setting_default(0)==86&&bootstrap_setting_limit(0)==124);
+    assert(bootstrap_setting_default(1)==52&&bootstrap_setting_limit(1)==104);
+    puts("Kisaku message timing: 15ms motion, speed/flag/skip, glyph delay and accumulated auto deadline: PASS");
+}
+static void test_message_prefix_and_buttons(KBootstrap *b){
+    b->vm->globals[0][50].number=0;
+    test_setting(b,"Display","EffectSpeed","2");test_setting(b,"Msg","ShowSpeed","0");
+    test_setting(b,"Msg","IsAutoMes","0");test_setting(b,"Msg","IsOneMes","0");test_setting(b,"Msg","EnableOpen","0");
+    const char *texts[]={("\x81\x6d\x8b\x53\x8d\xec\x81\x6e" "body"), "tag: \x81\x6d\x8b\x53\x8d\xec\x81\x6e", "ascii only", "\x81\x6d\x8b", "\x81\x75\x8b\x53\x81\x76"};
+    for(unsigned i=0;i<5;i++){
+        assert(!call(b,10,0));b->vm->globals[0][46].number=160;
+        strcpy(b->message_pending,texts[i]);b->message_pending_size=strlen(texts[i]);
+        for(unsigned y=8;y<26;y++)memset(b->layers[1].pixels+y*2560+32*4,177,128*4);
+        assert(!call(b,0,-1));unsigned width=i<2?64:0;
+        assert(!b->message_slide&&b->message_reveal_x==32+(int)width&&b->message_revealing);
+        for(unsigned x=0;x<128;x++)assert(b->message_text.pixels[x*4]==(x<width?177:0));
+        bootstrap_frame(b);assert(b->message_reveal_x==48+(int)width);
+    }
+    assert(!call(b,10,0));test_setting(b,"Msg","ShowSpeed","124");assert(!call(b,0,-1));
+    KImage *atlas=&b->message_skin.atlas;uint8_t *original=malloc(atlas->stride*atlas->height);assert(original);
+    memcpy(original,atlas->pixels,atlas->stride*atlas->height);
+    const unsigned source_x[]={532,152,76,0};
+    for(unsigned i=0;i<4;i++)for(unsigned y=84;y<100;y++)for(unsigned x=source_x[i];x<source_x[i]+76;x++){
+        uint8_t *p=atlas->pixels+y*atlas->stride+x*4;p[0]=(uint8_t)(20+i*40);p[1]=17;p[2]=29;p[3]=255;
+    }
+    for(unsigned locked=0;locked<2;locked++)for(unsigned speed=0;speed<3;speed++){
+        char value[2]={(char)('0'+speed),0};test_setting(b,"Display","EffectSpeed",value);
+        b->vm->globals[0][50].number=locked?0x4000:0;
+        for(unsigned opening=1;opening<=2;opening++){
+            bootstrap_message_action(b,7);assert(b->message_open==(opening==1));
+            unsigned maximum=0;
+            for(unsigned i=0;i<4;i++){
+                unsigned duration=opening==1?6+i*2:14-i*2;
+                unsigned steps=locked?duration:speed==0?duration/2:speed==1?duration/4:0;
+                assert(b->message_buttons_steps[i]==steps);if(steps>maximum)maximum=steps;
+            }
+            if(maximum){
+                if(locked){bootstrap_confirm(b);assert(b->message_buttons_motion&&b->message_active);}
+                bootstrap_frame(b);assert(b->message_buttons_tick==1);
+                for(unsigned i=0;i<4;i++){
+                    unsigned d=b->message_buttons_steps[i],move=d>1?16/d:16;
+                    unsigned y=opening==1?480-move:464+move;
+                    if(y<480){
+                        unsigned x=(unsigned)b->message_skin.buttons[i+1].x+32;
+                        assert(b->layers[0].pixels[y*2560+x*4]==20+i*40);
+                        assert(b->layers[0].pixels[(y-1)*2560+x*4]!=20+i*40);
+                    }
+                }
+            }
+            unsigned frames=maximum?1:0;
+            while(b->message_buttons_motion&&frames<20){bootstrap_frame(b);frames++;}
+            assert(!b->message_buttons_motion&&frames==(maximum*900+999)/1000&&b->message_active);
+        }
+    }
+    b->vm->globals[0][50].number=0;test_setting(b,"Display","EffectSpeed","0");
+    bootstrap_message_action(b,7);assert(b->message_buttons_motion);bootstrap_confirm(b);
+    assert(!b->message_buttons_motion&&b->message_active&&b->message_open);
+    test_setting(b,"Display","EffectSpeed","2");bootstrap_message_action(b,7);
+    assert(!b->message_buttons_motion&&!b->message_open);
+    memcpy(atlas->pixels,original,atlas->stride*atlas->height);free(original);
+    b->message_active=b->message_visible=0;assert(!call(b,10,0));
+    puts("Kisaku message names/buttons: immediate CP932 name, bounded malformed input, four native motion durations, pixels, speeds and skip permission: PASS");
+}
+static void test_native_dialog(KBootstrap *b){
+    uint8_t *data=NULL;size_t size=0;KImage atlas={0},body={0},out={0};
+    assert(!ai6_read_named(&b->images,"kisaku_DL_dialog_p.akb",&data,&size));
+    assert(!rmt_decode(data,size,&atlas));free(data);
+    /* The label's blue key and button's green edge carry alpha0 even though
+       this actual AKB's flags are zero. They must never appear in the dialog. */
+    assert(atlas.pixels[90*atlas.stride+10*4+3]==0);
+    assert(atlas.pixels[88*atlas.stride+190*4+3]==0);
+    assert(atlas.pixels[120*atlas.stride+10*4+3]==204);
+    out=(KImage){0,0,640,480,2560,calloc(480,2560)};
+    memset(b->layers[0].pixels,100,640*480*4);
+    assert(!kdialog_draw(&out,&body,&b->layers[0],&atlas,0,-1));
+    assert(out.pixels[0]==24&&out.pixels[3]==255);
+    const uint8_t *frame=atlas.pixels+22*atlas.stride+134*4;
+    assert(!memcmp(body.pixels+22*body.stride+134*4,frame,4));
+    assert(!ai6_read_named(&b->data,"dialog.area",&data,&size)&&size==44);
+    for(unsigned i=0;i<2;i++){
+        int32_t area[5];memcpy(area,data+4+i*20,20);
+        assert(kdialog_hit(area[1],area[2])==area[0]);
+        assert(kdialog_hit(area[3]-1,area[4]-1)==area[0]);
+        assert(kdialog_hit(area[1],area[4])==-1);
+    }
+    free(data);assert(kdialog_hit(231,260)==-1&&kdialog_hit(412,260)==-1);
+    uint8_t d[]={100,100,100,128},s[]={200,200,200,128};kdialog_pixel(d,s);
+    assert(d[3]==191&&d[0]==166); /* straight-alpha intermediate composition */
+    assert(kdialog_draw(&out,&body,&b->layers[0],&atlas,2,0)<0);
+    rmt_free(&atlas);rmt_free(&body);rmt_free(&out);
+    puts("Kisaku native quit/title dialogs: actual alpha, straight BGRA composition and dialog.area hits: PASS");
+}
+static int test_audio_command(KBootstrap *b,int main,int sub,int channel,const char *name){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=main;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){channel,NULL}));
+    assert(!kvm_push(b->vm,(KValue){0,name}));
+    assert(!kvm_push(b->vm,(KValue){sub,NULL}));return bootstrap_dispatch(b);
+}
+static void test_config_audio(KBootstrap *b){
+    /* 464140 maps every configured character, including both NPC ranges. */
+    const char *names[]={"z1.ogg","h1.ogg","i1.ogg","b1.ogg","j1.ogg","r1.ogg","c1.ogg","e1.ogg","m1.ogg","t1.ogg","a1.ogg","d1.ogg","s1.ogg","f1.ogg","g1.ogg","k1.ogg","l1.ogg","n65.ogg","n103.ogg","n206.ogg","n211.ogg","n223.ogg","n233.ogg","n264.ogg","n275.ogg","n324.ogg","n333.ogg","n338.ogg","n1.ogg","n37.ogg","n54.ogg","n55.ogg","n62.ogg"};
+    assert(b->audio_counts[2]==1&&b->audio_counts[1]>3);
+    for(unsigned i=0;i<33;i++){
+        char key[24];snprintf(key,sizeof(key),"IsCharVoice%02u",i);test_setting(b,"Voice",key,"0");
+        assert(kisaku_voice_character(names[i])==(int)i);
+        assert(!test_audio_command(b,17,5,0,names[i])&&!b->audio_objects[2][0].state);
+        assert(!strcmp(b->message_voice_name,names[i])); /* History retains muted voice. */
+        test_setting(b,"Voice",key,"1");assert(!test_audio_command(b,17,5,0,names[i])&&b->audio_objects[2][0].state==1);
+    }
+    const unsigned last[]={36,53,54,61,64,102,205,210,222,232,263,274,323,332,337,343};
+    const int ids[]={28,29,30,31,32,17,18,19,20,21,22,23,24,25,26,27};
+    for(unsigned i=0;i<16;i++){char name[24];snprintf(name,sizeof(name),"N%u.ogg",last[i]);assert(kisaku_voice_character(name)==ids[i]);if(i<15){snprintf(name,sizeof(name),"n%u.ogg",last[i]+1);assert(kisaku_voice_character(name)==ids[i+1]);}}
+    assert(kisaku_voice_character("n344.ogg")==0&&kisaku_voice_character("n0.ogg")==0&&kisaku_voice_character("no-z.ogg")==-1);
+    test_setting(b,"Voice","IsCharVoice00","0");assert(!test_audio_command(b,17,5,0,"no-z.ogg")&&b->audio_objects[2][0].state==1);
+    test_setting(b,"Voice","IsCharVoice00","1");b->audio_objects[2][0].state=0;b->message_voice_name[0]=0;
+    uint8_t *data=NULL,*pcm=NULL;size_t bytes=0,size=0;
+    assert(!ai6_read_named(&b->effects,"logo.wav",&data,&bytes)&&!kaudio_decode(data,bytes,&pcm,&size));free(data);
+    b->audio_size=b->voice_size=0;b->music_active=b->voice_active=0;
+    for(unsigned i=0;i<64;i++){b->effect_tracks[i].read=b->effect_tracks[i].size;b->effect_tracks[i].loop_end=0;}
+    test_setting(b,"Effect","Volume","0");test_setting(b,"Effect","HVolume","104");test_setting(b,"Effect","IsHEffect","1");
+    assert(!test_audio_command(b,16,1,2,"logo.wav")&&!test_audio_command(b,16,1,3,"logo.wav"));
+    assert(b->effect_tracks[3].size==size&&!memcmp(b->effect_tracks[3].pcm,pcm,size)&&!memcmp(b->effect_tracks[2].pcm,pcm,size));
+    double gain=pow(10.0,kisaku_sound_volume_db(0,1)/2000.0);
+    uint8_t *mixed=malloc(size);assert(mixed);size_t position=0;
+    test_setting(b,"Effect","IsEffect","0");assert(bootstrap_audio_mix_read(b,&position,mixed,size)==size&&!memcmp(mixed,pcm,size));
+    test_setting(b,"Effect","IsEffect","1");test_setting(b,"Effect","IsHEffect","0");
+    b->effect_tracks[2].read=b->effect_tracks[3].read=0;
+    assert(bootstrap_audio_mix_read(b,&position,mixed,size)==size);
+    for(size_t i=0;i<size;i+=2){int16_t src=(int16_t)(pcm[i]|(unsigned)pcm[i+1]<<8),actual=(int16_t)(mixed[i]|(unsigned)mixed[i+1]<<8);assert(actual==(int16_t)(src*gain));}
+    test_setting(b,"Effect","IsEffect","0");b->effect_tracks[2].read=b->effect_tracks[3].read=0;
+    assert(bootstrap_audio_mix_read(b,&position,mixed,size)==size);for(size_t i=0;i<size;i++)assert(!mixed[i]);
+    test_setting(b,"Effect","IsHEffect","1");b->effect_tracks[2].read=b->effect_tracks[3].read=0;
+    assert(bootstrap_audio_mix_read(b,&position,mixed,size)==size&&!memcmp(mixed,pcm,size));
+    assert(!memcmp(b->effect_tracks[2].pcm,pcm,size)&&!memcmp(b->effect_tracks[3].pcm,pcm,size));
+    test_setting(b,"Music","IsMusic","1");test_setting(b,"Music","Volume","104");assert(!call_music_start(b,"bgm01.wav",0,0));
+    size_t offset=0;while(offset+4<b->audio_size){int v=(int16_t)(b->audio_pcm[offset]|(unsigned)b->audio_pcm[offset+1]<<8);if(abs(v)>500)break;offset+=4;}assert(offset+4<b->audio_size);
+    uint8_t expected[4],out[4];memcpy(expected,b->audio_pcm+offset,4);position=offset;assert(bootstrap_audio_read(b,&position,out,4)==4&&!memcmp(out,expected,4));
+    test_setting(b,"Music","IsMusic","0");position=offset;assert(bootstrap_audio_read(b,&position,out,4)==4);for(unsigned i=0;i<4;i++)assert(!out[i]);
+    test_setting(b,"Music","IsMusic","1");position=offset;assert(bootstrap_audio_read(b,&position,out,4)==4&&!memcmp(out,expected,4));
+    test_setting(b,"Music","IsMusic","0");test_setting(b,"Voice","Volume","104");test_setting(b,"Voice","IsVoice","1");
+    free(b->voice_pcm);b->voice_pcm=malloc(4);assert(b->voice_pcm);memcpy(b->voice_pcm,expected,4);b->voice_size=4;b->voice_read_cursor=0;strcpy(b->voice_playing_name,"z09588.ogg");
+    assert(bootstrap_audio_mix_read(b,&position,out,4)==4&&!memcmp(out,expected,4));
+    test_setting(b,"Voice","IsCharVoice00","0");b->voice_read_cursor=0;assert(bootstrap_audio_mix_read(b,&position,out,4)==4);for(unsigned i=0;i<4;i++)assert(!out[i]);
+    test_setting(b,"Voice","IsCharVoice00","1");b->voice_read_cursor=0;assert(bootstrap_audio_mix_read(b,&position,out,4)==4&&!memcmp(out,expected,4));
+    free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=0;b->voice_active=b->music_active=0;b->audio_size=0;
+    test_setting(b,"Music","IsMusic","1");test_setting(b,"Music","Volume","72");test_setting(b,"Voice","Volume","83");
+    test_setting(b,"Effect","IsEffect","1");test_setting(b,"Effect","IsHEffect","1");test_setting(b,"Effect","Volume","83");test_setting(b,"Effect","HVolume","83");free(pcm);free(mixed);
+    puts("Kisaku configuration audio: 33 character channels/NPC boundaries, independent channel3 gain and lossless live mute/unmute for BGM/voice/effects: PASS");
+}
+static void test_ui_and_logo(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    test_setting(b,"Effect","Volume","83");test_setting(b,"Effect","IsEffect","1");
+    unsigned serial=~0u,logo_seen=0;size_t position=0,nonzero=0,mixed=0;
+    int rc=bootstrap_run(b,100000);
+    for(unsigned frame=0;rc==1&&frame<1000&&!(b->title.active&&b->title.age>=64);frame++){
+        for(unsigned i=0;i<b->audio_counts[1]&&i<64;i++){
+            KEffectTrack *t=&b->effect_tracks[i];const char *name=b->audio_objects[1]?b->audio_objects[1][i].name:"";
+            if(t->pcm&&!t->clock_position)printf("Opening effect: %s (%zu bytes)\n",name,t->size);
+            unsigned bit=!strcmp(name,"logo.wav")?1:!strcmp(name,"potapota.wav")?2:0;
+            if(!t->pcm||!bit||(logo_seen&bit))continue;
+            uint8_t *data=NULL,*pcm=NULL;size_t bytes=0,size=0;
+            assert(!ai6_read_named(&b->effects,name,&data,&bytes));assert(!kaudio_decode(data,bytes,&pcm,&size));free(data);
+            assert(size==t->size);size_t audible=0;
+            for(size_t at=0;at+1<size;at+=2){
+                int16_t src=(int16_t)(pcm[at]|pcm[at+1]<<8),dst=(int16_t)(t->pcm[at]|t->pcm[at+1]<<8);
+                assert(dst==src);if(dst)audible++;
+            }
+            assert(audible);free(pcm);logo_seen|=bit;
+        }
+        if(serial!=b->audio_serial){serial=b->audio_serial;position=0;}
+        uint8_t out[2940];size_t n=bootstrap_audio_mix_read(b,&position,out,sizeof(out));mixed+=n;
+        for(size_t i=0;i<n;i++)if(out[i])nonzero++;
+        bootstrap_frame(b);rc=bootstrap_run(b,100000);
+    }
+    assert(rc==1&&!b->error[0]&&b->title.active&&mixed&&nonzero);
+    printf("Opening audio: logo mask=%u, mixed=%zu bytes, nonzero=%zu bytes\n",logo_seen,mixed,nonzero);
+    assert(logo_seen==3);
+    assert(kisaku_sound_volume_db(0,1)==-2121&&kisaku_sound_volume_db(83,1)==-254);
+    assert(kisaku_sound_volume_db(104,1)==0&&kisaku_sound_volume_db(255,1)==0&&kisaku_sound_volume_db(83,0)==-10000);
+    b->title.active=0;b->vm->globals[0][50].number=0;
+    test_config_audio(b);
+    memset(b->layers[1].pixels,0x7f,84*b->layers[1].stride);
+    assert(!call(b,10,0));
+    for(unsigned y=0;y<84;y++)for(unsigned x=0;x<640*4;x++)assert(!b->layers[1].pixels[y*b->layers[1].stride+x]);
+    test_setting(b,"Msg","Alpha","112");test_setting(b,"Msg","Red","0");test_setting(b,"Msg","Green","0");test_setting(b,"Msg","Blue","0");
+    test_setting(b,"Msg","ShowSpeed","255");test_setting(b,"Msg","IsAutoMes","0");test_setting(b,"Msg","IsOneMes","0");
+    test_setting(b,"Display","EffectSpeed","2");assert(!call(b,10,3));
+    memset(b->layers[0].pixels,100,640*480*4);
+    uint8_t *glyph=b->layers[1].pixels+8*b->layers[1].stride+32*4;memset(glyph,255,4);
+    b->vm->globals[0][46].number=48;
+    assert(!call(b,0,-1));bootstrap_frame(b);assert(!b->error[0]);
+    uint8_t *screen=b->layers[0].pixels;
+    assert(screen[395*2560]==100&&screen[396*2560]==39);
+    assert(screen[404*2560+32*4]==255&&screen[403*2560+32*4]==39);
+    assert(screen[404*2560+600*4]==39); /* Previously copied stale right-margin artwork. */
+    const int actions[]={7,6,5,1,0,9},xs[]={600,530,460,392,324,24};
+    b->message_open=1;
+    for(unsigned i=0;i<6;i++){bootstrap_pointer(b,xs[i],470,0);assert(b->message_hover==actions[i]);}
+    bootstrap_pointer(b,600,463,0);assert(b->message_hover==-1);
+    b->message_hover=7;bootstrap_menu_move(b,-1,0);assert(b->message_hover==6);
+    bootstrap_pointer(b,530,470,1);assert(b->message_request==6);b->message_request=0;
+    bootstrap_pointer(b,24,470,1);assert(b->vm->globals[0][50].number&0x8000);
+    b->message_active=b->message_visible=0;b->vm->globals[0][50].number=0;
+    test_message_timing(b);test_message_prefix_and_buttons(b);
+    test_native_dialog(b);
+    /* Synthetic scanlines expose wrong 34-to-52 stretching and page placement. */
+    for(unsigned y=0;y<68;y++)for(unsigned x=0;x<320;x++){
+        uint8_t *p=b->layers[5].pixels+y*b->layers[5].stride+x*4;p[0]=(uint8_t)(y+1);p[1]=p[2]=0;p[3]=255;
+    }
+    b->vm->bytes[1000]=0;assert(!call(b,30,0));
+    b->choice_normal=b->choice_active=1;b->choice_count=5;b->choice_selected=-1;b->choice_page=0;b->choice_rendered_page=~0u;
+    b->choice_base=(KImage){0,0,640,480,2560,calloc(480,2560)};b->choice_text=(KImage){0,0,640,480,2560,calloc(480,2560)};
+    for(unsigned i=0;i<5;i++){b->choice_values[i]=(int)i;b->choice_returns[i]=(int)i+1;b->choice_lengths[i]=0;}
+    bootstrap_frame(b);assert(!b->error[0]);
+    for(unsigned y=0;y<52;y++){unsigned expected=y<8?y+1:y<44?9+(y-8)%18:27+y-44;assert(screen[(136+y)*2560+100*4]==expected);}
+    bootstrap_pointer(b,100,138,1);assert(b->choice_active&&b->choice_selected==-1);
+    bootstrap_pointer(b,100,352,1);assert(b->choice_active&&b->choice_page==1&&b->choice_selected==-1);
+    assert(screen[136*2560+100*4]==1&&screen[188*2560+100*4]==0);
+    bootstrap_pointer(b,100,110,1);assert(b->choice_page==0&&b->choice_active);
+    b->vm->bytes[1000]=1;b->vm->bytes[4010]=1;b->vm->bytes[2000]=0;b->vm->globals[1][61].number=0;
+    bootstrap_pointer(b,100,146,1);assert(b->choice_active); /* Disabled entries cannot return. */
+    b->vm->bytes[2000]=1;bootstrap_pointer(b,100,146,1);assert(!b->choice_active&&b->vm->globals[0][18].number==1);
+    bootstrap_destroy(b);
+    puts("Kisaku logo PCM gain/mixing, message margins/buttons and native choice rows/paging/disabled hits: PASS");
 }
 int main(int argc,char **argv){
     if(argc!=3)return 2;
@@ -63,6 +917,10 @@ int main(int argc,char **argv){
     assert(b->layers[7].width==640&&b->layers[7].height==400&&b->layers[7].stride==2560);
     assert(b->vm->globals[0][42].number==32&&b->vm->globals[0][43].number==8);
     assert(b->vm->globals[0][44].number==592&&b->vm->globals[0][45].number==62);
+    assert(!call_527(b)&&b->vm->sp==2&&b->vm->stack[0].number==0&&
+        b->vm->stack[1].number==0&&b->exec_status==0);
+    b->input_events=3;assert(!call_527(b)&&b->vm->sp==2&&b->exec_status==0x18&&b->input_events==0);
+    b->vm->sp=0;
     unsigned count=0;for(unsigned i=0;i<1024;i++)count+=b->vm->functions[i].valid;
     assert(count==51);assert(!bootstrap_can_save(b));
     printf("Kisaku opening, FLAG100 restore and Japanese title: PASS (%u calls)\n",b->handled);
@@ -79,6 +937,34 @@ int main(int argc,char **argv){
     b->title.selected=-1;bootstrap_title_move(b,1);assert(b->title.selected==0);
     bootstrap_confirm(b);assert(!b->title.active&&!b->vm->globals[0][18].number&&!b->vm->sp);
     puts("Kisaku title hit regions, disabled entries and native return register: PASS");
+    uint8_t *native_ax=NULL;size_t native_ax_size=0;struct ax_player counted_ax;
+    assert(!ai6_read_named(&b->data,"act15.ax",&native_ax,&native_ax_size));
+    assert(ax_load(&counted_ax,"act15.ax",native_ax,native_ax_size));free(native_ax);
+    int32_t native_boundaries=0;assert(ax_count_boundaries(&counted_ax,0,&native_boundaries));
+    printf("Kisaku act15.ax track 0 boundaries: %d\n",native_boundaries);
+
+    assert(call(b,43,2)<0&&b->vm->sp==2);
+    assert(!call(b,43,0)&&!b->vm->sp&&!b->mes_fade_visible);
+    for(unsigned i=0;i<640*480;i++){
+        assert(!b->mes_fade_surfaces[0].pixels[i*4+3]);
+        assert(b->mes_fade_surfaces[2].pixels[i*4+3]==100);
+    }
+    int old_target=b->vm->globals[0][49].number;
+    b->vm->globals[0][49].number=63;
+    b->mes_fade_surfaces[0].pixels[0]=87;
+    assert(call(b,43,2)<0&&b->vm->sp==2&&b->mes_fade_surfaces[0].pixels[0]==87);
+    b->vm->globals[0][49].number=old_target;
+    KValue old_rect[4];memcpy(old_rect,b->vm->globals[0]+42,sizeof(old_rect));
+    assert(!call(b,43,2)&&!b->vm->sp&&b->mes_fade_visible);
+    assert(!b->mes_fade_surfaces[0].pixels[0]);
+    assert(b->vm->globals[0][42].number==0&&b->vm->globals[0][43].number==0);
+    assert(b->vm->globals[0][44].number==640&&b->vm->globals[0][45].number==480);
+    assert(call(b,43,3)<0&&b->vm->sp==2&&b->vm->stack[0].number==3);
+    assert(!call(b,43,0)&&!b->mes_fade_visible);
+    assert(!call(b,43,1)&&!call(b,43,1));
+    for(unsigned i=0;i<3;i++)assert(!b->mes_fade_surfaces[i].pixels);
+    memcpy(b->vm->globals[0]+42,old_rect,sizeof(old_rect));
+    puts("Kisaku message fade lifecycle, transparent reset and preserved unsupported arguments: PASS");
     memset(b->diary_people,1,sizeof(b->diary_people));memset(b->diary_events,2,sizeof(b->diary_events));
     b->diary_viewport_height=480;b->diary_page_height=80;b->diary_scroll=400;
     assert(!call(b,528,24)&&!b->vm->sp);
@@ -94,7 +980,21 @@ int main(int argc,char **argv){
     for(unsigned i=0;i<sizeof(samples)/sizeof(*samples);i++)for(unsigned y=0;y<samples[i][5];y++)
         assert(!memcmp(b->diary_surface.pixels+(samples[i][1]+y)*b->diary_surface.stride+samples[i][0]*4,
             diary_atlas.pixels+(samples[i][3]+y)*diary_atlas.stride+samples[i][2]*4,samples[i][4]*4));
-    rmt_free(&diary_atlas);assert(!call(b,528,24)&&b->diary_scroll==16);
+    /* 31/528/20 stores four people for day 1; 21 edits a single event. */
+    const KValue day_args[]={{6,NULL},{3,NULL},{2,NULL},{1,NULL},{1,NULL},{20,NULL},{528,NULL}};
+    assert(!call_anime520(b,day_args,7)&&!b->vm->sp&&b->diary_days==2);
+    assert(b->vm->words[204]==1&&b->vm->words[207]==6&&b->diary_people[6]==3);
+    const KValue event_args[]={{26,NULL},{4,NULL},{21,NULL},{528,NULL}};
+    assert(!call_anime520(b,event_args,4)&&b->vm->words[304]==26&&b->diary_events[4]==26);
+    for(unsigned y=0;y<20;y++){
+        assert(!memcmp(b->diary_surface.pixels+(96+y)*b->diary_surface.stride+120*4,diary_atlas.pixels+(256+y)*diary_atlas.stride,152*4));
+        assert(!memcmp(b->diary_surface.pixels+(96+y)*b->diary_surface.stride+272*4,diary_atlas.pixels+(756+y)*diary_atlas.stride+152*4,336*4));
+    }
+    KValue bad_event[]={{28,NULL},{4,NULL},{21,NULL},{528,NULL}};
+    assert(call_anime520(b,bad_event,4)<0&&b->vm->sp==4&&b->vm->words[304]==26&&b->diary_events[4]==26);
+    bad_event[1].number=96;assert(call_anime520(b,bad_event,4)<0&&b->vm->sp==4);
+    rmt_free(&diary_atlas);b->diary_scroll=16;assert(!call(b,528,24)&&b->diary_scroll==16);
+    assert(b->vm->words[204]==1&&b->vm->words[304]==26); /* Reset is private only. */
     puts("Kisaku diary reset, scroll bounds and backing bitmap: PASS");
     for(int rows=1;rows<=4;rows++){
         b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
@@ -140,15 +1040,19 @@ int main(int argc,char **argv){
     const int display_counts[]={27,15,1,10,528};b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     for(unsigned i=0;i<5;i++)kvm_push(b->vm,(KValue){display_counts[i],NULL});
     assert(!bootstrap_dispatch(b)&&!b->vm->sp);
-    check_small_glyph(b,474,1);check_small_glyph(b,482,5);check_small_glyph(b,542,2);check_small_glyph(b,550,7);
+    check_small_glyph(b,474,1);check_small_glyph(b,482,5);check_small_glyph(b,534,2);check_small_glyph(b,542,7);
     const int zero_left_counts[]={0,7,1,10,528};b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     for(unsigned i=0;i<5;i++)kvm_push(b->vm,(KValue){zero_left_counts[i],NULL});
     assert(!bootstrap_dispatch(b)&&!b->vm->sp);
-    check_small_glyph(b,474,11);check_small_glyph(b,482,7);check_small_glyph(b,542,2);check_small_glyph(b,550,12);
+    check_small_glyph(b,474,11);check_small_glyph(b,482,7);/* 49fbe0 calls 49e250, which restores the panel background before
+       zero-left updates only the second cell. */
+    for(unsigned y=0;y<16;y++)assert(!memcmp(b->param_surface.pixels+(92+y)*b->param_surface.stride+534*4,
+        b->param_atlas.pixels+(92+y)*b->param_atlas.stride+534*4,32));
+    check_small_glyph(b,542,12);
     const int counts[]={100,20,1,10,528};b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     for(unsigned i=0;i<5;i++)kvm_push(b->vm,(KValue){counts[i],NULL});
     assert(!bootstrap_dispatch(b)&&b->param_total==255&&b->param_remaining==100);
-    check_small_glyph(b,474,10);check_small_glyph(b,482,10);check_small_glyph(b,542,10);check_small_glyph(b,550,10);
+    check_small_glyph(b,474,10);check_small_glyph(b,482,10);check_small_glyph(b,534,10);check_small_glyph(b,542,10);
     assert(!call(b,528,22)&&b->auxiliary_windows_enabled&&!b->status_visible);
     assert(!call(b,528,23)&&!b->auxiliary_windows_enabled);
     puts("Kisaku parameter rows, keyed decimal digits and fourth row: PASS");
@@ -187,7 +1091,12 @@ int main(int argc,char **argv){
     b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     for(int i=0;i<8;i++)kvm_push(b->vm,(KValue){100+i,NULL});
     kvm_push(b->vm,(KValue){9,NULL});kvm_push(b->vm,(KValue){528,NULL});
-    assert(!bootstrap_dispatch(b)&&b->vm->sp==8&&b->vm->stack[0].number==100&&b->vm->stack[7].number==107);
+    b->vm->stack[1].string="invalid";
+    unsigned before_param_calls=b->handled;
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==10&&b->handled==before_param_calls);
+    for(int i=0;i<8;i++)assert(b->vm->stack[i].number==100+i);
+    assert(b->vm->stack[8].number==9&&b->vm->stack[9].number==528);
+    assert(strstr(b->error,"numeric parameters"));
     puts("Kisaku media table duplicates, mode switches and message skin geometry/colors: PASS");
     assert(!call_music_start(b,"bgm13.wav",0,77));
     assert(!b->error[0]&&b->vm->sp==1&&b->vm->stack[0].number==77);
@@ -317,19 +1226,20 @@ int main(int argc,char **argv){
         assert(b->layers[0].pixels[0]==40&&b->layers[0].pixels[3]==77);
         assert(b->vm->globals[0][42].number==32&&b->vm->globals[0][43].number==8);
     }
-    assert(call(b,525,0)<0&&b->vm->sp==2);
+    assert(call(b,525,4)<0&&b->vm->sp==2);
     puts("Kisaku CLetter image preservation, blend rounding and speed modes: PASS");
-    /* CFuncExec 31/526 action 1 parses one variant before releasing its
-       separate two-surface working pair.  A bad variant preserves the call. */
+    /* 4fd915 consumes only action 1; unrelated caller stack survives. */
     b->exec526_surfaces[0]=(KImage){0,0,1,1,4,calloc(4,1)};
     b->exec526_surfaces[1]=(KImage){0,0,1,1,4,calloc(4,1)};
     b->exec526_active=1;
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
-    kvm_push(b->vm,(KValue){0,NULL});kvm_push(b->vm,(KValue){1,NULL});kvm_push(b->vm,(KValue){526,NULL});
+    kvm_push(b->vm,(KValue){1,NULL});kvm_push(b->vm,(KValue){526,NULL});
     assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->exec526_active&&!b->exec526_surfaces[0].pixels&&!b->exec526_surfaces[1].pixels);
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     kvm_push(b->vm,(KValue){0,"bad"});kvm_push(b->vm,(KValue){1,NULL});kvm_push(b->vm,(KValue){526,NULL});
-    assert(bootstrap_dispatch(b)<0&&b->vm->sp==3&&b->vm->stack[0].string);
+    assert(!bootstrap_dispatch(b)&&b->vm->sp==1&&b->vm->stack[0].string);
+    b->vm->globals[0][0].number=40;
+    assert(call(b,526,2)<0&&b->vm->sp==2&&!b->exec526_active);
     puts("Kisaku 31/526 working-pair release and argument boundary: PASS");
     /* Explicit release and shutdown share ownership cleanup. Borrowed layers
        and unrelated VM/animation state survive 31/612/2. */
@@ -344,7 +1254,12 @@ int main(int argc,char **argv){
     assert(b->bowling.slots[17].object==&b->layers[0]&&b->layers[0].pixels);
     assert(b->vm->globals[0][18].number==91&&b->ax.cells[0].state==17);
     assert(!call(b,612,2)&&bowling_released==1);
-    assert(call(b,612,0)<0&&b->vm->sp==2);assert(call(b,612,1)<0&&b->vm->sp==2);
+    assert(call(b,612,0)<0&&b->vm->sp==2);
+    b->vm->sp=0;kvm_push(b->vm,(KValue){4,NULL});kvm_push(b->vm,(KValue){3,NULL});
+    kvm_push(b->vm,(KValue){2,NULL});kvm_push(b->vm,(KValue){1,NULL});
+    kvm_push(b->vm,(KValue){0,NULL});kvm_push(b->vm,(KValue){0,NULL});kvm_push(b->vm,(KValue){612,NULL});
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==7&&b->vm->stack[0].number==4&&b->vm->stack[4].number==0);
+    assert(call(b,612,1)<0&&b->vm->sp==2);
     b->bowling.slots[1]=(KBowlingResource){malloc(4),bowling_free};assert(b->bowling.slots[1].object);
     puts("Kisaku 31/612/2 resource cleanup and unsupported-action boundary: PASS");
     /* Native extended animation state must not affect the ordinary manager. */
@@ -360,9 +1275,9 @@ int main(int argc,char **argv){
     assert(!call_anime520(b,anime_track,4)&&!b->vm->sp&&b->animation_track_selected&&b->animation_track_bank==0&&b->animation_track_cell==0&&b->ax_extra.cells[0].state==AX_STOPPED);
     assert(!call_anime520(b,anime_named,3)&&!b->vm->sp&&b->ax_extra.size>0);
     KValue anime_start[]={{0,NULL},{0,NULL},{2,NULL},{520,NULL}};
-    assert(!call_anime520(b,anime_start,4)&&!b->vm->sp&&b->ax_extra.cells[0].state==1);
-    KValue anime_start_bad[]={{10,NULL},{0,NULL},{2,NULL},{520,NULL}};
-    assert(call_anime520(b,anime_start_bad,4)<0&&b->vm->sp==4&&b->vm->stack[0].number==10);
+    assert(!call_anime520(b,anime_start,4)&&!b->vm->sp&&b->ax_extra.cells[0].state==0);
+    KValue anime_start_bad[]={{0,NULL},{10,NULL},{2,NULL},{520,NULL}};
+    assert(call_anime520(b,anime_start_bad,4)<0&&b->vm->sp==4&&b->vm->stack[1].number==10);
     KValue anime_run[]={{0,NULL},{0,NULL},{3,NULL},{520,NULL}};
     assert(!call_anime520(b,anime_run,4)&&!b->vm->sp&&b->ax_extra.cells[0].state==1);
     KValue anime_stop[]={{0,NULL},{0,NULL},{4,NULL},{520,NULL}};
@@ -372,8 +1287,8 @@ int main(int argc,char **argv){
     assert(!call_anime520(b,anime_run_all,2)&&!b->vm->sp&&b->ax_extra.cells[0].state==1&&b->ax_extra.cells[1].state==AX_STOPPED);
     KValue anime_extended[]={{3,NULL},{0,NULL},{0,NULL},{12,NULL},{520,NULL}};
     assert(!call_anime520(b,anime_extended,5)&&!b->vm->sp&&b->animation_target_layer==0);
-    KValue anime_extended_bad[]={{10,NULL},{0,NULL},{0,NULL},{12,NULL},{520,NULL}};
-    assert(call_anime520(b,anime_extended_bad,5)<0&&b->vm->sp==5&&b->vm->stack[0].number==10);
+    KValue anime_extended_bad[]={{3,NULL},{0,NULL},{10,NULL},{12,NULL},{520,NULL}};
+    assert(call_anime520(b,anime_extended_bad,5)<0&&b->vm->sp==5&&b->vm->stack[2].number==10);
     KValue anime_track_bad[]={{32,NULL},{0,NULL},{1,NULL},{520,NULL}};
     assert(call_anime520(b,anime_track_bad,4)<0&&b->vm->sp==4&&b->vm->stack[0].number==32);
     KValue anime_unknown[]={{13,NULL},{520,NULL}};
@@ -386,7 +1301,7 @@ int main(int argc,char **argv){
     assert(!call(b,520,10)&&!b->vm->sp&&b->ax_extra.cells[0].state==3&&!b->animation_track_selected);
     b->ax_extra.cells[0].state=AX_STOPPED;
     b->ax_extra.cells[0].state=1;
-    assert(call(b,520,10)<0&&b->vm->sp==2&&b->vm->stack[0].number==10);
+    assert(!call(b,520,10)&&!b->vm->sp&&b->ax_extra_modal==2);
     b->ax_extra.cells[0].state=AX_STOPPED;
     assert(!call(b,520,6)&&!b->vm->sp&&b->ax_extra.cells[0].state==AX_STOPPED);
     /* CFuncLayer action 7 darkens a bounded rectangle on the selected
@@ -418,11 +1333,11 @@ int main(int argc,char **argv){
         s[0]=(uint8_t)(40+x);s[1]=(uint8_t)(50+x);s[2]=(uint8_t)(60+x);s[3]=(uint8_t)(70+x);
     }
     uint8_t *key_src=b->layers[7].pixels+1*4;key_src[0]=0x33;key_src[1]=0x22;key_src[2]=0x11;key_src[3]=0xee;
-    KValue color_key[]={{0x112233,NULL},{0,NULL},{7,NULL},{0,NULL},{0,NULL},{1,NULL},{1,NULL},{3,NULL},{0,NULL},{0,NULL}};
+    KValue color_key[]={{0,NULL},{0x112233,NULL},{7,NULL},{0,NULL},{0,NULL},{1,NULL},{1,NULL},{3,NULL},{0,NULL},{0,NULL}};
     assert(!call_layer(b,color_key,10,4)&&!b->vm->sp);
     uint8_t *key_dst=b->layers[1].pixels+1*4;assert(key_dst[0]==11&&key_dst[1]==21&&key_dst[2]==31&&key_dst[3]==91);
     uint8_t *copied=b->layers[1].pixels;assert(copied[0]==40&&copied[1]==50&&copied[2]==60&&copied[3]==90);
-    color_key[1].number=1;for(unsigned x=0;x<3;x++){uint8_t *d=b->layers[1].pixels+x*4;d[3]=(uint8_t)(120+x);}
+    color_key[0].number=1;for(unsigned x=0;x<3;x++){uint8_t *d=b->layers[1].pixels+x*4;d[3]=(uint8_t)(120+x);}
     assert(!call_layer(b,color_key,10,4)&&!b->vm->sp);
     assert(b->layers[1].pixels[3]==70&&b->layers[1].pixels[1*4+3]==121&&b->layers[1].pixels[2*4+3]==72);
     uint8_t *alpha_dst=b->layers[1].pixels+b->layers[1].stride;
@@ -463,5 +1378,5 @@ int main(int argc,char **argv){
     }
     assert(!b->choice_active&&b->choice_selected==-1);
     puts("Kisaku choice initialization and independent animation state: PASS");
-    bootstrap_destroy(b);assert(bowling_released==2);return 0;
+    bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
 }

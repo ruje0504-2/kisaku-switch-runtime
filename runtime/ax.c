@@ -51,7 +51,7 @@ bool ax_control(struct ax_player *a,unsigned command,unsigned bank,unsigned cell
 bool ax_waiting(const struct ax_player *a) {
  return a->wait_cell&&a->cells[a->wait_cell-1].state!=AX_STOPPED;
 }
-static bool step(struct ax_player *a,struct ax_cell *c,ax_draw_fn draw,void *context) {
+static bool step(struct ax_player *a,struct ax_cell *c,ax_draw_fn draw,void *context,uint8_t *event) {
  if(c->delay){c->delay--;return true;}
  if(c->boundary_delay) {
   if(c->state==1)c->state=AX_STOPPED;else if(c->state==3)c->state=4;
@@ -67,7 +67,7 @@ static bool step(struct ax_player *a,struct ax_cell *c,ax_draw_fn draw,void *con
  case 0:break;
  case 1:
   if(c->state==1)c->state=AX_STOPPED;else if(c->state==3)c->state=4;
-  c->boundary_delay=arg;break;
+  c->boundary_delay=event?(arg?arg-1:0):arg;break;
  case 2:c->delay=arg;break;
  case 3:c->ip=0;break;
  case 4:case 255:c->state=AX_STOPPED;break;
@@ -87,6 +87,10 @@ static bool step(struct ax_player *a,struct ax_cell *c,ax_draw_fn draw,void *con
   break;
  }
  }
+ if(event&&op){
+  static const uint8_t ids[9]={0,2,3,4,5,6,7,8,9};
+  *event=op<=8?ids[op]:op==255?10:11;
+ }
  return true;
 }
 bool ax_tick(struct ax_player *a,ax_draw_fn draw,void *context) {
@@ -94,7 +98,19 @@ bool ax_tick(struct ax_player *a,ax_draw_fn draw,void *context) {
  for(unsigned i=0;i<AX_CELLS;i++) {
   struct ax_cell *c=&a->cells[i];
   if(c->state==AX_STOPPED||c->state==4)continue;
-  if(!step(a,c,draw,context)){c->state=AX_STOPPED;ok=false;}
+  if(!step(a,c,draw,context,NULL)){c->state=AX_STOPPED;ok=false;}
+ }
+ if(!ax_waiting(a))a->wait_cell=0;
+ return ok;
+}
+
+bool ax_tick_native(struct ax_player *a,uint8_t events[AX_CELLS],ax_draw_fn draw,void *context){
+ if(!a||!events)return false;
+ bool ok=true;
+ for(unsigned i=0;i<AX_CELLS;i++){
+  struct ax_cell *c=&a->cells[i];
+  if(c->state==AX_STOPPED||c->state==4)continue;
+  if(!step(a,c,draw,context,&events[i])){c->state=AX_STOPPED;ok=false;}
  }
  if(!ax_waiting(a))a->wait_cell=0;
  return ok;
@@ -102,20 +118,54 @@ bool ax_tick(struct ax_player *a,ax_draw_fn draw,void *context) {
 
 bool ax_first_frame(struct ax_player *a,unsigned cell,ax_draw_fn draw,void *context){
  if(cell>=AX_CELLS||!a->size)return false;
- struct ax_cell *c=&a->cells[cell];
- /* Native fast scanner's operand stepping differs from the timed interpreter. */
+ struct ax_cell *c=&a->cells[cell];uint32_t ip=0;
+ /* 4df540 resets the stream cursor. 4ddcc0 reads all operands through
+    405240 (four bytes), then restores cursor zero after the first draw. */
  for(unsigned limit=0;limit<AX_CAPACITY;limit++){
-  if(c->start<0x500||c->start>=a->size||c->ip>=a->size-c->start)return false;
-  unsigned op=a->data[c->start+c->ip++];
-  if(op==1)continue;
-  if(op==2||op==5||op==7){c->ip++;continue;}
+  if(c->start<0x500||c->start>=a->size||ip>=a->size-c->start)return false;
+  unsigned op=a->data[c->start+ip++];
   if(op==3||op==4||op==6||op==8||op==255)return true;
-  if(a->size-c->start-c->ip<4)return false;
-  uint32_t index=u32(a->data+c->start+c->ip);c->ip+=4;
+  if(a->size-c->start-ip<4)return false;
+  uint32_t index=u32(a->data+c->start+ip);ip+=4;
+  if(op==1||op==2||op==5||op==7)continue;
   if(index>(a->size-0x500)/28||a->size-0x500-index*28<28)return false;
   uint32_t d[7];for(unsigned i=0;i<7;i++)d[i]=u32(a->data+0x500+index*28+i*4);
-  if(draw)draw(d,(unsigned)(c-a->cells),context);
+  if(d[0]>3)return false;
+  if(d[0]!=2)for(unsigned i=1;i<7;i++)if(d[i]>4096)return false;
+  if(draw)draw(d,cell,context);
   c->ip=0;return true;
+ }
+ return false;
+}
+
+bool ax_count_boundaries(const struct ax_player *a,unsigned cell,int32_t *count){
+ if(!a||!count||cell>=AX_CELLS||a->size<0x500||a->size>AX_CAPACITY)return false;
+ uint32_t start=a->cells[cell].start;
+ if(start<0x500||start>=a->size)return false;
+ uint32_t ip=0,loop[2]={0},remaining[2]={0},total[2]={0};int32_t found=0;
+ /* Bound malformed endless programs; never substitute a successful count. */
+ for(unsigned budget=0;budget<AX_CAPACITY*256u;budget++){
+  if(ip>=a->size-start)return false;
+  unsigned op=a->data[start+ip++];uint32_t arg=0;
+  if(op==1||op==2||op==5||op==7||op==0||(op>8&&op!=255)){
+   if(a->size-start-ip<4)return false;
+   arg=u32(a->data+start+ip);ip+=4;
+  }
+  switch(op){
+  case 1:if(found==INT32_MAX)return false;found++;break;
+  case 2:break;
+  case 3:*count=-1;return true;
+  case 4:case 255:*count=found;return true;
+  case 5:case 7:{unsigned j=op==7;loop[j]=ip;remaining[j]=total[j]=arg;break;}
+  case 6:case 8:{unsigned j=op==8;
+   if(!loop[j]||(total[j]&&!remaining[j]))return false;
+   if(!total[j]||--remaining[j])ip=loop[j];
+   break;
+  }
+  default:
+   if(arg>(a->size-0x500)/28||a->size-0x500-arg*28<28)return false;
+   break;
+  }
  }
  return false;
 }

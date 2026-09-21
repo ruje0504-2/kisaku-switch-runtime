@@ -20,15 +20,20 @@ int main(void){
     assert(akb_decode(d,sizeof(d)-1,&im));assert(!im.pixels);
     put32(d+16,4);assert(akb_decode(d,sizeof(d),&im));put32(d+16,1);
     d[3]='+';assert(akb_decode(d,sizeof(d),&im));d[3]=' ';
-    /* Full BGRA pixel, with and without explicit alpha flag. */
+    /* 0x80000000 is background fill; BGRA always retains source alpha. */
     memset(d,0,sizeof(d));memcpy(d,"AKB ",4);d[4]=d[6]=1;
     put32(d+8,0x80000000);put32(d+24,1);put32(d+28,1);
     d[32]=15;d[33]=9;d[34]=8;d[35]=7;d[36]=6;
     assert(!akb_decode(d,37,&im));assert(im.pixels[3]==6);rmt_free(&im);
-    put32(d+8,0);assert(!akb_decode(d,37,&im));assert(im.pixels[3]==255);rmt_free(&im);
+    put32(d+8,0);assert(!akb_decode(d,37,&im));assert(im.pixels[3]==6);rmt_free(&im);
     /* Empty crop uses header background, without reading an absent payload. */
     put32(d+24,0);put32(d+28,0);d[12]=42;
-    assert(!akb_decode(d,32,&im));assert(im.pixels[0]==42);rmt_free(&im);
+    assert(!akb_decode(d,32,&im));assert(im.pixels[0]==42&&im.pixels[3]==0);rmt_free(&im);
+    put32(d+8,0x80000000);d[15]=77;
+    assert(!akb_decode(d,32,&im));assert(im.pixels[0]==42&&im.pixels[3]==77);rmt_free(&im);
+    put32(d+8,0x40000023);put32(d+24,1);put32(d+28,1);
+    d[32]=7;d[33]=9;d[34]=8;d[35]=7;
+    assert(!akb_decode(d,36,&im));assert(im.pixels[0]==9&&im.pixels[3]==35);rmt_free(&im);
     assert(akb_decode(NULL,0,&im));assert(akb_decode(d,32,NULL));
     puts("AKB orientation, crop, alpha, background and malformed input: PASS");
 }

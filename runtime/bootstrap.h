@@ -23,6 +23,8 @@
 #include "bowling.h"
 #include "media_tables.h"
 #include "message_skin.h"
+#include "param_change.h"
+#include "sound_volume.h"
 typedef struct {
     uint8_t *data; size_t size,capacity;
     char *text; size_t text_capacity;
@@ -45,12 +47,25 @@ typedef struct {
     KMediaTables media_tables;
     KMessageSkin message_skin;
     unsigned auxiliary_windows_enabled;
-    KImage param_surface,param_atlas;int param_rows;int16_t param_values[4],param_markers[2];uint16_t param_total,param_remaining;
+    KImage param_surface,param_atlas,param_backing;int param_rows;int16_t param_values[4],param_markers[2];uint16_t param_total,param_remaining;
+    unsigned param_animation_active,param_animation_phase,param_animation_step,param_animation_count;
+    unsigned param_animation_chime,param_animation_track2,param_animation_sungeki,param_animation_temporary,param_animation_window;
+    unsigned param_animation_clock,param_animation_last_event;
+    float param_animation_accum[4];KParamChange param_animation_plan;
     KImage diary_surface;int32_t diary_people[96],diary_events[96];
     int diary_days,diary_content_height,diary_viewport_height,diary_page_height,diary_scroll;
     KBowling bowling;KBowling *current_bowling;
+    KImage mes_fade_surfaces[3]; /* CFadeSprite and two private CSprite bitmaps. */
+    unsigned mes_fade_visible,mes_fade_shade_visible;
+    KImage mes_fade_backing;
+    unsigned mes_fade_drawn,mes_fade_transition,mes_fade_steps,mes_fade_tick,mes_fade_clock;
+    unsigned mes_fade_alpha,mes_fade_shade_alpha;
+    unsigned mes_fade_type,mes_fade_rect[4];uint8_t *mes_fade_mask;
     KImage letter_surfaces[3];
-    unsigned letter_transition,letter_alpha,letter_increment;
+    unsigned letter_transition,letter_alpha,letter_increment,letter_clock,letter_mode;
+    unsigned letter_active,letter_backlog,letter_exit_pending,letter_phase,letter_reveal_clock,letter_text_increment;
+    int letter_cursor_x,letter_cursor_y,letter_reveal_x,letter_reveal_y,letter_end_y;
+    uint8_t *letter_mask;
     KImage status_image,status_parts;unsigned status_visible,status_serial;
     int32_t areas[512][5];unsigned area_count,area_active;int area_selected,area_x,area_y;int32_t area_nav[512][3];unsigned area_nav_count;
     char area_name[261];
@@ -65,7 +80,7 @@ typedef struct {
     unsigned scroll_active,scroll_offset,scroll_target,scroll_speed,scroll_wrap;
     KImage choice_parts,choice_text,choice_base;
     KImage choice_rows[2][6];unsigned choice_prepared;
-    unsigned choice_active,choice_normal,choice_count,choice_rendered_page;int choice_selected,choice_values[64],choice_returns[64];
+    unsigned choice_active,choice_normal,choice_count,choice_rendered_page,choice_page;int choice_selected,choice_page_hover,choice_values[64],choice_returns[64];
     char choice_labels[64][61];unsigned choice_lengths[64];
     KEffectTrack effect_tracks[64],movie_effect;
     KMov mov;uint8_t *mov_data;
@@ -75,7 +90,7 @@ typedef struct {
     KControlStore *control_files;unsigned control_file_count;
     KVoiceWorker *voice_worker;unsigned voice_loading;
     KImageWorker *image_worker;unsigned image_loading;int image_layer,image_offset_x,image_offset_y;
-    int restore_read_id;unsigned restore_pending,restore_remaining;
+    int restore_read_id;unsigned restore_pending,restore_remaining,restore_mode;
     unsigned read_loaded,read_dirty,read_selector,quit_requested,title_load_requested;
     Ai6Archive scripts,images,data,effects,movies,music,voice;
     uint8_t *module_data[KVM_MODULES];
@@ -86,8 +101,9 @@ typedef struct {
     uint8_t *novel_mask;unsigned novel_text_reveal,novel_mask_phase;
     int novel_start_x,novel_start_y,novel_reveal_y,novel_end_y;
     KFont *novel_font;
-    unsigned message_voice_pending,message_active,message_slide,message_slide_frame,message_hiding,message_delay,message_clock,message_revealing;
+    unsigned message_voice_pending,message_active,message_slide,message_slide_frame,message_slide_clock,message_hiding,message_delay,message_clock,message_revealing;
     unsigned message_keep_on_confirm;
+    unsigned message_buttons_motion,message_buttons_tick,message_buttons_clock,message_buttons_steps[4];
     unsigned message_auto_clock,message_auto_delay,message_had_voice,message_was_read,message_open,message_request;
     int message_hover;
     char message_pending[4097];size_t message_pending_size;
@@ -101,7 +117,8 @@ typedef struct {
     /* CFuncExec 31/526 keeps a separate two-surface working pair.  It is
        distinct from the CLetter and 31/13 helper surfaces; action 1 releases
        this pair and resets its native state. */
-    KImage exec526_surfaces[2]; unsigned exec526_active;
+    KImage exec526_surfaces[2],exec526_backing; unsigned exec526_active,exec526_drawn;
+    unsigned exec526_width,exec526_height; int exec526_x,exec526_y;
     /* CFuncExec 31/524 owns a small sprite object. Keep a backing copy so
        action 1 can remove the object without disturbing the scene below it. */
     KImage overlay524_base; unsigned overlay524_visible;
@@ -116,15 +133,20 @@ typedef struct {
     unsigned message_initialized,message_visible;
     uint8_t animation_status[320];
     struct ax_player ax,ax_extra;
-    unsigned logo_phase,ax_clock,ax_extra_clock,ax_modal;
+    uint8_t ax_events[AX_CELLS],ax_extra_events[AX_CELLS];
+    unsigned logo_phase,ax_clock,ax_extra_clock,ax_modal,ax_extra_modal;
+    /* 4de350 registration vector is a multiset, independent of play state. */
+    uint32_t ax_registered[AX_CELLS],ax_extra_registered[AX_CELLS];
+    unsigned ax_pause_remove,ax_extra_pause_remove; /* index+1, or AX_CELLS+1 for all */
     int ax_destination;unsigned ax_fast;
+    char normal_atlas_name[261];
     KVideo *video;uint8_t *video_data;unsigned video_active,video_eof;
     char media_background_name[1024];
     uint8_t *voice_pcm;size_t voice_size,voice_read_cursor,voice_clock_cursor;unsigned voice_clock;
     uint8_t *audio_pcm; size_t audio_size,audio_cursor,audio_loop_start,audio_loop_end;
     unsigned audio_rate,audio_channels,audio_serial,audio_clock,music_active,music_enabled,voice_active;
     int music_db,fade_db,fade_db_step;unsigned music_fading,music_fade_clock;double music_gain;
-    char audio_name[261];
+    char audio_name[261],voice_playing_name[261];
     KImage canvas,auxiliary;
     uint8_t *animation_data; size_t animation_size;
     char loaded_animation[261];
@@ -141,6 +163,10 @@ typedef struct {
     KTitle title;
     unsigned message_timed,message_timed_delay;uint64_t message_timed_clock;
     unsigned extra_active,extra_request,extra_kind,input_events;uint64_t input_event_until;
+    /* CFuncExec 31/527 keeps its status word outside the VM globals.  The
+       native handler only polls the IFlag queue; portable input feeds the
+       same two confirmation bits here without manufacturing a script value. */
+    uint32_t exec_status;
     KGallery gallery;char image_name[261];
     KFlagDialog flag_dialog;unsigned reset_pending;
     KSceneHistory scene_history;
@@ -187,12 +213,14 @@ int bootstrap_flush_progress(KBootstrap *b);
 int bootstrap_can_save(const KBootstrap *b);
 int bootstrap_save_slot(KBootstrap *b,unsigned slot);
 int bootstrap_save_slot_comment(KBootstrap *b,unsigned slot,const char *utf8);
+int bootstrap_saved_param_image(KBootstrap *b,const KFlags *saved,KImage *out);
 int bootstrap_prepare_animation_switch(KBootstrap *b,unsigned mode);
 int bootstrap_load_animation_switch(KBootstrap *b,unsigned selector);
 /* Only for a fresh runtime that has completed startup to the title. */
 int bootstrap_load_slot(KBootstrap *b,unsigned selector,unsigned slot);
 void bootstrap_cancel(KBootstrap *b);
 void bootstrap_message_hide(KBootstrap *b,int hidden);
+int bootstrap_letter_exit(KBootstrap *b,int confirm);
 void bootstrap_message_action(KBootstrap *b,unsigned action);
 const char *bootstrap_history_voice(const KBootstrap *b,unsigned back);
 int bootstrap_scene_draw(KBootstrap *b,unsigned selected,unsigned overview,KImage *out);
@@ -207,6 +235,9 @@ int bootstrap_history_draw(KBootstrap *b,unsigned back,KImage *out);
 KTextEncoding bootstrap_text_encoding(const KBootstrap *b);
 KFont *bootstrap_ui_font(KBootstrap *b);
 int bootstrap_decode_ui_text(KBootstrap *b,const char *text,size_t size,KTextChar *out,size_t capacity,size_t *count);
+enum { KSET_H_VOLUME=23, KSET_MOVIE_VSYNC, KSET_SUNGEKI_ANIME, KSET_SCHEDULE_CHECK,
+       KSET_MINIGAME_DIFFICULTY, KSET_SUNGEKI_SE, KSET_SHOW_SPEED, KSET_CONFIG_PAGE,
+       KSET_CHARACTER_VOICE, KSET_COUNT=KSET_CHARACTER_VOICE+33 };
 unsigned bootstrap_setting_count(void);
 const char *bootstrap_setting_label(unsigned item);
 int bootstrap_setting_limit(unsigned item);

@@ -4,45 +4,40 @@
    turn its remaining motion/up events into a second activation. */
 typedef struct {SDL_FingerID finger;unsigned active,owner,drag,moved;int x,y,last_x,last_y;uint64_t key,started;const KBootstrap *runtime;} MenuTouch;
 static void game_cancel(SaveMenu *,MessagePanel *,KBootstrap *);
-static void save_menu_touch(SaveMenu *m,KBootstrap *b,int x,int y){
+static void save_menu_pointer(SaveMenu *m,KBootstrap *b,int x,int y,int click){
+    if(m->character_detail){if(click)save_menu_action(m,b,1);return;}
+    if(m->param_detail){if(click)save_menu_action(m,b,1);return;}
+    if(click==2){save_menu_action(m,b,1);return;}
+    if(!click&&m->loading)return;
     if(m->loading){if(y>=302&&y<355)save_menu_action(m,b,1);return;}
-    if(m->overwrite){
-        if(y>=254&&y<288)save_menu_action(m,b,6);
-        else if(y>=310&&y<332)save_menu_action(m,b,x<320?0:1);
-        else if(y>=332&&y<357)save_menu_action(m,b,x<320?6:7);
+    if(m->overwrite||m->confirm_load){
+        m->button=y>=384&&y<404&&x>=232&&x<412?(x<322?1:0):2;
+        if(click&&m->button<2)save_menu_action(m,b,0);
+        else if(click&&m->overwrite&&x>=140&&x<508&&y>=356&&y<376)save_menu_action(m,b,6);
         return;
     }
-    if(x>=366&&x<638&&y>=35&&y<475){m->focus=0;m->slot=(m->slot-1)/10*10+(y-35)/44+1;save_menu_action(m,b,0);}
-    else if(x>=164&&x<600&&y>=4&&y<24){m->slot=(x-164)/44*10+(m->slot-1)%10+1;save_menu_refresh(m,bootstrap_save_dir(b));}
-    else if(x>=604&&y>=4&&y<24)save_menu_action(m,b,1);
-    else if(x>=12&&x<160&&y>=316&&y<470){m->focus=1;m->button=(y-316)/26;save_menu_action(m,b,0);}
-    else if(x>=176&&x<352&&y>=316&&y<366)save_menu_action(m,b,7);
-}
-static void settings_touch_value(MessagePanel *p,unsigned item,int x){
-    const SettingsControl *c=&settings_controls[item];int limit=bootstrap_setting_limit(c->item),value;
-    if(limit>2){value=(x-c->x)*255/(c->w-1);if(value<0)value=0;if(value>255)value=255;}
-    else value=limit==2?(x-c->x)/80:c->item==22?x-c->x>=88:x-c->x<88;
-    p->selected=item;p->setting_values[c->item]=value;
-    if(c->item>=16&&c->item<=17&&value)p->setting_values[c->item==16?17:16]=0;
-}
-static void settings_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int y){
-    settings_panel_init(p,b);
-    if(y>=4&&y<24&&x>=340){if(x>=604)settings_panel_action(p,b,1);else{p->setting_page=(unsigned)(x-340)/88;for(unsigned i=0;i<sizeof(settings_controls)/sizeof(*settings_controls);i++)if(settings_controls[i].page==p->setting_page){p->selected=i;break;}}return;}
-    if(y>=438&&y<474&&x>=376&&x<624){settings_panel_action(p,b,x<460?0:x<540?1:7);return;}
-    if(x>=12&&x<160&&y>=316&&y<470){unsigned button=(unsigned)(y-316)/26;p->setting_ready=0;
-        if(button<2){p->kind=0;b->message_request=button?3:2;}else{p->kind=button==2?5:button==3?8:button==4?18:6;p->back=p->viewing=0;}return;}
-    for(unsigned i=0;i<sizeof(settings_controls)/sizeof(*settings_controls);i++){const SettingsControl *c=&settings_controls[i];
-        if(c->page==p->setting_page&&x>=c->x-6&&x<c->x+c->w+6&&y>=c->y-4&&y<c->y+c->h+4){
-            int clamped=x<c->x?c->x:x>=c->x+c->w?c->x+c->w-1:x;settings_touch_value(p,i,clamped);if(bootstrap_setting_limit(c->item)>2)touch->drag=i+1;return;
+    if(save_menu_assets(m,b))return;
+    int hit=save_menu_hit(m,x,y);m->hover=hit;
+    if(hit>=0x100&&hit<0x10a){m->focus=0;m->slot=(m->slot-1)/10*10+(hit&255)+1;if(click)save_menu_action(m,b,0);}
+    else if(hit>=0x200&&hit<0x20a){m->focus=1;if(click){m->slot=(hit&255)*10+(m->slot-1)%10+1;m->status[0]=0;save_menu_refresh(m,bootstrap_save_dir(b));}}
+    else if(hit==0x300){m->focus=2;if(click)save_menu_action(m,b,1);}
+    else if(click&&hit>>8==6)save_menu_action(m,b,7);
+    else if(click&&hit>>8==5){
+        unsigned index=(unsigned)(hit&255),row=(unsigned)(m->slot-1)%10;
+        static const unsigned present[8]={108,109,111,112,113,114,115,116};
+        if(index>=8||m->selector||!m->states[row]||!m->states[row]->bytes[present[index]]){
+            snprintf(m->status,sizeof(m->status),"人物詳細は未解放です");
+            return;
         }
+        m->detail_index=index;rmt_free(&m->detail_artwork);rmt_free(&m->detail_status_artwork);m->character_detail=1;m->status[0]=0;
     }
 }
+static void save_menu_touch(SaveMenu *m,KBootstrap *b,int x,int y){save_menu_pointer(m,b,x,y,1);}
+static void settings_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int y){
+    touch->drag=settings_panel_pointer(p,b,x,y,1);
+}
 static void backlog_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int y){
-    if(x>=600){if(y<32)message_panel_action(p,b,2);else if(y>=448)message_panel_action(p,b,3);else{touch->drag=100;if(b->history_count){history_voice_stop(p);p->back=(unsigned)(448-y)*(b->history_count-1)/416;}}return;}
-    if(p->viewing){if(y>=420){message_panel_action(p,b,6);return;}history_voice_play(p,b);return;}
-    unsigned first=p->back/6*6,count=b->history_count>first?b->history_count-first:0;if(count>6)count=6;unsigned row=(unsigned)y/80;if(row>=count)return;
-    history_voice_stop(p);p->back=first+count-1-row;p->status[0]=0;
-    if(x<40)history_voice_play(p,b);else message_panel_action(p,b,6);
+    if(backlog_pointer(p,b,x,y,1))touch->drag=100;
 }
 static void navigation_touch(MessagePanel *p,KBootstrap *b,int x,int y){
     navigation_panel_refresh(p,b);y-=178;if(y<0||y>=118)return;
@@ -69,11 +64,13 @@ static void gallery_touch(MessagePanel *p,KBootstrap *b,int x,int y){
     }
 }
 static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int y){
+    if(p->kind==20){scene_mode_pointer(p,b,x,y,1);return;}
     if(p->kind==8){settings_touch(p,b,touch,x,y);return;}
     if(p->kind==5){backlog_touch(p,b,touch,x,y);return;}
     if(p->kind==16){navigation_touch(p,b,x,y);return;}
     if(p->kind==10){gallery_touch(p,b,x,y);return;}
-    if(p->kind==6||p->kind==18||p->kind==15){int top=p->kind==15?336:278;if(y>=top&&y<top+34)message_panel_action(p,b,x<320?0:1);return;}
+    if(p->kind==6||p->kind==18||p->kind==19){int hit=kdialog_hit(x,y);if(hit>=0){p->selected=(unsigned)hit;p->viewing=1;message_panel_action(p,b,0);}return;}
+    if(p->kind==15){if(y>=336&&y<370)message_panel_action(p,b,x<320?0:1);return;}
     if(p->kind==14){if(y>=242&&y<267&&x>=200&&x<443)message_panel_action(p,b,x<272?7:x<358?0:1);else if(y>=206&&y<232&&x>=186&&x<454)message_panel_action(p,b,6);return;}
     if(p->kind==9){
         if(x>=24&&x<256&&y>=20&&y<468){unsigned i=(unsigned)(y-20)/28;if((y-20)%28<20&&i<16){p->selected=i;message_panel_action(p,b,0);}}
@@ -104,8 +101,8 @@ static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int
     }
 }
 static uint64_t touch_owner_key(const SaveMenu *m,const MessagePanel *p,const KBootstrap *b){
-    if(p->kind){unsigned state[]={p->kind,p->viewing,p->back,p->setting_page};return ui_hash(1,state,sizeof(state));}
-    if(m->active){int state[]={m->save,m->slot,m->overwrite,m->loading};return ui_hash(2,state,sizeof(state));}
+    if(p->kind){unsigned state[]={p->kind,p->viewing,p->back,p->setting_page,p->config_motion};return ui_hash(1,state,sizeof(state));}
+    if(m->active){int state[]={m->save,m->slot,m->overwrite,m->confirm_load,m->loading,(int)m->param_detail,(int)m->character_detail,(int)m->detail_index};return ui_hash(2,state,sizeof(state));}
     unsigned state[]={b->message_active,b->message_user_hidden,b->text_count,b->choice_active,b->title.active,b->title.extra,b->flag_dialog.active,b->area_active,b->bonus52_active};
     return ui_hash(3,state,sizeof(state));
 }
@@ -125,9 +122,8 @@ static int menu_touch_event(MenuTouch *touch,SaveMenu *m,MessagePanel *p,KBootst
         touch->active=1;touch->finger=e->tfinger.fingerId;touch->owner=owner;touch->drag=touch->moved=0;
         touch->key=touch_owner_key(m,p,b);touch->runtime=b;touch->started=now;touch->x=touch->last_x=x;touch->y=touch->last_y=y;
         if(fx<0.125f||fx>=0.875f||fy<0||fy>=1){touch->owner=999;return 1;}
-        if(owner==8){settings_panel_init(p,b);for(unsigned i=0;i<sizeof(settings_controls)/sizeof(*settings_controls);i++){const SettingsControl *c=&settings_controls[i];
-            if(c->page==p->setting_page&&bootstrap_setting_limit(c->item)>2&&x>=c->x-6&&x<c->x+c->w+6&&y>=c->y-4&&y<c->y+c->h+4){touch->drag=i+1;settings_touch_value(p,i,x);break;}}}
-        else if(owner==5&&x>=600&&y>=32&&y<448){touch->drag=100;backlog_touch(p,b,touch,x,y);}
+        if(owner==8){settings_panel_pointer(p,b,x,y,0);if(p->config_hover>=0&&config_slider(p->config_hover)&&config_enabled(p,b,p->config_hover)){touch->drag=(unsigned)p->config_hover+1;config_drag(p,b,p->config_hover,x);}}
+        else if(owner==5){backlog_pointer(p,b,x,y,0);if(p->backlog_hover==512&&backlog_limit(b)){touch->drag=100;p->backlog_mouse_drag=1;backlog_drag(p,b,y);}}
         else if(!owner&&(b->area_active||b->bonus52_active))bootstrap_pointer(b,x,y,0);
         /* Opening a draft or positioning its scrollbar is part of this contact. */
         touch->key=touch_owner_key(m,p,b);return 1;
@@ -138,8 +134,8 @@ static int menu_touch_event(MenuTouch *touch,SaveMenu *m,MessagePanel *p,KBootst
         if(!valid)return 1;
         int dx=x-touch->last_x,dy=y-touch->last_y;
         if(abs(x-touch->x)>12||abs(y-touch->y)>12)touch->moved=1;
-        if(owner==8&&touch->drag&&touch->drag<100)settings_touch_value(p,touch->drag-1,x);
-        else if(owner==5&&touch->drag==100&&b->history_count){int py=y<32?32:y>448?448:y;history_voice_stop(p);p->back=(unsigned)(448-py)*(b->history_count-1)/416;}
+        if(owner==8&&touch->drag)config_drag(p,b,(int)touch->drag-1,x);
+        else if(owner==5&&touch->drag==100)backlog_drag(p,b,y);
         else if(owner==10&&p->viewing==2&&p->cg_zoom&&touch->moved){
             p->cg_scroll_active=0;p->cg_x-=dx;p->cg_y-=dy;int maxx=p->image.width>640?(int)p->image.width-640:0,maxy=p->image.height>480?(int)p->image.height-480:0;
             if(p->cg_x<0)p->cg_x=0;
@@ -151,12 +147,14 @@ static int menu_touch_event(MenuTouch *touch,SaveMenu *m,MessagePanel *p,KBootst
         touch->last_x=x;touch->last_y=y;touch->key=touch_owner_key(m,p,b);return 1;
     }
     touch->active=0;
+    if(valid&&touch->owner==8&&touch->drag)kconfig_audio_release(&p->config_audio);
+    if(touch->owner==5)p->backlog_mouse_drag=0;
     if(!valid||touch->owner==999)return 1;
     if(touch->drag)return 1;
     int dx=x-touch->x,dy=y-touch->y;
     if(touch->moved||abs(dx)>12||abs(dy)>12){
-        if(owner==5&&abs(dy)>24){unsigned steps=(unsigned)abs(dy)/40+1;while(steps--)message_panel_action(p,b,dy>0?2:3);}
-        else if(!owner&&b->message_active&&dy< -48){p->kind=5;p->back=p->viewing=0;p->native_kind=0;}
+        if(owner==5&&abs(dy)>24){int steps=abs(dy)/40+1;backlog_scroll(p,b,dy>0?steps:-steps,0);}
+        else if(!owner&&b->message_active&&dy< -48){bootstrap_message_action(b,5);}
         else if(abs(dx)>64&&abs(dx)>abs(dy)){
             if(owner==100)save_menu_action(m,b,dx<0?9:8);
             else if(owner==8||owner==16||(owner==10&&p->viewing<2))message_panel_action(p,b,dx<0?9:8);

@@ -16,7 +16,7 @@ typedef struct {
     KList lists[32];unsigned list_count;int current_list;
     KFrame frames[64]; unsigned depth;
     struct {int module;size_t ip;unsigned depth;} scripts[64];unsigned script_depth;
-    KValue stack[4096]; unsigned sp;
+    KValue *stack; unsigned sp,stack_capacity; /* Native growable variant vector. */
     const char *text;size_t text_size;
     KValue globals[2][8192]; uint8_t bytes[16384]; uint16_t words[8192];
     unsigned byte_count, word_count, global_count[2];

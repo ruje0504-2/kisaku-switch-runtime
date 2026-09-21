@@ -14,6 +14,8 @@ void kflags_free(KFlags *f);
 int kflags_write(const KFlags *f,const char *path);
 /* Kisaku 5080a0: merge current progress into an existing snapshot. */
 int kflags_merge(KFlags *saved,const KFlags *current);
+/* 5076f0: carry catalog progress into a loaded slot, preserving story fields. */
+int kflags_restore_progress(KFlags *slot,const KFlags *catalog,unsigned alternate);
 /* Isolated FLAG000 progress; preserve other native fields, merge byte maxima. */
 int kflags_progress(const char *root,unsigned selector,const uint8_t *bytes,unsigned count);
 int kflags_write_slot(const KFlags *f,const char *root,unsigned selector,unsigned slot);

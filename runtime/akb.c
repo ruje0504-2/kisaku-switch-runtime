@@ -29,14 +29,17 @@ int akb_decode(const uint8_t *d, size_t n, KImage *im) {
     }
     for (size_t k=channels;k<stride;k++) packed[k]=(uint8_t)(packed[k]+packed[k-channels]);
     for (size_t k=stride;k<bytes;k++) packed[k]=(uint8_t)(packed[k]+packed[k-stride]);
-    unsigned alpha=channels==4 && (flags&0x80000000);
+    /* Kisaku 4df9e0: 32-bit input always retains its fourth channel.
+       0x80000000 controls filling outside the crop, not alpha presence.
+       24-bit input gets the constant alpha stored in the low flag byte. */
+    unsigned alpha=channels==4;
     for (size_t k=0;k<(size_t)w*h;k++) {
-        memcpy(out+k*4,d+12,3);out[k*4+3]=alpha?d[15]:255;
+        memcpy(out+k*4,d+12,3);out[k*4+3]=(flags&0x80000000)?d[15]:(alpha?0:(uint8_t)flags);
     }
     for (size_t row=0;row<ih;row++) for (size_t col=0;col<iw;col++) {
         const uint8_t *p=packed+(row*iw+col)*channels;
         uint8_t *q=out+(((size_t)y+row)*w+x+col)*4;
-        memcpy(q,p,3);q[3]=alpha?p[3]:255;
+        memcpy(q,p,3);q[3]=alpha?p[3]:(uint8_t)flags;
     }
     free(packed);
     *im=(KImage){0,0,w,h,(size_t)w*4,out};

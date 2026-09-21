@@ -1,13 +1,24 @@
+#include "dialog.h"
+#include "voice_character.h"
+#include "text_layout.h"
+#include "config_audio.h"
+typedef struct {int id,x0,y0,x1,y1;} ConfigArea;
 typedef struct KNawaPanel KNawaPanel;
 typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_cancel,cg_zoom;int cg_x,cg_y;char status[96],name[129];KImage image;SDL_Texture *texture;
+    unsigned direct_scene,direct_selected,direct_page,direct_count;KImage direct_artwork,direct_parts;
     unsigned cg_scroll_active,cg_scroll_limit,cg_scroll_step,cg_movie_return;uint64_t cg_scroll_start;
     SDL_Texture *cg_textures[3];unsigned cg_cached,cg_group,cg_page,cg_count;
     unsigned replay_key,replay_from,replay_to,replay_alpha;uint64_t replay_next;
     KNawaPanel *nawa;
-    KImage name_artwork;
+    KImage name_artwork,dialog_artwork,dialog_body;
     KImage nav_artwork,nav_scene,nav_previews[4];unsigned nav_catalog_ready,nav_catalog[100];unsigned nav_id,nav_mode,nav_count,nav_slots[100],nav_page_key,nav_load_request;int64_t nav_dates[4];
-    KImage history_artwork,settings_artwork,sidebar_artwork;uint64_t native_key;unsigned native_kind;int setting_values[24],setting_ready;unsigned setting_page,return_title,dismiss_menus,animation_request;
+    KImage history_artwork,settings_artwork,sidebar_artwork;uint64_t native_key;unsigned native_kind;int setting_values[KSET_COUNT],setting_ready;unsigned setting_page,return_title,dismiss_menus,animation_request;
+    KImage config_art[5];ConfigArea config_areas[4][68];unsigned config_area_count[4],config_mouse_drag;int config_hover,config_voice_snapshot[33];
+    ConfigArea backlog_areas[9];unsigned backlog_area_count,backlog_offset,backlog_mouse_drag;int backlog_hover;
     KVoiceWorker *voice_worker;uint8_t *voice_pcm;size_t voice_size,voice_at;unsigned voice_loading,voice_serial;
+    KConfigAudio config_audio;unsigned config_audio_serial;
+    unsigned config_motion,config_steps,config_step,config_target,config_next_kind;
+    uint64_t config_clock;int config_dx,config_dy,config_preview_dx;unsigned config_alpha;
 } MessagePanel;
 #include "history_voice.inc"
 #include "gallery_panel.inc"
@@ -15,6 +26,7 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
 #include "extra_panels.inc"
 #include "replay_panel.inc"
 #include "settings_panel.inc"
+#include "backlog_panel.inc"
 /* Monotonic, cooperative scrolling: no delays or repeated image decoding. */
 static void gallery_scroll_tick(MessagePanel *p,uint64_t now){
     if(!p->cg_scroll_active)return;
@@ -32,8 +44,28 @@ static unsigned scene_replay_slots(MessagePanel *p,KBootstrap *b,unsigned slots[
 }
 #include "navigation_panel.inc"
 static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
-    if(p->kind==18){if(!action){p->return_title=1;p->kind=0;}else if(action==1)p->kind=0;return;}
+    if(p->kind==6||p->kind==18||p->kind==19){
+        if(action==1){
+            if(p->kind==19&&bootstrap_letter_exit(b,0)){snprintf(p->status,sizeof(p->status),"信件画面に戻れませんでした");return;}
+            p->kind=0;p->viewing=0;b->message_hover=-1;return;
+        }
+        if(!p->viewing){p->selected=2;p->viewing=1;}
+        if(action==2||action==4)p->selected=1;
+        if(action==3||action==5)p->selected=0;
+        if(!action&&p->selected<2){
+            if(p->kind==19){
+                if(bootstrap_letter_exit(b,p->selected==1)){snprintf(p->status,sizeof(p->status),"回想画面に戻れませんでした");return;}
+            }else if(p->selected==1){
+                if(p->kind==18)p->return_title=1;
+                else if(bootstrap_flush_progress(b)){snprintf(p->status,sizeof(p->status),"進行状況を保存できませんでした");return;}
+                else b->quit_requested=1;
+            }
+            p->kind=0;p->viewing=0;b->message_hover=-1;
+        }
+        return;
+    }
     if(p->kind==17){if(action==1)p->scene_cancel=1;return;}
+    if(p->kind==20){scene_mode_action(p,b,action);return;}
     if(p->kind==16){navigation_panel_action(p,b,action);return;}
     if(p->kind==4&&(action==7||action==0)){p->kind=16;p->nav_id=0;p->variant=0;p->status[0]=0;navigation_panel_refresh(p,b);return;}
     if(p->kind==10&&p->viewing==2){
@@ -66,17 +98,7 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         return;
     }
     if(p->kind==5){
-        if(action==1){if(p->viewing){p->viewing=0;p->cg_y=0;return;}history_voice_stop(p);p->kind=0;p->dismiss_menus=1;return;}
-        if(action==6){p->viewing^=1;p->cg_y=0;return;}
-        if(p->viewing&&(action==2||action==3)){if(action==2&&p->cg_y)p->cg_y--;if(action==3&&(unsigned)p->cg_y<p->cg_scroll_limit)p->cg_y++;return;}
-        unsigned old=p->back;
-        if(action==8)p->back=b->history_count?(p->back+6<b->history_count?p->back+6:b->history_count-1):0;
-        if(action==9)p->back=p->back>6?p->back-6:0;
-        if((action==2||action==4)&&p->back+1<b->history_count)p->back++;
-        if((action==3||action==5)&&p->back)p->back--;
-        if(old!=p->back){p->cg_y=0;history_voice_stop(p);p->status[0]=0;}
-        if(!action)history_voice_play(p,b);
-        return;
+        backlog_panel_action(p,b,action);return;
     }
     if(p->kind==15){
         if(action==1){bootstrap_history_reset(b,0);p->kind=0;}
@@ -174,7 +196,6 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         if(!action&&bootstrap_music_select(b,p->selected))snprintf(p->status,sizeof(p->status),"This track is locked or unavailable");
         return;
     }
-    if(p->kind==6){if(!action){b->quit_requested=1;p->kind=0;}return;}
     if(p->kind==8){settings_panel_action(p,b,action);return;
     }else if(p->kind==4){
         if(!b->scene||!b->scene->count)return;
@@ -186,7 +207,12 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         if((action==3||action==5)&&p->back)p->back--;
     }
 }
-#include "backlog_panel.inc"
+static void message_dialog_pointer(MessagePanel *p,KBootstrap *b,int x,int y,int click){
+    if(p->kind!=6&&p->kind!=18&&p->kind!=19)return;
+    int hit=kdialog_hit(x,y);p->selected=hit<0?2:(unsigned)hit;p->viewing=1;
+    if(click==2)message_panel_action(p,b,1);
+    else if(click==1&&hit>=0)message_panel_action(p,b,0);
+}
 static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind!=5&&p->kind!=8){p->native_kind=0;p->native_key=0;}
     if(p->kind==16){navigation_panel_draw(p,b,r);return;}
@@ -204,6 +230,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     }
     SDL_SetRenderDrawColor(r,16,20,28,255);SDL_Rect box={208,64,864,592};SDL_RenderFillRect(r,&box);
     SDL_SetRenderDrawColor(r,240,240,240,255);
+    if(p->kind==20){scene_mode_draw(p,b,r);return;}
     if(p->kind==16||p->kind==17){
         panel_text(r,272,108,"NAVIGATION - REPLAY COMPLETED SCENE");
         if(p->kind==17){panel_text(r,272,240,"Preparing scene... B: cancel");return;}
@@ -233,11 +260,12 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         for(unsigned i=0;i<4;i++)if(b->flag_dialog.checked[i]==1)ui_text(b,&p->image,labels[i],144,186+(int)row++*28,352,24,0xffdf78,0);
         ui_text(b,&p->image,"A: 消去       B: キャンセル",144,342,352,24,0xffffff,0);ui_present(r,&p->image,&p->texture);return;
     }
-    if(p->kind==6||p->kind==18){
-        if(!ui_canvas(&p->image)){ui_fill(&p->image,0,0,640,480,0x17120c);ui_fill(&p->image,120,160,400,164,0xa08948);ui_fill(&p->image,123,163,394,158,0x291e14);
-            ui_text(b,&p->image,p->kind==6?"ゲームを終了しますか？":"タイトル画面に戻りますか？",152,190,352,32,0xffffff,0);
-            ui_text(b,&p->image,"保存していない進行は失われます",144,234,352,32,0xe0c785,0);
-            ui_text(b,&p->image,"A: はい       B: いいえ",168,282,320,24,0xffffff,0);ui_present(r,&p->image,&p->texture);}return;
+    if(p->kind==6||p->kind==18||p->kind==19){
+        if(!p->viewing){p->selected=2;p->viewing=1;}
+        if(ui_canvas(&p->image)||ui_asset(b,"kisaku_DL_dialog_p.akb",&p->dialog_artwork))return;
+        if(kdialog_draw(&p->image,&p->dialog_body,&b->layers[0],&p->dialog_artwork,p->kind==19?7:p->kind==18,(int)p->selected))return;
+        if(p->status[0])ui_text(b,&p->image,p->status,112,292,416,24,0xffffff,0);
+        ui_present(r,&p->image,&p->texture);return;
     }
     if(p->kind==8){
         char title[80];snprintf(title,sizeof(title),"SETTINGS - PAGE %u/%u",p->selected/7+1,(bootstrap_setting_count()+6)/7);panel_text(r,272,108,title);

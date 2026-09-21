@@ -1,63 +1,214 @@
-/* Original TEXT / SOUND / DISPLAY atlas layout and hit coordinates. */
-typedef struct {unsigned item,page;int x,y,w,h;} SettingsControl;
-static const SettingsControl settings_controls[]={
-    {11,0,490,66,108,16},{12,0,490,90,108,16},{13,0,490,114,108,16},{9,0,490,138,108,16},
-    {0,0,490,238,108,16},{16,0,446,314,174,22},{1,0,490,366,108,16},{17,0,446,386,174,22},
-    {3,1,490,62,108,16},{6,1,446,82,174,22},{2,1,490,134,108,16},{5,1,446,154,174,22},
-    {14,1,446,206,174,22},{15,1,446,258,174,22},{4,1,490,310,108,16},{7,1,446,330,174,22},{19,1,446,382,174,22},
-    {8,2,382,62,238,22},{21,2,446,124,174,22},{18,2,446,238,174,22},{10,2,446,290,174,22},{22,2,446,342,174,22},{20,2,382,394,238,22}
-};
+/* Kisaku CConfig: 4c47c0, 4c6e00 and config_00/01/02/01_2.area.
+   Changes remain a draft until 決定; no reference-game VM byte writes. */
+/* 4c8800/4c82f0/4c69e0/4c67c0: 24 native steps, transformed by
+   46bbe0 to 12/6/0; flag4000 keeps 24. Each step has a 15ms clock. */
+static void config_motion_tick(MessagePanel *p,uint64_t now){
+    while(p->config_motion){
+        uint64_t elapsed=now>=p->config_clock?now-p->config_clock:0;
+        if(p->config_steps&&elapsed<(uint64_t)p->config_steps*15){p->config_step=(unsigned)(elapsed/15);return;}
+        p->config_clock+=(uint64_t)p->config_steps*15;p->config_step=0;
+        unsigned motion=p->config_motion;p->config_motion=0;
+        if(motion==2){p->setting_page=p->config_target;p->config_motion=3;}
+        else if(motion==4){p->kind=p->config_next_kind;p->setting_ready=0;p->dismiss_menus=p->kind==0;p->viewing=p->back=0;}
+        else if(motion==6)p->setting_page=1;
+    }
+}
+static void config_motion_begin(MessagePanel *p,KBootstrap *b,unsigned motion){
+    int speed=bootstrap_message_setting(b,8,0);
+    p->config_steps=b->vm->globals[0][50].number&0x4000?24:speed==2?0:speed==1?6:12;
+    p->config_motion=motion;p->config_step=0;p->config_clock=SDL_GetTicks64();
+    p->config_hover=-1;p->selected=~0u;p->config_mouse_drag=0;
+    kconfig_audio_stop(&p->config_audio);config_motion_tick(p,p->config_clock);
+}
+static void config_motion_skip(MessagePanel *p,KBootstrap *b){
+    /* 46bca0 checks 102/103 (Shift/Ctrl), not confirm 100. */
+    if(p->config_motion&&!(b->vm->globals[0][50].number&0x4000)){
+        config_motion_tick(p,p->config_clock+(uint64_t)p->config_steps*30);
+    }
+}
 static void settings_panel_init(MessagePanel *p,KBootstrap *b){
     if(p->setting_ready)return;
-    for(unsigned i=0;i<bootstrap_setting_count();i++)p->setting_values[i]=bootstrap_message_setting(b,i,0);
-    p->setting_ready=1;p->setting_page=0;p->selected=0;p->status[0]=0;
+    for(unsigned i=0;i<KSET_COUNT;i++)p->setting_values[i]=bootstrap_message_setting(b,i,0);
+    p->setting_ready=1;p->setting_page=(unsigned)p->setting_values[KSET_CONFIG_PAGE];
+    if(p->setting_page>2)p->setting_page=1;
+    p->selected=~0u;p->config_hover=-1;p->config_mouse_drag=0;p->native_kind=0;p->status[0]=0;
+    config_motion_begin(p,b,1);
+}
+static int config_assets(MessagePanel *p,KBootstrap *b){
+    const char *names[]={"kisaku_DL_text_p.akb","kisaku_DL_sound_p.akb","kisaku_DL_display_p.akb","kisaku_DL_sound_p2.akb","kisaku_DL_sound_p3.akb"};
+    const unsigned sizes[][2]={{584,476},{264,152},{440,240},{336,340},{428,436}};
+    for(unsigned i=0;i<5;i++)if(ui_asset(b,names[i],&p->config_art[i])||p->config_art[i].width<sizes[i][0]||p->config_art[i].height<sizes[i][1])return -1;
+    const char *areas[]={"config_00.area","config_01.area","config_02.area","config_01_2.area"};
+    for(unsigned page=0;page<4;page++)if(!p->config_area_count[page]){
+        uint8_t *data=NULL;size_t size=0;
+        if(ai6_read_named(&b->data,areas[page],&data,&size)){free(data);return -1;}
+        unsigned count=size>=4?(unsigned)(data[0]|(unsigned)data[1]<<8|(unsigned)data[2]<<16|(unsigned)data[3]<<24):0;
+        if(!count||count>68||size!=4+(size_t)count*20){free(data);return -1;}
+        for(unsigned i=0;i<count;i++){
+            int v[5];for(unsigned j=0;j<5;j++){const uint8_t *q=data+4+i*20+j*4;v[j]=(int32_t)(q[0]|(uint32_t)q[1]<<8|(uint32_t)q[2]<<16|(uint32_t)q[3]<<24);}
+            if(v[0]<0||v[1]<0||v[2]<0||v[3]>640||v[4]>480||v[1]>=v[3]||v[2]>=v[4]){free(data);return -1;}
+            p->config_areas[page][i]=(ConfigArea){v[0],v[1],v[2],v[3],v[4]};
+        }
+        free(data);p->config_area_count[page]=count;
+    }
+    return 0;
+}
+static int config_item(int id){
+    int group=id>>8,part=id&255;
+    if(group==0){const int items[]={11,12,13,9};return part<4?items[part]:-1;}
+    if(group==1)return 0;
+    if(group==2)return 16;
+    if(group==3)return part==2?1:17;
+    if(group>=4&&group<=7){const int toggles[]={6,7,5,19},volumes[]={3,4,2,KSET_H_VOLUME};return part==2?volumes[group-4]:toggles[group-4];}
+    if(group==8)return KSET_SUNGEKI_SE;
+    if(group==10)return part<3?8:part<5?21:-1;
+    if(group==11)return KSET_MOVIE_VSYNC;
+    if(group==16)return KSET_SUNGEKI_ANIME;
+    if(group==17)return KSET_SCHEDULE_CHECK;
+    if(group==18)return KSET_MINIGAME_DIFFICULTY;
+    if(group>=100&&group<133)return KSET_CHARACTER_VOICE+group-100;
+    return -1;
+}
+static int config_slider(int id){return (id>>8)<=1||((id&255)==2&&(id>>8)>=3&&(id>>8)<=7);}
+static int config_enabled(MessagePanel *p,KBootstrap *b,int id){
+    int group=id>>8,part=id&255,alternate=b->vm->globals[0][61].number==1;
+    if(group==15){
+        if(part<3)return 0; /* Native CConfig only shows the last three sidebar sprites. */
+        if(part==3)return b->history_count&&(b->vm->globals[0][50].number&4)&&!(b->vm->globals[0][50].number&0x400)&&b->vm->globals[0][62].number!=1;
+        if(part==4)return (b->vm->globals[0][50].number&4)!=0;
+    }
+    if(alternate&&(group==6||group==7||group==9||group==11||group==16||group==17||group==18||(group==10&&part>=3)))return 0;
+    if(group==10&&part>=3&&b->vm->byte_count>4007&&b->vm->bytes[4007])return 0;
+    if(config_slider(id)&&(group>=3&&group<=7)){
+        const unsigned toggle[]={17,6,7,5,19};return p->setting_values[toggle[group-3]]!=0;
+    }
+    return 1;
+}
+static void config_page(MessagePanel *p,unsigned page){
+    kconfig_audio_stop(&p->config_audio);
+    p->config_motion=0;p->setting_page=page;p->selected=~0u;p->config_hover=-1;p->status[0]=0;
+}
+static void config_switch(MessagePanel *p,KBootstrap *b,unsigned page){
+    if(page==p->setting_page)return;
+    p->status[0]=0;
+    if(page==3){config_page(p,3);config_motion_begin(p,b,5);}
+    else if(p->setting_page==3)config_motion_begin(p,b,6);
+    else {p->config_target=page;config_motion_begin(p,b,2);}
+}
+static void config_close(MessagePanel *p,KBootstrap *b,int commit){
+    unsigned page=p->setting_page==3?1:p->setting_page;
+    p->setting_values[KSET_CONFIG_PAGE]=(int)page;
+    int failed=commit?bootstrap_settings_apply(b,p->setting_values,KSET_COUNT):
+        bootstrap_message_setting(b,KSET_CONFIG_PAGE,(int)page-bootstrap_message_setting(b,KSET_CONFIG_PAGE,0))<0;
+    if(failed){snprintf(p->status,sizeof(p->status),"設定を保存できませんでした");return;}
+    kconfig_audio_stop(&p->config_audio);
+    p->config_next_kind=0;b->message_hover=-1;config_motion_begin(p,b,4);
+}
+static void config_activate(MessagePanel *p,KBootstrap *b,int id){
+    if(p->config_motion)return;
+    if(id<0||!config_enabled(p,b,id))return;
+    int group=id>>8,part=id&255,item=config_item(id);
+    if(item>=0&&!config_slider(id))p->setting_values[item]=group==10&&part>=3?part-3:part;
+    else if(group==9){
+        memcpy(p->config_voice_snapshot,p->setting_values+KSET_CHARACTER_VOICE,sizeof(p->config_voice_snapshot));config_switch(p,b,3);
+    }else if(group==12)config_close(p,b,0);
+    else if(group==13){
+        if(part==0)config_close(p,b,1);
+        else if(part==2)for(unsigned i=0;i<KSET_COUNT;i++)p->setting_values[i]=bootstrap_setting_default(i);
+    }else if(group==14&&part<3)config_switch(p,b,(unsigned)part);
+    else if(group==15){
+        if(part>=3&&part<=5){p->config_next_kind=part==3?5:part==4?18:6;p->status[0]=0;config_motion_begin(p,b,4);}
+    }else if(group==200){for(unsigned i=0;i<33;i++)p->setting_values[KSET_CHARACTER_VOICE+i]=1;}
+    else if(group==201)config_switch(p,b,1);
+}
+static void config_audition(MessagePanel *p,KBootstrap *b,int id){
+    int group=(id>>8)-4;
+    if(group<0||group>3)return;
+    if(kconfig_audio_begin(&p->config_audio,b,(unsigned)group))
+        snprintf(p->status,sizeof(p->status),"試聴音声を読み込めませんでした");
+}
+static void config_drag(MessagePanel *p,KBootstrap *b,int id,int x){
+    if(p->config_motion)return;
+    if(id<0||!config_slider(id)||!config_enabled(p,b,id))return;
+    int item=config_item(id),start=(id>>8)==0?389:(id>>8)==1?495:408;
+    int value=x-start,limit=bootstrap_setting_limit((unsigned)item);
+    p->setting_values[item]=value<0?0:value>limit?limit:value;
+    config_audition(p,b,id);
+    p->config_audio.until=0;
+}
+/* Returns native slider ID+1 so touch drags retain the original control. */
+static unsigned settings_panel_pointer(MessagePanel *p,KBootstrap *b,int x,int y,int activate){
+    settings_panel_init(p,b);if(config_assets(p,b))return 0;
+    if(p->config_motion)return 0;
+    p->config_hover=-1;p->selected=~0u;
+    for(unsigned i=0;i<p->config_area_count[p->setting_page];i++){
+        const ConfigArea *a=&p->config_areas[p->setting_page][i];
+        if(x<a->x0||x>=a->x1||y<a->y0||y>=a->y1)continue;
+        p->selected=i;p->config_hover=a->id;
+        if(!activate||!config_enabled(p,b,a->id))return 0;
+        if(config_slider(a->id)){config_drag(p,b,a->id,x);return (unsigned)a->id+1;}
+        config_activate(p,b,a->id);return 0;
+    }
+    return 0;
 }
 static void settings_panel_action(MessagePanel *p,KBootstrap *b,int action){
     settings_panel_init(p,b);
-    if(action==1){p->setting_ready=0;p->kind=0;p->dismiss_menus=1;return;}
-    if(action==0){
-        int animation=bootstrap_prepare_animation_switch(b,(unsigned)p->setting_values[21]);
-        if(animation<0){snprintf(p->status,sizeof(p->status),"表示切替の準備ができませんでした");return;}
-        if(bootstrap_settings_apply(b,p->setting_values,bootstrap_setting_count())){snprintf(p->status,sizeof(p->status),"設定を保存できませんでした");return;}
-        if(animation)p->animation_request=1;
-        else if(b->message_active)b->vm->bytes[8190]=(uint8_t)p->setting_values[21];
-        p->setting_ready=0;p->kind=0;p->dismiss_menus=1;return;
+    if(p->config_motion)return;
+    if(action==1){
+        if(p->setting_page==3){memcpy(p->setting_values+KSET_CHARACTER_VOICE,p->config_voice_snapshot,sizeof(p->config_voice_snapshot));config_switch(p,b,1);}
+        else config_close(p,b,0);
+        return;
     }
-    if(action==7){for(unsigned i=0;i<bootstrap_setting_count();i++)p->setting_values[i]=bootstrap_setting_default(i);return;}
-    if(action==6||action==8||action==9){p->setting_page=(p->setting_page+(action==8?2:1))%3;for(unsigned i=0;i<sizeof(settings_controls)/sizeof(*settings_controls);i++)if(settings_controls[i].page==p->setting_page){p->selected=i;break;}return;}
-    if(action==2||action==3){unsigned n=sizeof(settings_controls)/sizeof(*settings_controls);do{p->selected=(p->selected+(action==2?n-1:1))%n;}while(settings_controls[p->selected].page!=p->setting_page);}
-    if(action==4||action==5){unsigned item=settings_controls[p->selected].item;int limit=bootstrap_setting_limit(item),value=p->setting_values[item]+(action==4?-1:1)*(limit>2?16:1);
-        p->setting_values[item]=value<0?0:value>limit?limit:value;
-        if(item>=16&&item<=17&&p->setting_values[item])p->setting_values[item==16?17:16]=0;
+    if(config_assets(p,b)){snprintf(p->status,sizeof(p->status),"設定画面の素材を読み込めませんでした");return;}
+    if(action==7){config_activate(p,b,p->setting_page==3?200*256:13*256+2);return;}
+    if(action==6||action==8||action==9){
+        if(p->setting_page!=3)config_switch(p,b,(p->setting_page+(action==8?2:1))%3);
+        return;
     }
-}
-static void settings_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
-    settings_panel_init(p,b);
-    if(ui_canvas(&p->image)||ui_asset(b,"option1_p.rmt",&p->settings_artwork)||ui_asset(b,"option2_p.rmt",&p->sidebar_artwork))return;
-    uint64_t key=ui_hash(ui_hash(1469598103934665603ULL,p->setting_values,sizeof(p->setting_values)),p->status,strlen(p->status));key^=(uint64_t)p->selected<<32|p->setting_page;
-    if(p->native_kind==8&&p->native_key==key&&p->texture){SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,p->texture,NULL,&dst);return;}p->native_kind=8;p->native_key=key;
-    KImage *d=&p->image,*a=&p->settings_artwork;ui_fill(d,0,0,640,480,0x17120c);
-    ui_blit(d,a,0,0,640,28,0,0,0);ui_blit(d,a,340+(int)p->setting_page*88,80,84,24,340+(int)p->setting_page*88,2,0);
-    ui_blit(d,a,(int)p->setting_page*272,102,272,386,368,36,0);
-    /* Native animation load-reduction toggle maps to the Switch decoder
-       workers; synchronization remains fixed by the presentation clock. */
-    if(p->setting_page==2){ui_fill(d,376,152,256,60,0x25231a);ui_text(b,d,"軽減処理：自動",390,162,230,44,0xc7c1a4,0);
-}
-    ui_blit(d,&p->sidebar_artwork,0,0,166,168,6,308,0);
-    for(unsigned i=0;i<sizeof(settings_controls)/sizeof(*settings_controls);i++){
-        const SettingsControl *c=&settings_controls[i];if(c->page!=p->setting_page)continue;
-        int value=p->setting_values[c->item],limit=bootstrap_setting_limit(c->item);
-        if(limit>2){int x=c->x+value*(c->w-1)/255;ui_blit(d,a,0,32,16,16,x-8,c->y,1);}
-        else if(c->item==22){ui_blit(d,a,160+value*88,78,84,22,c->x+value*88,c->y,0);}
-        else if(limit==1){ui_blit(d,a,value?640:728,44,86,22,c->x+(value?0:88),c->y,0);}
-        else{ui_blit(d,a,(c->item==20?240:480)+value*80,534,80,22,c->x+value*80,c->y,0);}
-        if(i==p->selected){ui_fill(d,c->x-4,c->y-3,c->w+8,2,0xffdf74);ui_fill(d,c->x-4,c->y+c->h+1,c->w+8,2,0xffdf74);}
+    if(!action){config_activate(p,b,p->config_hover);return;}
+    if(action<2||action>5)return;
+    unsigned n=p->config_area_count[p->setting_page];
+    if(p->selected>=n){p->selected=0;p->config_hover=p->config_areas[p->setting_page][0].id;return;}
+    const ConfigArea *current=&p->config_areas[p->setting_page][p->selected];
+    if((action==4||action==5)&&config_slider(current->id)&&config_enabled(p,b,current->id)){
+        int item=config_item(current->id),value=p->setting_values[item]+(action==4?-1:1);
+        if(value>=0&&value<=bootstrap_setting_limit((unsigned)item))p->setting_values[item]=value;
+        config_audition(p,b,current->id);
+        /* No pointer-up for key repeat: release after the last adjustment. */
+        p->config_audio.until=SDL_GetTicks64()+250;
+        return;
     }
-    if(p->setting_page==0)ui_fill(d,390,168,228,32,(unsigned)(p->setting_values[11]<<16|p->setting_values[12]<<8|p->setting_values[13]));
-    ui_blit(d,a,552,564,248,22,376,444,0);
-    ui_fill(d,8,32,344,260,0xa08948);ui_scale(d,&b->layers[0],12,36,336,252);
-    ui_text(b,d,"上下：選択\n左右：調整\nL/R・Y：ページ\nA：決定\nB：キャンセル\nX：デフォルト",180,314,176,140,0xffffff,0);
-
-    if(p->status[0])ui_text(b,d,p->status,24,252,320,40,0xffd060,0);
-    ui_present(r,d,&p->texture);
+    int cx=(current->x0+current->x1)/2,cy=(current->y0+current->y1)/2,best=-1;unsigned score=~0u;
+    for(unsigned i=0;i<n;i++){
+        const ConfigArea *a=&p->config_areas[p->setting_page][i];if(!config_enabled(p,b,a->id))continue;
+        int dx=(a->x0+a->x1)/2-cx,dy=(a->y0+a->y1)/2-cy;
+        int along=action==2?-dy:action==3?dy:action==4?-dx:dx;
+        if(along<=0)continue;
+        unsigned cross=(unsigned)abs(action<4?dx:dy),distance=(unsigned)along+cross*3;
+        if(distance<score){score=distance;best=(int)i;}
+    }
+    if(best>=0){p->selected=(unsigned)best;p->config_hover=p->config_areas[p->setting_page][best].id;}
 }
+static int settings_panel_audio(MessagePanel *p,KHistoryAudio *saved,SDL_AudioDeviceID device,unsigned rate,unsigned channels){
+    KConfigAudio *a=&p->config_audio;
+    if(p->kind!=8)kconfig_audio_stop(a);
+    if(a->until&&SDL_GetTicks64()>=a->until)kconfig_audio_release(a);
+    if(!a->active){
+        if(a->output_owned){a->output_owned=0;if(device&&khistory_audio_restore(saved,device))return -1;}
+        if(p->kind!=8)kconfig_audio_clear(a);
+        return 0;
+    }
+    if(!device||rate!=44100||channels!=2){
+        kconfig_audio_stop(a);snprintf(p->status,sizeof(p->status),"試聴音声を出力できませんでした");return 0;
+    }
+    if(khistory_audio_suspend(saved,device))return -1;
+    a->output_owned=1;
+    if(p->config_audio_serial!=a->serial){SDL_PauseAudioDevice(device,1);SDL_ClearQueuedAudio(device);p->config_audio_serial=a->serial;}
+    while(SDL_GetQueuedAudioSize(device)<4096){
+        uint8_t pcm[2048];size_t size=kconfig_audio_read(a,p->setting_values,pcm,sizeof(pcm));
+        if(!size)break;
+        if(SDL_QueueAudio(device,pcm,(Uint32)size))return -1;
+    }
+    SDL_PauseAudioDevice(device,0);return 0;
+}
+#include "settings_draw.inc"

@@ -7,6 +7,12 @@ static const struct {uint16_t scene;uint8_t part;} catalog[600]={
 #include "scene_catalog.inc"
 };
 static void put32(uint8_t *p,uint32_t n){for(unsigned i=0;i<4;i++)p[i]=(uint8_t)(n>>(8*i));}
+int khistory_catalog(unsigned slot,unsigned *scene,unsigned *part){
+    if(slot>=600||!catalog[slot].scene)return -1;
+    if(scene)*scene=catalog[slot].scene;
+    if(part)*part=catalog[slot].part;
+    return 0;
+}
 int khistory_checkpoint(const KSceneHistory *h,unsigned slot,KSceneCheckpoint *out){
     if(!h||!h->loaded||slot>=600||!out||!catalog[slot].scene||!h->data[2404+slot])return -1;
     const uint8_t *p=h->data+3004+slot*32,*end=memchr(p,0,32);

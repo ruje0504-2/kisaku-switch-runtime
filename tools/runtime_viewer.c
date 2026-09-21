@@ -33,9 +33,9 @@ static void panel_text(SDL_Renderer *r,int x,int y,const char *text){
 #include "scene_replay_menu.inc"
 #include "cursor_panel.inc"
 static void game_cancel(SaveMenu *m,MessagePanel *p,KBootstrap *b){
-    if(b->scene_replay){p->scene_cancel=1;return;}
+    if(b->scene_replay&&!b->letter_active){p->scene_cancel=1;return;}
     int was_hidden=b->message_user_hidden;
-    int menu=b->message_active&&!b->message_slide&&!b->area_active&&!b->choice_active&&!b->scene_replay;
+    int menu=b->message_active&&!b->letter_mode&&!b->letter_transition&&!b->message_slide&&!b->message_buttons_motion&&!b->area_active&&!b->choice_active&&!b->scene_replay;
     bootstrap_cancel(b);
     if(menu&&was_hidden){int mode=bootstrap_message_setting(b,20,0);if(mode)save_menu_open(m,b,mode==2);else{p->kind=8;p->setting_ready=0;}}
 }
@@ -145,7 +145,7 @@ int main(int argc,char **argv){
         HidAnalogStickState left=padGetStickPos(&pad,0),right=padGetStickPos(&pad,1);
         cursor_sticks(&cursor,b,left.x,left.y,right.x,right.y);
         if(buttons&HidNpadButton_R)bootstrap_message_action(b,8);
-        if((buttons&HidNpadButton_Up)&&b->message_active&&!b->choice_active) { panel.kind=5; panel.back=panel.viewing=0; }
+        if((buttons&HidNpadButton_Up)&&b->message_active&&!b->choice_active) { bootstrap_message_action(b,5); }
         if(buttons&HidNpadButton_Y)bootstrap_message_action(b,0);
         if(buttons&HidNpadButton_X){bootstrap_message_action(b,7);b->message_hover=0;}
         if(buttons&HidNpadButton_A){if(b->message_active&&b->message_open&&b->message_hover>=0)bootstrap_message_action(b,(unsigned)b->message_hover);else bootstrap_confirm(b);}
@@ -157,17 +157,20 @@ int main(int argc,char **argv){
         }
 #endif
         const Uint8 *keys=SDL_GetKeyboardState(NULL);
+        if(panel.kind==8&&(keys[SDL_SCANCODE_LCTRL]||keys[SDL_SCANCODE_RCTRL]||keys[SDL_SCANCODE_LSHIFT]||keys[SDL_SCANCODE_RSHIFT]))config_motion_skip(&panel,b);
         b->force_skip=!panel.kind&&!menu.active&&(keys[SDL_SCANCODE_LCTRL]||keys[SDL_SCANCODE_RCTRL]);
         b->effect_fast=b->force_skip||(!panel.kind&&!menu.active&&(keys[SDL_SCANCODE_LSHIFT]||keys[SDL_SCANCODE_RSHIFT]));
         if(b->quit_requested)break;
         SDL_Event e;while(SDL_PollEvent(&e)){
             if(e.type==SDL_MOUSEMOTION){cursor.x=(e.motion.x-160)*640/960;cursor.y=e.motion.y*2/3;cursor.valid=1;cursor.auto_hidden=0;cursor.last_stick=SDL_GetTicks64();}
             if(e.type==SDL_MOUSEBUTTONDOWN){cursor.x=(e.button.x-160)*640/960;cursor.y=e.button.y*2/3;cursor.valid=1;if(cursor.auto_hidden)continue;
-            }if(e.type==SDL_WINDOWEVENT){if(e.window.event==SDL_WINDOWEVENT_LEAVE||e.window.event==SDL_WINDOWEVENT_FOCUS_LOST){cursor.valid=0;cursor.focused=0;}if(e.window.event==SDL_WINDOWEVENT_ENTER||e.window.event==SDL_WINDOWEVENT_FOCUS_GAINED)cursor.focused=1;}if(e.type==SDL_QUIT)running=0;
+            }if(e.type==SDL_WINDOWEVENT){if(e.window.event==SDL_WINDOWEVENT_LEAVE||e.window.event==SDL_WINDOWEVENT_FOCUS_LOST){cursor.valid=0;cursor.focused=0;panel.config_mouse_drag=0;kconfig_audio_release(&panel.config_audio);}if(e.window.event==SDL_WINDOWEVENT_ENTER||e.window.event==SDL_WINDOWEVENT_FOCUS_GAINED)cursor.focused=1;}if(e.type==SDL_QUIT)running=0;
             if(menu_touch_event(&touch,&menu,&panel,b,&e,SDL_GetTicks64()))continue;
             if(menu.active&&menu.overwrite&&!panel.kind){
                 ui_edit_text(menu.note,sizeof(menu.note),&e);
-                if(e.type==SDL_KEYDOWN){if(e.key.keysym.sym==SDLK_RETURN)save_menu_action(&menu,b,0);else if(e.key.keysym.sym==SDLK_ESCAPE)save_menu_action(&menu,b,1);}
+                if(e.type==SDL_MOUSEMOTION)save_menu_pointer(&menu,b,cursor.x,cursor.y,0);
+                if(e.type==SDL_MOUSEBUTTONDOWN)save_menu_pointer(&menu,b,cursor.x,cursor.y,e.button.button==SDL_BUTTON_RIGHT?2:e.button.button==SDL_BUTTON_LEFT?1:0);
+                if(e.type==SDL_KEYDOWN){if(e.key.keysym.sym==SDLK_RETURN)save_menu_action(&menu,b,0);else if(e.key.keysym.sym==SDLK_ESCAPE)save_menu_action(&menu,b,1);else if(e.key.keysym.sym==SDLK_LEFT)save_menu_action(&menu,b,4);else if(e.key.keysym.sym==SDLK_RIGHT)save_menu_action(&menu,b,5);}
                 continue;
             }
             if(panel.kind==14){
@@ -180,13 +183,47 @@ int main(int argc,char **argv){
                 continue;
             }
             if(panel.kind){
+                if(panel.kind==5){
+                    if(e.type==SDL_MOUSEBUTTONDOWN){
+                        if(e.button.button==SDL_BUTTON_RIGHT)backlog_pointer(&panel,b,cursor.x,cursor.y,2);
+                        else if(e.button.button==SDL_BUTTON_LEFT)panel.backlog_mouse_drag=backlog_pointer(&panel,b,cursor.x,cursor.y,1);
+                    }else if(e.type==SDL_MOUSEBUTTONUP)panel.backlog_mouse_drag=0;
+                    else if(e.type==SDL_MOUSEMOTION){
+                        if(panel.backlog_mouse_drag&&(e.motion.state&SDL_BUTTON_LMASK))backlog_drag(&panel,b,cursor.y);
+                        else {panel.backlog_mouse_drag=0;backlog_pointer(&panel,b,cursor.x,cursor.y,0);}
+                    }else if(e.type==SDL_MOUSEWHEEL){int dy=e.wheel.y;if(e.wheel.direction==SDL_MOUSEWHEEL_FLIPPED)dy=-dy;if(dy)backlog_scroll(&panel,b,dy>0?1:-1,1);}
+                }
+                if(panel.kind==8){
+                    if(e.type==SDL_MOUSEBUTTONDOWN){
+                        if(e.button.button==SDL_BUTTON_RIGHT)settings_panel_action(&panel,b,1);
+                        else if(e.button.button==SDL_BUTTON_LEFT)panel.config_mouse_drag=settings_panel_pointer(&panel,b,cursor.x,cursor.y,1);
+                    }else if(e.type==SDL_MOUSEBUTTONUP){panel.config_mouse_drag=0;kconfig_audio_release(&panel.config_audio);}
+                    else if(e.type==SDL_MOUSEMOTION){
+                        if(panel.config_mouse_drag&&(e.motion.state&SDL_BUTTON_LMASK))config_drag(&panel,b,(int)panel.config_mouse_drag-1,cursor.x);
+                        else {if(panel.config_mouse_drag)kconfig_audio_release(&panel.config_audio);panel.config_mouse_drag=0;settings_panel_pointer(&panel,b,cursor.x,cursor.y,0);}
+                    }
+                }
+                if(panel.kind==6||panel.kind==18||panel.kind==19){
+                    if(e.type==SDL_MOUSEMOTION||e.type==SDL_MOUSEBUTTONDOWN){
+                        int click=e.type==SDL_MOUSEMOTION?0:e.button.button==SDL_BUTTON_LEFT?1:e.button.button==SDL_BUTTON_RIGHT?2:0;
+                        message_dialog_pointer(&panel,b,cursor.x,cursor.y,click);
+                    }
+                }
+                if(panel.kind==20&&(e.type==SDL_MOUSEMOTION||e.type==SDL_MOUSEBUTTONDOWN)){
+                    int click=e.type==SDL_MOUSEMOTION?0:e.button.button==SDL_BUTTON_LEFT?1:e.button.button==SDL_BUTTON_RIGHT?2:0;
+                    scene_mode_pointer(&panel,b,cursor.x,cursor.y,click);
+                }
                 if(e.type==SDL_KEYDOWN){SDL_Keycode key=e.key.keysym.sym;int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_PAGEUP&&(panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?8:key==SDLK_PAGEDOWN&&(panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?9:(key==SDLK_r||key==SDLK_g)&&(panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==11)?7:-1;if(action>=0)message_panel_action(&panel,b,action);}
                 continue;
             }
             if(e.type==SDL_KEYDOWN&&e.key.keysym.sym==SDLK_s){save_menu_open(&menu,b,0);continue;}
             if(menu.active){
+                if(e.type==SDL_MOUSEMOTION)save_menu_pointer(&menu,b,cursor.x,cursor.y,0);
+                if(e.type==SDL_MOUSEBUTTONDOWN){if(e.button.button==SDL_BUTTON_LEFT)save_menu_pointer(&menu,b,cursor.x,cursor.y,1);else if(e.button.button==SDL_BUTTON_RIGHT)save_menu_action(&menu,b,1);}
+                if(e.type==SDL_MOUSEWHEEL)save_menu_action(&menu,b,e.wheel.y>0?2:3);
                 if(e.type==SDL_KEYDOWN){
                     SDL_Keycode key=e.key.keysym.sym;
+                    if(menu.param_detail&&(key==SDLK_LSHIFT||key==SDLK_RSHIFT||key==SDLK_LCTRL||key==SDLK_RCTRL)){save_menu_param_skip(&menu);continue;}
                     int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_g?7:key==SDLK_PAGEUP?8:key==SDLK_PAGEDOWN?9:-1;
                     if(action>=0)save_menu_action(&menu,b,action);
                 }
@@ -201,12 +238,12 @@ int main(int argc,char **argv){
                 if(e.key.keysym.sym==SDLK_LEFT)bootstrap_menu_move(b,-1,0);
                 if(e.key.keysym.sym==SDLK_RIGHT)bootstrap_menu_move(b,1,0);
                 if(e.key.keysym.sym==SDLK_ESCAPE||e.key.keysym.sym==SDLK_DELETE)game_cancel(&menu,&panel,b);
-                if(e.key.keysym.sym==SDLK_BACKSPACE&&b->message_active){panel.kind=5;panel.back=panel.viewing=0;}
+                if(e.key.keysym.sym==SDLK_BACKSPACE&&b->message_active){bootstrap_message_action(b,5);}
                 if(e.key.keysym.sym==SDLK_TAB)bootstrap_message_action(b,4);
                 if(e.key.keysym.sym==SDLK_UP)bootstrap_title_move(b,-1);
                 if(e.key.keysym.sym==SDLK_DOWN)bootstrap_title_move(b,1);
             }
-            if(e.type==SDL_MOUSEWHEEL&&b->message_active){if(e.wheel.y>0){panel.kind=5;panel.back=panel.viewing=0;}else if(e.wheel.y<0)bootstrap_confirm(b);}
+            if(e.type==SDL_MOUSEWHEEL&&b->message_active){if(e.wheel.y>0){bootstrap_message_action(b,5);}else if(e.wheel.y<0)bootstrap_confirm(b);}
 
             if(e.type==SDL_MOUSEMOTION){cursor.x=e.motion.x<160?-1:(e.motion.x-160)*640/960;cursor.y=e.motion.y<0?-1:e.motion.y*480/720;cursor.valid=1;bootstrap_pointer(b,cursor.x,cursor.y,0);}
             if(e.type==SDL_MOUSEBUTTONDOWN){cursor.x=e.button.x<160?-1:(e.button.x-160)*640/960;cursor.y=e.button.y<0?-1:e.button.y*480/720;cursor.valid=1;if(e.button.button==SDL_BUTTON_RIGHT){game_cancel(&menu,&panel,b);continue;}if(e.button.button!=SDL_BUTTON_LEFT)continue;if(b->area_active||b->choice_active||b->title.active||b->flag_dialog.active||b->message_active)bootstrap_pointer(b,cursor.x,cursor.y,1);else bootstrap_confirm(b);}
@@ -216,6 +253,7 @@ int main(int argc,char **argv){
             int request=b->scene_panel_request;b->scene_panel_request=0;
             if(request<0&&(panel.kind==4||panel.kind==16))panel.kind=0;
             if(request==1){panel.kind=4;panel.nav_catalog_ready=0;panel.selected=panel.back=panel.viewing=0;panel.status[0]=0;}
+            if(request==3){panel.kind=20;panel.direct_scene=1;panel.direct_count=0;panel.direct_selected=0;panel.direct_page=0;panel.status[0]=0;}
             if(request>0&&b->scene&&panel.kind==4){
                 for(unsigned i=0;i<b->scene->count;i++)if(b->scene->nodes[i].id==b->scene_focus&&b->scene->nodes[i].width){panel.selected=i;break;}
                 panel.back=0;
@@ -261,7 +299,6 @@ int main(int argc,char **argv){
         if(start_story&&b->flag_dialog.active){bootstrap_pointer(b,300,350,1);start_story=0;}
         if(advance_texts&&b->text_count<advance_texts&&b->message_active&&!b->message_slide)bootstrap_confirm(b);
         if(state==1&&!menu.active&&(!panel.kind||(panel.kind>=9&&panel.kind<=15))){bootstrap_frame(b);state=bootstrap_run(b,100000);if(state<0)fprintf(stderr,"%s\n",b->error);}
-        if(history_voice_audio(&panel,&history_audio,audio,audio_rate,audio_channels,&history_serial))goto done;
         if(b->audio_serial!=serial){
             memset(&history_audio,0,sizeof(history_audio));
             if(audio&&(audio_rate!=b->audio_rate||audio_channels!=b->audio_channels)){SDL_CloseAudioDevice(audio);audio=0;}
@@ -272,6 +309,8 @@ int main(int argc,char **argv){
             }else SDL_ClearQueuedAudio(audio);
             audio_queued=0;serial=b->audio_serial;
         }
+        if(settings_panel_audio(&panel,&history_audio,audio,audio_rate,audio_channels))goto done;
+        if(history_voice_audio(&panel,&history_audio,audio,audio_rate,audio_channels,&history_serial))goto done;
         if(restore_navigation_audio&&audio){
             history_audio=navigation.sound;if(khistory_audio_restore(&history_audio,audio))goto done;
             audio_queued=navigation.queued;restore_navigation_audio=0;
@@ -330,9 +369,13 @@ int main(int argc,char **argv){
     save_menu_clear(&menu);
     cursor_clear(&cursor);
     history_voice_stop(&panel);kvoice_worker_destroy(panel.voice_worker);
+    kconfig_audio_clear(&panel.config_audio);
     gallery_panel_clear(&panel);nawa_panel_clear(&panel);
     rmt_free(&panel.settings_artwork);rmt_free(&panel.sidebar_artwork);
+    for(unsigned i=0;i<5;i++)rmt_free(&panel.config_art[i]);
+    rmt_free(&panel.dialog_artwork);rmt_free(&panel.dialog_body);
     rmt_free(&panel.name_artwork);rmt_free(&panel.nav_artwork);rmt_free(&panel.nav_scene);for(unsigned i=0;i<4;i++)rmt_free(&panel.nav_previews[i]);rmt_free(&panel.history_artwork);
+    rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);
     rmt_free(&panel.image);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
     if(audio)SDL_CloseAudioDevice(audio);
     bootstrap_destroy(navigation.next);bootstrap_destroy(navigation.owner);bootstrap_destroy(menu.next);bootstrap_destroy(b);SDL_DestroyTexture(fade);SDL_DestroyTexture(texture);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return rc;

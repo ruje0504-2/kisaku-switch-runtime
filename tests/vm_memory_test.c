@@ -30,5 +30,21 @@ int main(void){
     v=kvm_create();assert(v);int id=kvm_add_module(v,"local",code,size);assert(id==0);kvm_start(v,id);
     v->depth=1;v->frames[0].argc=1;v->frames[0].module=0;v->frames[0].ip=size-4;
     kvm_run(v,100);assert(v->status==KVM_DONE&&v->sp==1&&v->stack[0].number==91);kvm_destroy(v);
+    /* Native operand storage grows: keep numeric and borrowed string values
+       in order across reallocations, including a push sourced from the stack. */
+    v=kvm_create();assert(v);const char borrowed[]="borrowed-script-string";
+    for(unsigned i=0;i<10000;i++)assert(!kvm_push(v,(KValue){(int32_t)i,i%3==0?borrowed:NULL}));
+    assert(v->sp==10000&&v->stack_capacity>=10000);
+    while(v->sp<v->stack_capacity)assert(!kvm_push(v,(KValue){-7,NULL}));
+    unsigned previous=v->sp;assert(!kvm_push(v,v->stack[0]));
+    assert(v->sp==previous+1&&v->stack[previous].string==borrowed);
+    KValue popped;assert(!kvm_pop(v,&popped)&&popped.string==borrowed);
+    while(v->sp>10000)assert(!kvm_pop(v,&popped)&&popped.number==-7);
+    for(unsigned i=10000;i>0;i--){
+        assert(!kvm_pop(v,&popped)&&popped.number==(int32_t)(i-1));
+        assert(popped.string==((i-1)%3==0?borrowed:NULL));
+    }
+    assert(!v->sp);kvm_destroy(v);
+    puts("Kisaku VM growable operand stack, mixed values and LIFO beyond 4096: PASS");
     puts("Kisaku VM raw memory views, bounds, word clamp and local assignment: PASS");
 }

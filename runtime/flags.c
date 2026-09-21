@@ -115,3 +115,17 @@ int kflags_merge(KFlags *saved,const KFlags *current){
     for(unsigned i=32;i<100;i++)if(saved->words[i]<current->words[i])saved->words[i]=current->words[i];
     return 0;
 }
+int kflags_restore_progress(KFlags *slot,const KFlags *catalog,unsigned alternate){
+    if(!slot||!catalog||!slot->bytes||!catalog->bytes||slot->byte_count!=9192||
+       catalog->byte_count!=9192||alternate>1)return -1;
+    /* 5079cf..507d41 reads the temporary FLAG100/201 as source. */
+    if(!alternate){
+        slot->bytes[1016]=catalog->bytes[1016];
+        memcpy(slot->bytes+1022,catalog->bytes+1022,7);
+        memcpy(slot->bytes+1032,catalog->bytes+1032,128);
+    }
+    for(unsigned i=2000;i<4096;i++)if(alternate||i!=4092)slot->bytes[i]=catalog->bytes[i];
+    slot->bytes[4010]=slot->bytes[4011]=slot->bytes[4007]=0;
+    memcpy(slot->bytes+5000,catalog->bytes+5000,2000);
+    return 0;
+}

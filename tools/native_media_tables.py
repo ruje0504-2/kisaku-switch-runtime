@@ -57,6 +57,16 @@ def extract(path):
         if len(records) != expected:
             raise ValueError('Static media table count mismatch')
         tables.append(records)
+    # 47b380 indexes forty fixed-width CP932 location labels at 523808.
+    locations = []
+    for i in range(40):
+        row = read(0x523808 + i * 32, 32)
+        label, separator, padding = row.partition(b'\0')
+        if not separator or not label or any(padding):
+            raise ValueError('Invalid location label')
+        label.decode('cp932')
+        locations.append(list(row))
+    tables.append(locations)
     return tables
 
 def render(tables):
@@ -72,6 +82,10 @@ def render(tables):
                 resource, flag, related = row
                 lines.append('{'+f'{json.dumps(resource)},{flag},{related}'+'},')
         lines.append('};')
+    lines.append('static const unsigned char kisaku_location_names[][32]={')
+    for row in tables[3]:
+        lines.append('{' + ','.join(map(str, row)) + '},')
+    lines.append('};')
     return '\n'.join(lines) + '\n'
 
 def main():

@@ -29,3 +29,11 @@ bool ax_waiting(const struct ax_player *a);
 
 /* 40bd30: draw the next descriptor immediately, then reset the track IP. */
 bool ax_first_frame(struct ax_player *a,unsigned cell,ax_draw_fn draw,void *context);
+
+/* Kisaku 4dd8e0: count opcode-1 boundaries, respecting both loop slots.
+   Opcode 3 returns -1. Leaves the live player and output unchanged on error. */
+bool ax_count_boundaries(const struct ax_player *a,unsigned cell,int32_t *count);
+
+/* 4decb0: native track event IDs are distinct from opcodes and play state.
+   The caller owns persistent events[AX_CELLS], initially zero. */
+bool ax_tick_native(struct ax_player *a,uint8_t events[AX_CELLS],ax_draw_fn draw,void *context);

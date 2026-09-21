@@ -23,6 +23,20 @@ int main(int argc,char **argv){
     values[61].number=1;srcbytes[3650]=2;srcbytes[3711]=255;
     assert(!kflags_merge(&saved,&current));
     assert(bytes[3649]==9&&bytes[3650]==2&&bytes[3651]==0&&bytes[3711]==255&&bytes[3712]==9);
+    /* 5076f0 carries only catalog ranges; local story/raw/words stay in slot. */
+    for(unsigned mode=0;mode<2;mode++){
+        memset(bytes,11,sizeof(bytes));memset(srcbytes,23,sizeof(srcbytes));
+        assert(!kflags_restore_progress(&saved,&current,mode));
+        assert(bytes[1015]==11&&bytes[1016]==(mode?11:23)&&bytes[1017]==11);
+        assert(bytes[1021]==11&&bytes[1022]==(mode?11:23)&&bytes[1028]==(mode?11:23)&&bytes[1029]==11);
+        assert(bytes[1031]==11&&bytes[1032]==(mode?11:23)&&bytes[1159]==(mode?11:23)&&bytes[1160]==11);
+        assert(bytes[1999]==11&&bytes[2000]==23&&bytes[4091]==23&&bytes[4092]==(mode?23:11)&&bytes[4095]==23&&bytes[4096]==11);
+        assert(bytes[4007]==0&&bytes[4010]==0&&bytes[4011]==0&&bytes[4008]==23);
+        assert(bytes[4999]==11&&bytes[5000]==23&&bytes[6999]==23&&bytes[7000]==11&&raw[1000]==0xa5&&words[31]==10);
+    }
+    current.byte_count=6999;memcpy(srcbytes,bytes,sizeof(bytes));
+    assert(kflags_restore_progress(&saved,&current,0)<0&&!memcmp(bytes,srcbytes,sizeof(bytes)));
+    current.byte_count=sizeof(srcbytes);
     uint8_t before[9192];memcpy(before,bytes,sizeof(bytes));current.word_count=99;
     assert(kflags_merge(&saved,&current)<0&&!memcmp(before,bytes,sizeof(bytes)));current.word_count=600;
     values[2]=(KValue){73,"CP932-independent typed value"};strcpy((char *)saved.module,"open.mes");

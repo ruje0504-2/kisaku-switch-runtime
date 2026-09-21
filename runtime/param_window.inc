@@ -1,13 +1,9 @@
-/* 49e110/49dee0/49dc60 use the same keyed atlas copy as the native DIB
-   methods, but their destination is the offscreen 602x112 panel.  The
-   fourth value and the two counters are independent two-cell displays. */
+/* 49e110/49dee0/49dc60 use CDIB +0x48 with copy-alpha=1.
+   The small glyphs are full BGRA copies, not color-keyed sprites. */
 static void param_small_digit(KImage *surface,const KImage *atlas,unsigned dx,unsigned glyph){
     unsigned sx=glyph<10?524+glyph*8:524+(glyph-10)*8,sy=glyph<10?112:128;
-    for(unsigned y=0;y<16;y++)for(unsigned x=0;x<8;x++){
-        const uint8_t *s=atlas->pixels+(sy+y)*atlas->stride+(sx+x)*4;
-        if((s[0]==0&&s[1]==255&&s[2]==0)||s[3]==0)continue;
-        memcpy(surface->pixels+(92+y)*surface->stride+(dx+x)*4,s,4);
-    }
+    for(unsigned y=0;y<16;y++)memcpy(surface->pixels+(92+y)*surface->stride+dx*4,
+        atlas->pixels+(sy+y)*atlas->stride+sx*4,8*4);
 }
 static void param_fourth(KBootstrap *b,KImage *surface,const KImage *atlas){
     /* 49e110: this+0x2e, x=166, y=92.  The native routine intentionally
@@ -22,13 +18,13 @@ static void param_fourth(KBootstrap *b,KImage *surface,const KImage *atlas){
     param_small_digit(surface,atlas,474,total>=100?10:total<10?11:total/10);
     param_small_digit(surface,atlas,482,total>=100?10:total%10);
 
-    /* 49dc60: this+0x66, x=542, y=92.  A zero remaining count writes only
+    /* 49dc60: this+0x66, x=534, y=92.  A zero remaining count writes only
        the second cell with glyph 12; the first cell is intentionally left
        as the native surface left it. */
-    if(!left)param_small_digit(surface,atlas,550,12);
+    if(!left)param_small_digit(surface,atlas,542,12);
     else{
-        param_small_digit(surface,atlas,542,left>=100?10:left<10?11:left/10);
-        param_small_digit(surface,atlas,550,left>=100?10:left%10);
+        param_small_digit(surface,atlas,534,left>=100?10:left<10?11:left/10);
+        param_small_digit(surface,atlas,542,left>=100?10:left%10);
     }
 }
 /* CKisakuParamWnd 4fc080/10/0 -> 49fc40 (49e250 redraw).
@@ -124,4 +120,29 @@ static int param_window_counts(KBootstrap *b,int total,int left){
         b->param_total=old_total;b->param_remaining=old_left;return -1;
     }
     return 0;
+}
+
+/* 474500 reconstructs CKisakuParamWnd from the selected save's words.
+   Never borrow the live window for a thumbnail: previewing a different slot
+   must not change the running scene's private surfaces or counters. */
+int bootstrap_saved_param_image(KBootstrap *b,const KFlags *saved,KImage *out){
+    if(!b||!saved||!out||!saved->words||saved->word_count<=557)return -1;
+    KBootstrap *state=calloc(1,sizeof(*state));if(!state)return -1;
+    state->images=b->images;state->vm=b->vm;
+    int failed=0;
+    for(unsigned i=0;i<4;i++){
+        int value=(int16_t)saved->words[500+i],limit=i==3?80:999;
+        if(value<0){failed=1;break;}
+        state->param_values[i]=(int16_t)(value>limit?limit:value);
+    }
+    state->param_markers[0]=(int16_t)saved->words[552];state->param_markers[1]=(int16_t)saved->words[553];
+    state->param_total=saved->words[556];state->param_remaining=saved->words[557];
+    if((int16_t)state->param_remaining>99)state->param_total=255;
+    if(!failed)failed=param_window_rows(state,(int16_t)saved->words[541],1);
+    if(!failed){
+        KImage next=state->param_surface;state->param_surface=(KImage){0};
+        next.height=state->param_rows==4?112:30+29*(unsigned)(state->param_rows-1);
+        rmt_free(out);*out=next;
+    }
+    rmt_free(&state->param_surface);rmt_free(&state->param_atlas);free(state);return failed?-1:0;
 }

@@ -5,6 +5,7 @@
 #include "save_slot.h"
 #include "restore_name.h"
 #include "text_layout.h"
+#include "voice_character.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -179,13 +180,41 @@ KBootstrap *bootstrap_create_split(const char *root,const char *save_root){
     b->vm->globals[0][50].number=0x57;b->vm->globals[0][29].number=0x101;
     int m=module(b,"startup.mes");if(m>=0)kvm_start(b->vm,m);return b;
 }
-int bootstrap_flush_progress(KBootstrap *b){
+static int store_native_progress(KBootstrap *b){
+    KVM *v=b->vm;
+    /* Startup may flush read flags before it has declared the native banks. */
+    if(v->byte_count!=9192||v->word_count!=600||v->global_count[1]!=100||
+       b->raw_size!=15000||b->restore_pending||b->history_restore)return 0;
+    if(v->globals[1][61].string||(unsigned)v->globals[1][61].number>1)return -1;
+    unsigned slot=v->globals[1][61].number?201:100;
+    KFlags *catalog=kflags_read_slot(bootstrap_save_dir(b),0,slot);
+    if(!catalog)return -1;
+    KFlags current={0};current.bytes=v->bytes;current.byte_count=v->byte_count;
+    current.words=v->words;current.word_count=v->word_count;
+    current.globals[1]=v->globals[1];current.counts[1]=v->global_count[1];
+    int result=catalog->byte_count!=9192||catalog->word_count!=600||catalog->raw_count!=15000||catalog->counts[1]!=100||
+        catalog->globals[1][61].string||catalog->globals[1][61].number!=(int)(slot==201);
+    if(!result){
+        uint8_t before_bytes[9192];uint16_t before_words[600];
+        memcpy(before_bytes,catalog->bytes,sizeof(before_bytes));memcpy(before_words,catalog->words,sizeof(before_words));
+        result=kflags_merge(catalog,&current);
+        if(!result&&(memcmp(before_bytes,catalog->bytes,sizeof(before_bytes))||memcmp(before_words,catalog->words,sizeof(before_words))))
+            result=kflags_write_slot(catalog,bootstrap_save_dir(b),0,slot);
+    }
+    kflags_free(catalog);return result?-1:0;
+}
+static int flush_read_history(KBootstrap *b){
     if(!b||b->reset_pending)return -1;
     if(kgallery_flush(&b->gallery,bootstrap_save_dir(b)))return error(b,"CG history save failed");
     if(b->read_loaded&&b->read_dirty){
         if(kread_flags_save(bootstrap_save_dir(b),b->read_selector,b->read_flags,b->read_size))return error(b,"read history save failed");
         b->read_dirty=0;
     }
+    return 0;
+}
+int bootstrap_flush_progress(KBootstrap *b){
+    if(flush_read_history(b))return -1;
+    if(store_native_progress(b))return error(b,"native progress catalog save failed");
     return 0;
 }
 static void mark_read(KBootstrap *b,unsigned id){
@@ -210,6 +239,7 @@ int bootstrap_enable_async_images(KBootstrap *b){
 static KImage *scene_surface(KBootstrap *b){
     if(b->choice_active&&b->choice_base.pixels)return &b->choice_base;
     if(b->message_visible&&b->message_base.pixels)return &b->message_base;
+    if(b->mes_fade_drawn)return &b->mes_fade_backing;
     return &b->layers[0];
 }
 static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
@@ -221,27 +251,30 @@ static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     b->last_loaded_layer=layer;
     /* Kisaku has no Kawa2 bmptbl.dat/cglist.dat. Image installation must
        not invoke the other title's gallery catalog. */
-    (void)name;return 0;
+    if(layer==8)snprintf(b->normal_atlas_name,sizeof(b->normal_atlas_name),"%s",name);
+    return 0;
 }
-void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
+void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
 static int message_init(KBootstrap *b){
-    /* Kisaku 481be0: reset metrics/cursor and clear the private text region
-       (32,8,560,54) on bank0[49]=1's layer. */
+    /* 481be0: the layout rectangle is (32,8,560,54), but 481d68/481dca
+       clear both complete 640x84 text surfaces. 481a50 copies that surface
+       when revealing the remainder, including the right margin. */
     KVM *v=b->vm;KImage *dst=&b->layers[1];
-    if(v->global_count[0]<=49||!b->layer_count||!dst->pixels||dst->width<592||dst->height<62)
-        return error(b,"message initialization requires system variables and layer 1 >= 592x62");
+    if(v->global_count[0]<=49||!b->layer_count||!dst->pixels||dst->width<640||dst->height<84)
+        return error(b,"message initialization requires system variables and layer 1 >= 640x84");
     if(!b->message_text.pixels){
-        uint8_t *p=calloc(560*54,4);if(!p)return error(b,"message surface allocation failed");
+        uint8_t *p=calloc(576*54,4);if(!p)return error(b,"message surface allocation failed");
         /* Text coordinates are local to the native message sprite. */
-        b->message_text=(KImage){32,8,560,54,560*4,p};
+        b->message_text=(KImage){32,8,576,54,576*4,p};
     }
     memset(b->message_text.pixels,0,b->message_text.stride*b->message_text.height);
-    for(unsigned y=8;y<62;y++)memset(dst->pixels+y*dst->stride+32*4,0,560*4);
+    for(unsigned y=0;y<84;y++)memset(dst->pixels+y*dst->stride,0,640*4);
     const unsigned slots[]={42,43,44,45,46,47,30,31,49};
     const int values[]={32,8,592,62,32,8,16,18,1};
     for(unsigned i=0;i<sizeof(slots)/sizeof(*slots);i++)v->globals[0][slots[i]]=(KValue){values[i],NULL};
     b->font_width=b->font_height=16;
     b->message_pending_size=0;b->message_pending[0]=0;b->message_voice_name[0]=0;
+    b->message_buttons_motion=0;
     b->message_cursor_x=32;b->message_cursor_y=8;b->message_initialized=1;
     return 0;
 }
@@ -268,17 +301,10 @@ static int voice_play(KBootstrap *b){
         if(b->audio_objects[2][0].state){
             if((b->video_active&&!b->video_background)||b->logo_phase)return error(b,"voice over movie/logo not implemented");
             if(b->music_active&&(b->audio_rate!=44100||b->audio_channels!=2))return error(b,"music mixing format unsupported");
-            int volume=255,enabled=1;
-            for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,"Voice")){
-                if(equal(b->settings[i].key,"Volume"))volume=atoi(b->settings[i].value);
-                if(equal(b->settings[i].key,"IsVoice"))enabled=atoi(b->settings[i].value)!=0;
-            }
-            if(volume<0)volume=0;
-            if(volume>255)volume=255;
-            double gain=enabled?pow(10.0,(volume-255)*18.0/2000.0):0;
+            snprintf(b->voice_playing_name,sizeof(b->voice_playing_name),"%s",b->audio_objects[2][0].name);
             if(mam_prepare(b,b->audio_objects[2][0].name))return -1;
             if(b->voice_worker){
-                if(kvoice_worker_submit(b->voice_worker,b->audio_objects[2][0].name,gain))return error(b,"voice worker submission failed");
+                if(kvoice_worker_submit(b->voice_worker,b->audio_objects[2][0].name,1))return error(b,"voice worker submission failed");
                 free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=b->voice_read_cursor=b->voice_clock_cursor=0;b->voice_clock=0;
                 if(!b->music_active){b->audio_size=b->audio_cursor=0;}
                 if(b->audio_rate!=44100||b->audio_channels!=2){b->audio_rate=44100;b->audio_channels=2;b->audio_serial++;}
@@ -286,7 +312,6 @@ static int voice_play(KBootstrap *b){
             }
             uint8_t *data=NULL,*pcm=NULL;size_t size=0,bytes=0;
             if(read_named(&b->voice,b->audio_objects[2][0].name,&data,&size)||kaudio_decode(data,size,&pcm,&bytes)){free(data);free(pcm);return error(b,"voice decode failed");}free(data);
-            for(size_t i=0;i<bytes;i+=2){int16_t sample=(int16_t)le16(pcm+i),out=(int16_t)(sample*gain);pcm[i]=(uint8_t)out;pcm[i+1]=(uint8_t)((uint16_t)out>>8);}
             free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=b->voice_read_cursor=b->voice_clock_cursor=0;b->voice_clock=0;
             if(b->music_active){
                 b->voice_pcm=pcm;b->voice_size=bytes;b->voice_active=1;
@@ -308,13 +333,27 @@ static int option(KBootstrap *b,const char *section,const char *key,int fallback
    keeping the integer division here also matches x86 idiv's truncation. */
 static int music_volume_db(const KBootstrap *b,int *enabled){
     int volume=option((KBootstrap *)b,"Music","Volume",72);
-    if(volume<0)volume=0;
-    if(volume>104)volume=104;
     if(enabled)*enabled=option((KBootstrap *)b,"Music","IsMusic",1)!=0;
-    int delta=104-volume;
-    return enabled&&!*enabled?-10000:-((delta+100)*delta)/10;
+    return kisaku_sound_volume_db(volume,enabled?*enabled:1);
 }
 static double db_gain(int db){return pow(10.0,db/2000.0);}
+/* Keep decoder PCM intact, as DirectSound did. Settings affect the next
+   output samples and can unmute an already-playing track without reloading. */
+static double voice_output_gain(const KBootstrap *b){
+    if(!option((KBootstrap *)b,"Voice","IsVoice",1))return 0;
+    int character=kisaku_voice_character(b->voice_playing_name);
+    if(character>=0){char key[24];snprintf(key,sizeof(key),"IsCharVoice%02d",character);if(!option((KBootstrap *)b,"Voice",key,1))return 0;}
+    return db_gain(kisaku_sound_volume_db(option((KBootstrap *)b,"Voice","Volume",83),1));
+}
+static void audio_settings_changed(KBootstrap *b){
+    int attenuation=b->music_db-b->fade_db;
+    int enabled;b->music_db=music_volume_db(b,&enabled);b->music_enabled=(unsigned)enabled;
+    b->fade_db=b->music_db-(b->music_fading?attenuation:0);
+    for(unsigned i=0;i<65;i++){
+        KEffectTrack *t=i==64?&b->movie_effect:&b->effect_tracks[i];
+        if(!t->fade_step)t->fade_limit=5000+kisaku_sound_volume_db(option(b,"Effect",i==3||i==64?"HVolume":"Volume",83),1);
+    }
+}
 /* 004fd1d0 (CFuncExec case 0x28 / syscall 31/40) slides the page-0
    display window through the 640x960 layer-2 atlas.  The native loop yields
    once per 8/32/64-pixel step, so the portable runtime keeps the same wait
@@ -362,63 +401,177 @@ static void message_copy_text(KBootstrap *b){
     for(unsigned y=0;y<54;y++)memcpy(b->message_text.pixels+y*b->message_text.stride,src->pixels+(top+y)*src->stride+32*4,576*4);
     b->message_revealing=0;
 }
+static int message_skin_reload(KBootstrap *b);
+static void message_skin_color(KBootstrap *b,KImage *background){
+    if(!background->pixels)return;
+    uint8_t color[4];const char *keys[]={"Blue","Green","Red","Alpha"};
+    for(unsigned c=0;c<4;c++){
+        int64_t value=option(b,"Msg",keys[c],c==3?92:0);
+        if(c==3)value=224-value;
+        if(value<0)value=0;
+        if(value>224)value=224;
+        value=value*255/184;if(value>255)value=255;color[c]=(uint8_t)value;
+    }
+    for(unsigned y=0;y<background->height;y++)for(unsigned x=0;x<background->width;x++)
+        memcpy(background->pixels+y*background->stride+x*4,color,4);
+}
+/* CMesWnd controls: open, quit dialog (4b4060), backlog, skip, auto, input toggle. */
+static const unsigned message_actions[6]={7,6,5,1,0,9};
+/* 46bbe0 / 46bca0: EffectSpeed scales interpolation ticks, each 15 ms.
+   Flag 0x4000 preserves duration and forbids input skipping. */
+static unsigned message_effect_steps(KBootstrap *b,unsigned duration){
+    if(!(b->vm->globals[0][50].number&0x4000)){
+        int speed=option(b,"Display","EffectSpeed",0);
+        if(speed==0)duration>>=1;else if(speed==1)duration>>=2;else if(speed==2)duration=0;
+    }
+    return duration;
+}
+/* 483d10 / 483b80: four independently timed sprites, all start together. */
+static void message_buttons_begin(KBootstrap *b){
+    b->message_buttons_tick=b->message_buttons_clock=0;b->message_buttons_motion=0;
+    for(unsigned i=0;i<4;i++){
+        unsigned duration=b->message_open?6+i*2:14-i*2;
+        b->message_buttons_steps[i]=message_effect_steps(b,duration);
+        if(b->message_buttons_steps[i])b->message_buttons_motion=1;
+    }
+}
+static unsigned message_button_y(const KBootstrap *b,unsigned item){
+    if(item==0||item==5)return 464;
+    if(!b->message_buttons_motion)return b->message_open?464:480;
+    unsigned steps=b->message_buttons_steps[item-1],tick=b->message_buttons_tick;
+    unsigned move=steps&&tick<steps?16*tick/steps:16;
+    return b->message_open?480-move:464+move;
+}
+static void message_buttons_frame(KBootstrap *b){
+    if(!b->message_buttons_motion)return;
+    b->message_buttons_clock+=1000;
+    while(b->message_buttons_clock>=900&&b->message_buttons_motion){
+        b->message_buttons_clock-=900;b->message_buttons_tick++;
+        unsigned pending=0;
+        for(unsigned i=0;i<4;i++)pending|=b->message_buttons_tick<b->message_buttons_steps[i];
+        b->message_buttons_motion=pending;
+    }
+}
+/* 482b20 compares CP932 816d/816e; single-byte control prefixes do not
+   advance its full-width cursor. Bound the scan to avoid malformed strings. */
+static unsigned message_name_cells(const uint8_t *text,size_t size){
+    size_t i=0;unsigned cells=1;
+    if(!text)return 0;
+    while(i<size&&!((text[i]>=0x81&&text[i]<=0x9f)||(text[i]>=0xe0&&text[i]<=0xef)))i++;
+    if(i+1>=size||text[i]!=0x81||text[i+1]!=0x6d)return 0;
+    i+=2;
+    while(i<size){
+        if((text[i]>=0x81&&text[i]<=0x9f)||(text[i]>=0xe0&&text[i]<=0xef)){
+            if(i+1>=size)return 0;
+            cells++;
+            if(text[i]==0x81&&text[i+1]==0x6e)return cells;
+            i+=2;
+        }else i++;
+    }
+    return 0;
+}
+static void message_name_reveal(KBootstrap *b){
+    const uint8_t *text=(const uint8_t *)(b->message_pending_size?b->message_pending:b->vm->text);
+    size_t size=b->message_pending_size?b->message_pending_size:b->vm->text_size;
+    unsigned cells=message_name_cells(text,size);
+    int advance=b->vm->globals[0][30].number,height=b->vm->globals[0][31].number;
+    if(!cells||advance<=0||height<=0)return;
+    uint64_t width=(uint64_t)cells*(unsigned)advance;
+    unsigned limit=b->message_end_y==408?(unsigned)b->message_end_x-32:576;
+    if(width>limit)width=limit;
+    if(height>54)height=54;
+    KImage *source=&b->layers[1];int top=b->vm->globals[0][43].number;
+    if(top<0||top+height>(int)source->height)return;
+    for(int row=0;row<height;row++)memcpy(b->message_text.pixels+row*b->message_text.stride,
+        source->pixels+(top+row)*source->stride+32*4,(size_t)width*4);
+    b->message_reveal_x=32+(int)width;
+}
+static void message_slide_finish(KBootstrap *b){
+    b->message_slide=0;
+    if(b->message_hiding){b->message_visible=0;memcpy(b->layers[0].pixels,b->message_base.pixels,640*480*4);}
+}
+static void message_slide_begin(KBootstrap *b,int hiding){
+    unsigned steps=message_effect_steps(b,12);
+    b->message_slide=steps?steps+1:0;b->message_slide_frame=b->message_slide_clock=0;b->message_hiding=hiding;
+    if(!steps)message_slide_finish(b);
+}
 static void message_compose(KBootstrap *b){
     unsigned offset=0;
-    if(b->message_slide){unsigned f=b->message_slide_frame,d=b->message_slide-1;unsigned move=d&&f<d?86*f/d:86;offset=b->message_hiding?move:86-move;}
+    if(b->message_slide){unsigned f=b->message_slide_frame,d=b->message_slide-1;unsigned move=d&&f<d?84*f/d:84;offset=b->message_hiding?move:84-move;}
     memcpy(b->layers[0].pixels,b->message_base.pixels,640*480*4);
     if(b->message_user_hidden)return;
-    unsigned alpha=b->message_color>>24;
-    for(unsigned y=394+offset;y<480;y++)for(unsigned x=0;x<640;x++){
+    const uint8_t *color=b->message_skin.background.pixels;
+    unsigned alpha=color[3];
+    for(unsigned y=396+offset;y<480;y++)for(unsigned x=0;x<640;x++){
         uint8_t *out=b->layers[0].pixels+y*b->layers[0].stride+x*4;
-        for(unsigned c=0;c<3;c++){unsigned color=(b->message_color>>(c*8))&255;out[c]=(uint8_t)((color*alpha+out[c]*(255-alpha))/255);}
+        for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(color[c]*alpha/255+out[c]*(255-alpha)/255);
     }
-    for(unsigned y=0;y<54&&408+offset+y<480;y++)for(unsigned x=0;x<576;x++){
-        uint8_t *src=b->message_text.pixels+y*b->message_text.stride+x*4,*out=b->layers[0].pixels+(408+offset+y)*b->layers[0].stride+(32+x)*4;
-        for(unsigned c=0;c<3;c++)out[c]=(uint8_t)((src[c]*src[3]+out[c]*(255-src[3]))/255);
+    for(unsigned y=0;y<54&&404+offset+y<480;y++)for(unsigned x=0;x<576;x++){
+        uint8_t *src=b->message_text.pixels+y*b->message_text.stride+x*4,*out=b->layers[0].pixels+(404+offset+y)*b->layers[0].stride+(32+x)*4;
+        for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(src[c]*src[3]/255+out[c]*(255-src[3])/255);
     }
-    /* Native mes_open.area positions; controls use the original alpha sheet. */
-    for(unsigned item=b->message_open?0:7;item<8;item++){
-        unsigned dx=item?320+(item-1)*44:278;
-        unsigned state=b->message_hover==(int)item?1:0;
-        if((item==0&&option(b,"Msg","IsAutoMes",0))||(item==1&&option(b,"Msg","IsOneMes",0)))state=2;
-        unsigned sy=state*16;
-        if(sy+16>b->message_parts.height)sy=0;
-        for(unsigned y=0;y<16&&464+offset+y<480;y++)for(unsigned x=0;x<54;x++){
-            uint8_t *src=b->message_parts.pixels+(sy+y)*b->message_parts.stride+(item*56+x)*4,*out=b->layers[0].pixels+(464+offset+y)*b->layers[0].stride+(dx+2+x)*4;
+    /* 481df0 / 482450: six independent sprites, with native atlas states. */
+    const unsigned sx[]={76,532,152,76,0,152},sy[]={148,84,84,84,84,148};
+    for(unsigned item=0;item<6;item++){
+        unsigned button_y=message_button_y(b,item);
+        if(button_y>=480)continue;
+        KImage *button=&b->message_skin.buttons[item],*atlas=&b->message_skin.atlas;
+        unsigned state=b->message_hover==(int)message_actions[item]?1:0;
+        if((item==4&&option(b,"Msg","IsAutoMes",0))||(item==3&&option(b,"Msg","IsOneMes",0))||
+           (item==5&&!state&&(b->vm->globals[0][50].number&0x8000)))state=2;
+        unsigned row=sy[item]+state*16;
+        if(row+16>atlas->height){error(b,"CMesWnd button state outside atlas");return;}
+        for(unsigned y=0;y<16&&button_y+offset+y<480;y++)for(unsigned x=0;x<button->width;x++){
+            uint8_t *src=atlas->pixels+(row+y)*atlas->stride+(sx[item]+x)*4,*out=b->layers[0].pixels+(button_y+offset+y)*b->layers[0].stride+(button->x+x)*4;
             for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(src[c]*src[3]/255+out[c]*(255-src[3])/255);
         }
     }
+}
+static int message_slide_skip(KBootstrap *b){
+    if(!b->message_slide&&!b->message_buttons_motion)return 0;
+    if(!(b->vm->globals[0][50].number&0x4000)){
+        if(b->message_slide)message_slide_finish(b);
+        b->message_buttons_motion=0;
+        if(b->message_visible)message_compose(b);
+    }
+    return 1;
 }
 #include "message_history.inc"
 static int message_begin(KBootstrap *b,int id){
     KVM *v=b->vm;
 
     if(id< -1||(id>=0&&(size_t)id>=b->read_size*8)||v->globals[0][49].number!=1||v->globals[0][42].number!=32||v->globals[0][43].number!=8||v->globals[0][44].number!=592||v->globals[0][45].number!=62)return error(b,"message region/read id unsupported");
-    if(!b->message_parts.pixels){
-        uint8_t *data=NULL;size_t n=0;
-        if(read_named(&b->images,"kisaku_DL_mes_p.akb",&data,&n)||rmt_decode(data,n,&b->message_parts)){free(data);return error(b,"message controls decode failed");}free(data);
-        if(b->message_parts.width<448||b->message_parts.height<16)return error(b,"message controls dimensions invalid");
-    }
+    if(!b->message_skin.atlas.pixels&&message_skin_reload(b))return -1;
     if(!b->message_base.pixels){b->message_base=(KImage){0,0,640,480,2560,malloc(640*480*4)};if(!b->message_base.pixels)return error(b,"message backdrop allocation failed");}
     if(!b->message_visible)memcpy(b->message_base.pixels,b->layers[0].pixels,640*480*4);
-    int a=option(b,"Msg","Alpha",128),r=option(b,"Msg","Red",0),g=option(b,"Msg","Green",0),blue=option(b,"Msg","Blue",0),speed=option(b,"Msg","ShowSpeed",128);
+    int a=option(b,"Msg","Alpha",92),r=option(b,"Msg","Red",0),g=option(b,"Msg","Green",0),blue=option(b,"Msg","Blue",0),speed=option(b,"Msg","ShowSpeed",86);
     if(a<0||a>255||r<0||r>255||g<0||g>255||blue<0||blue>255||speed<0||speed>255)return error(b,"message settings range");
     b->message_color=((uint32_t)(255-a)<<24)|((uint32_t)r<<16)|((uint32_t)g<<8)|(unsigned)blue;
-    b->message_delay=(255-speed)*148/255;b->message_clock=0;b->message_revealing=1;
+    /* 484b22..484b81: double intermediates, then truncation toward zero.
+       124 is the explicit instant-text setting (484bc8). Older portable
+       settings allowed 255; normalize those to the native instant endpoint. */
+    if(speed>124)speed=124;
+    double quadratic=(speed*0.01365)*speed;
+    int delay=(int)(250.0-(quadratic+speed));
+    b->message_delay=delay>0?(unsigned)delay:0;
+    b->message_clock=b->message_delay*60;b->message_revealing=1;
     int top=v->globals[0][43].number,end_x=v->globals[0][46].number,end_y=v->globals[0][47].number;
     b->message_reveal_x=32;b->message_reveal_y=408;b->message_end_x=end_x;b->message_end_y=408+end_y-top;
     if(end_y<top||end_y>v->globals[0][45].number||end_x<32||end_x>608)return error(b,"message cursor range");
-    memset(b->message_text.pixels,0,576*54*4);
-    if(!b->message_delay)message_copy_text(b);
-    unsigned duration=12;int effect=option(b,"Display","EffectSpeed",0);if(effect==1)duration>>=1;else if(effect==2||(v->globals[0][50].number&0x4000))duration=0;
-    b->message_slide=b->message_visible?0:duration+1;b->message_slide_frame=0;b->message_hiding=0;b->message_active=b->message_visible=1;b->message_read_id=id;
+    memset(b->message_text.pixels,0,b->message_text.stride*b->message_text.height);
+    if(speed==124)message_copy_text(b);else message_name_reveal(b);
+    if(!b->message_visible)message_slide_begin(b,0);
+    b->message_active=b->message_visible=1;b->message_read_id=id;
     message_history_record(b);
     b->message_auto_clock=0;
-    int auto_speed=option(b,"Msg","AutoMesSpeed",128);if(auto_speed<0)auto_speed=0;if(auto_speed>255)auto_speed=255;
-    b->message_auto_delay=500+(unsigned)((int)((255-auto_speed)*1.7))*(unsigned)(v->text_size/2);
+    int auto_speed=option(b,"Msg","AutoMesSpeed",52);if(auto_speed<0)auto_speed=0;if(auto_speed>104)auto_speed=104;
+    size_t message_bytes=b->message_pending_size?b->message_pending_size:v->text_size;
+    b->message_auto_delay=500+(unsigned)((int)((104-auto_speed)*1.7))*(unsigned)(message_bytes/2);
     b->message_had_voice=b->audio_counts[2]&&b->audio_objects[2][0].state;
     b->message_was_read=id>=0&&(b->read_flags[(unsigned)id>>3]&(0x80u>>(id&7)))!=0;
     if(!b->message_was_read&&option(b,"Msg","IsOneMes",0))setting_put(b,"Msg","IsOneMes","0");
+    b->message_open=option(b,"Msg","EnableOpen",0)!=0||option(b,"Msg","IsOneMes",0)!=0;
+    b->message_buttons_motion=0;
     /* 448fc0 -> 47fd80: MSB-first read bit, in memory only. */
     if(id>=0)mark_read(b,(unsigned)id);
     b->message_timed=0;b->message_user_hidden=0;
@@ -464,9 +617,8 @@ static int blit(KBootstrap *b,int keyed){
     int32_t q[9];for(unsigned i=0;i<9;i++)if(integer(b,&q[i]))return -1;
     return blit_args(b,keyed,q);
 }
-/* CFuncLayer action 4 (4f68e0 -> CDIB+0x60) uses a color key.  Its ninth
- * and tenth operands select whether the source alpha is copied and the RGB
- * key respectively; unlike action 3 it always reads ten stack values. */
+/* 4f68e0 -> 4f5ef0 -> 48e110 -> 48c0c0: the ninth operand is the
+ * RGB key; the tenth selects Alpha copying. Do not interchange them. */
 static int blit_color_key(KBootstrap *b){
     int32_t q[10];for(unsigned i=0;i<10;i++)if(integer(b,&q[i]))return -1;
     KImage *dst=surface(b,q[4]),*src=surface(b,q[7]);
@@ -482,11 +634,11 @@ static int blit_color_key(KBootstrap *b){
     if(w<=0||h<=0)return 0;
     uint8_t *copy=malloc((size_t)w*h*4);if(!copy)return error(b,"color-key allocation failed");
     for(int64_t y=0;y<h;y++)memcpy(copy+y*w*4,src->pixels+(sy+y)*src->stride+sx*4,(size_t)w*4);
-    uint32_t key=(uint32_t)q[9]&0xffffffu;
+    uint32_t key=(uint32_t)q[8]&0xffffffu;
     for(int64_t y=0;y<h;y++)for(int64_t x=0;x<w;x++){
         uint8_t *s=copy+(y*w+x)*4,*d=dst->pixels+(dy+y)*dst->stride+(dx+x)*4;
         if((((uint32_t)s[0]|((uint32_t)s[1]<<8)|((uint32_t)s[2]<<16))&0xffffffu)==key)continue;
-        if(q[8]==1)memcpy(d,s,4);
+        if(q[9]==1)memcpy(d,s,4);
         else memcpy(d,s,3);
     }
     free(copy);return 0;
@@ -613,7 +765,7 @@ static int play_pcm(KBootstrap *b,Ai6Archive *archive,const char *name){
     snprintf(b->audio_name,sizeof(b->audio_name),"%s",name);return 0;
 }
 static int effect_decode(KBootstrap *b,KEffectTrack *track,const char *name){
-    if(!option(b,"Effect","IsEffect",1)){free(track->pcm);memset(track,0,sizeof(*track));return 0;}
+    int scene_sound=track==&b->effect_tracks[3]||track==&b->movie_effect;
     if((b->audio_size||b->voice_pcm)&&(b->audio_rate!=44100||b->audio_channels!=2))return error(b,"effect mixing format unsupported");
     uint8_t *data=NULL,*pcm=NULL;size_t size=0,pcm_size=0;
     if(read_named(&b->effects,name,&data,&size))return error(b,"effect resource missing");
@@ -631,10 +783,8 @@ static int effect_decode(KBootstrap *b,KEffectTrack *track,const char *name){
     if(!rate||kaudio_decode(data,size,&pcm,&pcm_size)){free(data);return error(b,"effect decode failed");}free(data);
     first=(size_t)((uint64_t)first*44100/rate)*4;last=(size_t)((uint64_t)last*44100/rate)*4;
     if(last&&(first>=last||last>pcm_size)){free(pcm);return error(b,"effect loop range invalid");}
-    int volume=option(b,"Effect","Volume",230);if(volume<0)volume=0;if(volume>255)volume=255;
-    double gain=pow(10.0,(volume-255)*18.0/2000.0);
-    for(size_t i=0;i+1<pcm_size;i+=2){int16_t sample=(int16_t)((int16_t)le16(pcm+i)*gain);pcm[i]=(uint8_t)sample;pcm[i+1]=(uint8_t)((uint16_t)sample>>8);}
-    free(track->pcm);*track=(KEffectTrack){.pcm=pcm,.size=pcm_size,.loop_start=first,.loop_end=last,.fade_limit=5000+(volume-255)*18};
+    int volume_db=kisaku_sound_volume_db(option(b,"Effect",scene_sound?"HVolume":"Volume",83),1);
+    free(track->pcm);*track=(KEffectTrack){.pcm=pcm,.size=pcm_size,.loop_start=first,.loop_end=last,.fade_limit=5000+volume_db};
     if(b->audio_rate!=44100||b->audio_channels!=2){b->audio_rate=44100;b->audio_channels=2;b->audio_serial++;}
     return 0;
 }
@@ -655,7 +805,7 @@ static int choice_initialize(KBootstrap *b){
         if(!row->pixels){row->pixels=calloc(496*h,4);if(!row->pixels)return error(b,"choice row allocation failed");row->width=496;row->height=h;row->stride=496*4;}
     }
     for(unsigned y=0;y<68;y++)for(unsigned x=0;x<320;x++)atlas->pixels[y*atlas->stride+x*4+3]=255;
-    unsigned theme=b->vm->bytes[1000]!=0;
+    unsigned theme=b->vm->bytes[1000]==1;
     if(b->vm->globals[1][61].number==1)theme=0;
     for(unsigned state=0;state<5;state++)for(unsigned y=0;y<68;y++)for(unsigned x=0;x<496;x++){
         unsigned sx=(state+theme*5)*32+(x<8?x:x>=488?24+x-488:8+(x-8)%16);
@@ -671,6 +821,44 @@ static int choice_initialize(KBootstrap *b){
     }
     b->choice_selected=-1;b->choice_prepared=1;return 0;
 }
+static int choice_top(const KBootstrap *b,unsigned count){
+    unsigned rows=b->choice_normal?(b->choice_count<4?b->choice_count:4):count;
+    return (480-(int)rows*52)/2;
+}
+static unsigned choice_native_state(KBootstrap *b,unsigned item){
+    if(!b->vm->bytes[1000]||b->vm->globals[1][61].number!=0)return 0;
+    int id=b->choice_values[item];
+    return id<0?0:b->vm->bytes[2000+id];
+}
+static int choice_enabled(KBootstrap *b,unsigned item){
+    if(!b->choice_normal||!b->vm->bytes[1000]||!b->vm->bytes[4010])return 1;
+    int id=(int16_t)b->choice_values[item];if(id==-1)return 1;
+    if(id<0)return 0;
+    return b->vm->bytes[(b->vm->globals[1][61].number==0?2000:0)+id]!=0;
+}
+static unsigned choice_native_color(KBootstrap *b,unsigned state){
+    static const unsigned colors[]={0x000000,0x00fe00,0x00feff,0xff8080,0xfffe00};
+    unsigned color=0;const char channels[]="BGR";
+    for(unsigned c=0;c<3;c++){
+        char key[]={'C',(char)('0'+state),channels[c],0};
+        color|=((unsigned)option(b,"SELECT",key,(colors[state]>>(c*8))&255)&255)<<(c*8);
+    }
+    return color;
+}
+/* 4f0970: expand each 34-pixel half into 8 + 18 + 18 + 8.
+   48c010 recolors the red key; green is transparent in the sprite copy. */
+static void choice_native_pixel(KBootstrap *b,unsigned state,int hover,unsigned x,unsigned y,int stretch,unsigned color,unsigned alpha,uint8_t out[4]){
+    KImage *atlas=&b->layers[5];
+    unsigned row=!stretch?y:y<8?y:y<44?8+(y-8)%18:26+y-44;
+    const uint8_t *src=atlas->pixels+(68+state*68+(hover?34:0)+row)*atlas->stride+x*4;
+    memcpy(out,src,4);
+    unsigned rgb=out[0]|((unsigned)out[1]<<8)|((unsigned)out[2]<<16);
+    if(rgb==0x00ff00){out[3]=0;return;}
+    if(!hover&&rgb==0xff0000){
+        out[0]=(uint8_t)color;out[1]=(uint8_t)(color>>8);out[2]=(uint8_t)(color>>16);
+        out[3]=(uint8_t)alpha;
+    }
+}
 static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
     memset(b->choice_text.pixels,0,640*480*4);
     KTextEncoding encoding=text_encoding(b);
@@ -681,13 +869,19 @@ static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
         if(decode_text(b,(const uint8_t *)b->choice_labels[item],b->choice_lengths[item],chars,128,&n,&encoding))return error(b,"choice text encoding invalid");
         if(!text_font(b,path,NULL,encoding))return error(b,"choice font missing");
         int x=(640-(int)(b->choice_lengths[item]/2)*16)/2;
-        unsigned color=b->vm->bytes[8100]==0&&b->vm->bytes[2000+b->choice_values[item]]?0xffb400:0xffffff;
+        unsigned color=b->choice_normal?((unsigned)b->vm->globals[0][33].number&0xffffff):
+            b->vm->bytes[8100]==0&&b->vm->bytes[2000+b->choice_values[item]]?0xffb400:0xffffff;
+        if(!choice_enabled(b,item))color=0x808080;
         for(size_t j=0;j<n;j++){
-            if(kfont_draw(b->font,&b->choice_text,chars[j].codepoint,x,top+(int)i*52+18,16,16,color))return error(b,"choice glyph unavailable");
+            if(kfont_draw(b->font,&b->choice_text,chars[j].codepoint,x,top+(int)i*52+(b->choice_normal?17:18),16,16,color))return error(b,"choice glyph unavailable");
             x+=chars[j].columns*8;
         }
     }
-    if(b->choice_count>4){
+    if(b->choice_normal){
+        /* 523d64/523d68: native CP932 ▲ / ▼, centered in 496x34 rows. */
+        if(page&&kfont_draw(b->font,&b->choice_text,0x25b2,312,top-34+8,16,16,0xffffff))return error(b,"choice previous-page glyph unavailable");
+        if(page*4+4<b->choice_count&&kfont_draw(b->font,&b->choice_text,0x25bc,312,top+208+8,16,16,0xffffff))return error(b,"choice next-page glyph unavailable");
+    }else if(b->choice_count>4){
         char label[48];snprintf(label,sizeof(label),"<    %u / %u    >",page+1,(b->choice_count+3)/4);
         int x=(640-(int)strlen(label)*8)/2;
         for(unsigned i=0;label[i];i++)if(kfont_draw(b->font,&b->choice_text,(unsigned char)label[i],x+(int)i*8,448,16,16,0xffffff))return error(b,"choice page glyph unavailable");
@@ -697,8 +891,9 @@ static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
 static void choice_draw(KBootstrap *b){
     if(!b->choice_active)return;
     if(b->choice_selected< -1||(b->choice_selected>=0&&(unsigned)b->choice_selected>=b->choice_count)){error(b,"choice selection invalid");return;}
-    unsigned page=b->choice_selected<0?0:(unsigned)b->choice_selected/4,count=b->choice_count-page*4;if(count>4)count=4;
-    int top=(480-(int)count*52)/2;
+    unsigned page=b->choice_selected<0?b->choice_page:(unsigned)b->choice_selected/4,count=b->choice_count-page*4;if(count>4)count=4;
+    b->choice_page=page;
+    int top=choice_top(b,count);
     if(b->choice_rendered_page!=page&&choice_page_text(b,page,count,top))return;
     memcpy(b->layers[0].pixels,b->choice_base.pixels,640*480*4);
     for(unsigned i=0;i<count;i++){
@@ -707,13 +902,26 @@ static void choice_draw(KBootstrap *b){
            black background for both states; seen labels carry the distinction.
            Appendix games retain every original atlas state. */
         int sy=(seen&&b->vm->bytes[8100]!=0?156:0)+((int)item==b->choice_selected?52:0);
-        const KImage *row=b->choice_normal?&b->choice_rows[0][((int)item==b->choice_selected)?3:2]:NULL;
+        unsigned native_state=b->choice_normal?choice_native_state(b,item):0;
+        if(native_state>4){error(b,"CNormalSelect palette index outside native atlas");return;}
+        unsigned color=b->choice_normal?choice_native_color(b,native_state):0,alpha=(unsigned)option(b,"SELECT","MIXED",112)&255;
         for(unsigned y=0;y<52;y++)for(unsigned x=0;x<496;x++){
-            const uint8_t *src=b->choice_normal?row->pixels+y*row->stride+x*4:b->choice_parts.pixels+(sy+y)*b->choice_parts.stride+x*4;
+            uint8_t native[4];
+            if(b->choice_normal)choice_native_pixel(b,native_state,(int)item==b->choice_selected,x,y,1,color,alpha,native);
+            const uint8_t *src=b->choice_normal?native:b->choice_parts.pixels+(sy+y)*b->choice_parts.stride+x*4;
             uint8_t *dst=b->layers[0].pixels+(top+i*52+y)*b->layers[0].stride+(72+x)*4;
             unsigned a=src[3];
             for(unsigned c=0;c<3;c++)dst[c]=(uint8_t)(src[c]*a/255+dst[c]*(255-a)/255);
             dst[3]=(uint8_t)(a+dst[3]*(255-a)/255);
+        }
+    }
+    if(b->choice_normal)for(unsigned nav=0;nav<2;nav++){
+        if(nav?page*4+4>=b->choice_count:!page)continue;
+        int y0=top+(nav?208:-34);unsigned alpha=(unsigned)option(b,"SELECT","MIXED",112)&255;
+        for(unsigned y=0;y<34;y++)for(unsigned x=0;x<496;x++){
+            uint8_t src[4];choice_native_pixel(b,0,b->choice_page_hover==(int)nav+1,x,y,0,0,alpha,src);
+            uint8_t *dst=b->layers[0].pixels+(y0+y)*b->layers[0].stride+(72+x)*4;
+            for(unsigned c=0;c<3;c++)dst[c]=(uint8_t)(src[c]*src[3]/255+dst[c]*(255-src[3])/255);
         }
     }
     for(size_t i=0;i<640*480;i++){
@@ -731,13 +939,15 @@ static int choice_begin(KBootstrap *b){
     KVM *eval=malloc(sizeof(*eval));if(!eval)return error(b,"choice evaluator allocation failed");
     const char *labels[64]={0};size_t lengths[64]={0};
     for(unsigned i=0;i<list->count;i++){
-        memcpy(eval,v,sizeof(*eval));eval->raw=NULL;eval->raw_size=0;eval->module=list->items[i].module;eval->ip=list->items[i].ip;eval->sp=eval->depth=eval->script_depth=0;eval->status=KVM_READY;
+        memcpy(eval,v,sizeof(*eval));eval->stack=NULL;eval->stack_capacity=0;eval->raw=NULL;eval->raw_size=0;eval->module=list->items[i].module;eval->ip=list->items[i].ip;eval->sp=eval->depth=eval->script_depth=0;eval->status=KVM_READY;
         unsigned texts=0;KStatus state=KVM_READY;
         for(unsigned n=0;n<1000;n++){
             state=kvm_run(eval,1000);
             if(state==KVM_TEXT){labels[i]=eval->text;lengths[i]=eval->text_size;texts++;kvm_resume(eval);}
             else break;
         }
+        /* Modules are borrowed, but evaluation owns its growable stack. */
+        free(eval->stack);eval->stack=NULL;
         if(state!=KVM_YIELD||texts!=1||eval->globals[0][16].string||lengths[i]>60){free(eval);return error(b,"choice body unsupported");}
         b->choice_values[i]=eval->globals[0][16].number;
         b->choice_returns[i]=(int32_t)((uint32_t)list->items[i].value+1);
@@ -747,7 +957,8 @@ static int choice_begin(KBootstrap *b){
         if(memcmp(eval->globals,v->globals,sizeof(v->globals))||memcmp(eval->bytes,v->bytes,sizeof(v->bytes))||memcmp(eval->words,v->words,sizeof(v->words))){free(eval);return error(b,"choice body side effects unsupported");}
     }
     free(eval);
-    if(!b->choice_normal){
+    if(b->choice_normal){if(choice_initialize(b))return -1;}
+    else{
         rmt_free(&b->choice_parts);uint8_t *data=NULL;size_t size=0;
         const char *parts=(v->bytes[8100]==1||v->bytes[8100]==3)?"selparts.rmt":"selparts2.rmt";
         if(read_named(&b->images,parts,&data,&size)||rmt_decode(data,size,&b->choice_parts)){free(data);return error(b,"choice parts load failed");}free(data);
@@ -756,33 +967,26 @@ static int choice_begin(KBootstrap *b){
     KImage *images[]={&b->choice_text,&b->choice_base};
     for(unsigned i=0;i<2;i++){if(!images[i]->pixels){uint8_t *p=calloc(640*480,4);if(!p)return error(b,"choice surface allocation failed");*images[i]=(KImage){0,0,640,480,640*4,p};}}
     memcpy(b->choice_base.pixels,b->layers[0].pixels,640*480*4);memset(b->choice_text.pixels,0,640*480*4);
-    b->choice_count=list->count;b->choice_selected=-1;b->choice_rendered_page=~0u;
+    b->choice_count=list->count;b->choice_selected=-1;b->choice_page=b->choice_page_hover=0;b->choice_rendered_page=~0u;
     for(unsigned i=0;i<list->count;i++){memcpy(b->choice_labels[i],labels[i],lengths[i]);b->choice_labels[i][lengths[i]]=0;b->choice_lengths[i]=(unsigned)lengths[i];}
     b->choice_active=1;choice_draw(b);return b->error[0]?-1:0;
 }
 static void draw_ax(const uint32_t d[7],unsigned cell,void *context){
     (void)cell;KBootstrap *b=context;
-    /* AX vtable 4d5674 + 0x38 -> 40c370 is an empty ret 0xc. */
-    if(d[0]==2)return;
-    if(d[0]>2){error(b,"AX descriptor requires private menu canvas");return;}
-    /* 40c040: kind0 copies BGRA from page5 to page0, no alpha blending. */
-    int32_t q[9]={(int32_t)d[5],(int32_t)d[6],(int32_t)d[3],(int32_t)d[4],b->ax_destination,(int32_t)d[1],(int32_t)d[2],5,1};
-    if(!d[0])blit_args(b,0,q);
-    else if(b->ax_fast){q[8]=0xff00;blit_args(b,3,q);}
-    else {
-        /* 40c0c0: update sprite plane 4, restore background plane 2,
-           then composite the sprite plane over the destination rectangle. */
-        q[4]=4;q[8]=0xff00;if(blit_args(b,3,q))return;
-        q[4]=b->ax_destination;q[5]=(int32_t)d[5];q[6]=(int32_t)d[6];q[7]=2;q[8]=1;
-        if(blit_args(b,0,q))return;
-        q[7]=4;blit_args(b,2,q);
-    }
+    /* Kisaku CAnimeManager: 4de390 defaults source=8/destination=0;
+       4de760 copies RGB, 4de650 keys green and unwraps destination Y.
+       The former layer5/sprite4/background2 compositor belonged to the
+       reference executable and must not be used for Kisaku's AX files. */
+    if(d[0]==2||d[0]==3)return; /* 4dd8a0 / 4dd890 */
+    if(d[0]>3){error(b,"AX descriptor kind unsupported");return;}
+    int32_t y=(int32_t)d[6];if(d[0]==1&&y>479)y-=480;
+    int32_t q[9]={(int32_t)d[5],y,(int32_t)d[3],(int32_t)d[4],b->ax_destination,
+                 (int32_t)d[1],(int32_t)d[2],8,d[0]==1?0xff00:0};
+    blit_args(b,d[0]==1?1:0,q);
 }
-/* CAnimeManagerEX vtable 4dd7a0/4dd690.  The constructor leaves the
- * destination selector at (0,0) and the source selector at (0,8), so the
- * fallback source is layer 8.  Syscall 31/520/12 temporarily supplies the
- * destination surface selector.  Descriptor kinds 0 and 1 are direct and
- * color-key copies; kinds 2 and 3 are empty native methods. */
+/* The manager returned by 41cc70 is initialized at 4b5661 with source
+ * selector (0,9), overriding the constructor's layer 8 default. 5031b0
+ * changes only the destination for its synchronous first-frame draw. */
 static void draw_ax_extra(const uint32_t d[7],unsigned cell,void *context){
     (void)cell;KBootstrap *b=context;
     if(d[0]==2||d[0]==3)return;
@@ -793,7 +997,7 @@ static void draw_ax_extra(const uint32_t d[7],unsigned cell,void *context){
        the same zero alpha flag.  The portable layer helper has the same
        byte-preserving behavior for q[8]==0. */
     int32_t q[9]={(int32_t)d[5],y,(int32_t)d[3],(int32_t)d[4],b->animation_target_layer,
-                 (int32_t)d[1],(int32_t)d[2],8,d[0]==1?0xff00:0};
+                 (int32_t)d[1],(int32_t)d[2],9,d[0]==1?0xff00:0};
     if(blit_args(b,d[0]==1?1:0,q))return;
 }
 #include "ax_runtime.inc"
@@ -802,13 +1006,128 @@ static void draw_ax_extra(const uint32_t d[7],unsigned cell,void *context){
 #include "montage.inc"
 #include "novel.inc"
 #include "letter.inc"
+#include "message_fade.inc"
 #include "message_skin.inc"
 #include "diary.inc"
 #include "param_window.inc"
+#include "param_change.h"
 #include "title_initial.inc"
 #include "../build/media_tables.h"
 #include "distort.inc"
 #include "movie.inc"
+
+/* 4a00f0 owns the parameter window and the normal CAnimeManager together.
+   Keep the window backing separate so a modal animation never permanently
+   paints over the message/scene underneath it. */
+static int param_animation_restore(KBootstrap *b){
+    if(!b->param_animation_window||!b->param_backing.pixels)return 0;
+    KImage *screen=&b->layers[0];
+    if(!screen->pixels||screen->width<620||screen->height<452)return error(b,"CKisakuParamWnd screen bounds");
+    unsigned height=b->param_rows==4?112:b->param_rows?30+29*(b->param_rows-1):0;
+    for(unsigned y=0;y<height;y++)memcpy(screen->pixels+(340+y)*screen->stride+18*4,
+        b->param_backing.pixels+y*b->param_backing.stride,b->param_backing.width*4);
+    return 0;
+}
+static int param_animation_present(KBootstrap *b){
+    if(!b->param_animation_window||!b->param_surface.pixels)return 0;
+    KImage *screen=&b->layers[0];
+    if(!screen->pixels||screen->width<620||screen->height<452)return error(b,"CKisakuParamWnd screen bounds");
+    /* 49fc40 clips the 602x112 DIB to the native client height. */
+    unsigned height=b->param_rows==4?112:b->param_rows?30+29*(b->param_rows-1):0;
+    for(unsigned y=0;y<height;y++)memcpy(screen->pixels+(340+y)*screen->stride+18*4,
+        b->param_surface.pixels+y*b->param_surface.stride,b->param_surface.width*4);
+    return 0;
+}
+static int param_animation_track_reset(KBootstrap *b,unsigned cell){
+    if(cell>=AX_CELLS||!b->ax.size)return error(b,"CKisakuParamWnd AX track range");
+    struct ax_cell *c=&b->ax.cells[cell];uint32_t start=c->start;
+    if(start<0x500||start>=b->ax.size)return error(b,"CKisakuParamWnd AX track start");
+    memset(c,0,sizeof(*c));c->start=start;c->state=0;
+    b->ax_events[cell]=0;return 0;
+}
+static int param_animation_commit(KBootstrap *b){
+    int32_t values[4];for(unsigned i=0;i<4;i++)values[i]=b->param_animation_plan.target[i];
+    if(param_window_values(b,values))return -1;
+    b->param_total=b->param_animation_plan.total_target;
+    if(param_window_rows(b,b->param_rows,2))return -1;
+    return 0;
+}
+static int param_animation_apply(KBootstrap *b){
+    int32_t values[4];int deltas[4]={0,0,0,0};for(unsigned i=0;i<4;i++)values[i]=b->param_values[i];
+    for(unsigned i=0;i<4;i++){
+        int before=(int)b->param_animation_accum[i];
+        b->param_animation_accum[i]=(float)(b->param_animation_accum[i]+b->param_animation_plan.increment[i]);
+        int after=(int)b->param_animation_accum[i];int delta=after-before;deltas[i]=delta;
+        if(!delta)continue;
+        values[i]+=b->param_animation_plan.target[i]>b->param_animation_plan.start[i]?delta:-delta;
+    }
+    if(param_window_values(b,values))return -1;
+    if(b->param_values[3]!=values[3])return error(b,"CKisakuParamWnd animation value mismatch");
+    /* The fourth row changes the total counter by exactly the applied delta. */
+    unsigned target_total=b->param_total;
+    if(deltas[3])target_total=(uint16_t)(target_total+(b->param_animation_plan.target[3]>b->param_animation_plan.start[3]?deltas[3]:-deltas[3]));
+    b->param_total=(uint16_t)target_total;
+    return param_window_rows(b,b->param_rows,2);
+}
+static void param_animation_stop_tracks(KBootstrap *b){
+    b->ax.cells[0].state=AX_STOPPED;b->ax.cells[2].state=AX_STOPPED;b->ax.wait_cell=0;
+    b->ax_events[0]=b->ax_events[2]=10;
+}
+static int param_animation_begin(KBootstrap *b,const int32_t encoded[4],int32_t duration,int chime,int start2){
+    if(b->param_animation_active)return error(b,"CKisakuParamWnd animation already active");
+    int32_t count=0;if(!ax_count_boundaries(&b->ax,0,&count))return error(b,"CKisakuParamWnd invalid AX boundary program (arguments preserved)");
+    int32_t steps=count?count:duration;if(steps<0)steps=(int16_t)steps;
+    if(kparam_change_plan(&b->param_animation_plan,b->param_values,b->param_total,steps,encoded))return error(b,"CKisakuParamWnd invalid initial parameters (arguments preserved)");
+    if(!b->param_surface.pixels||!b->param_atlas.pixels||b->param_rows<1)return error(b,"CKisakuParamWnd window is not initialized (arguments preserved)");
+    if(param_animation_track_reset(b,0))return -1;
+    if(start2&&param_animation_track_reset(b,2))return -1;
+    if(!b->param_backing.pixels){uint8_t *p=malloc(602*112*4);if(!p)return error(b,"CKisakuParamWnd backing allocation failed");b->param_backing=(KImage){18,340,602,112,602*4,p};}
+    for(unsigned y=0;y<112;y++)memcpy(b->param_backing.pixels+y*b->param_backing.stride,b->layers[0].pixels+(340+y)*b->layers[0].stride+18*4,602*4);
+    b->param_animation_window=b->vm->globals[1][61].number==0;b->param_animation_temporary=b->param_animation_window;
+    b->param_animation_chime=chime!=0;b->param_animation_track2=start2!=0;
+    b->param_animation_sungeki=option(b,"CONFIG","IsSungekiSE",1)!=0;b->param_animation_step=0;b->param_animation_count=0;
+    b->param_animation_phase=1;b->param_animation_active=1;b->param_animation_clock=0;b->param_animation_last_event=0;
+    for(unsigned i=0;i<4;i++)b->param_animation_accum[i]=0;
+    return param_animation_present(b);
+}
+static int param_animation_finish(KBootstrap *b,int skipped){
+    if(param_animation_commit(b))return -1;
+    param_animation_stop_tracks(b);
+    if(b->param_animation_chime&&!skipped&&b->param_animation_phase!=3){
+        if(effect_play(b,0,b->param_animation_sungeki?"ti-n.wav":"ti-n2.wav"))return -1;
+        b->param_animation_phase=3;return 0;
+    }
+    int result=param_animation_restore(b);
+    b->param_animation_phase=0;b->param_animation_active=0;b->param_animation_window=0;
+    return result;
+}
+static int param_animation_frame(KBootstrap *b){
+    if(!b->param_animation_active)return 0;
+    if(b->param_animation_phase==1){
+        uint8_t event=b->ax_events[0];
+        if((event==2||event==5||event==10)&&b->param_animation_step<b->param_animation_plan.steps){
+            if(param_animation_apply(b))return -1;
+            b->param_animation_step++;
+            if(b->param_animation_step>=b->param_animation_plan.steps)b->param_animation_phase=2;
+        }
+    }
+    if(b->param_animation_phase==2){
+        /* 4a00f0 waits for track 0 here. Track 2 is only waited on in the
+           IsSungekiSE==0 branch; it is stopped together with track 0 after
+           the normal branch, even when its script is still running. */
+        if(b->ax.cells[0].state==AX_STOPPED&&
+           (b->param_animation_sungeki||!b->param_animation_track2||b->ax.cells[2].state==AX_STOPPED))
+            return param_animation_finish(b,0);
+    }else if(b->param_animation_phase==3){
+        if(!b->effect_tracks[0].pcm)return param_animation_finish(b,0);
+    }
+    return param_animation_present(b);
+}
+static int param_animation_skip(KBootstrap *b){
+    if(!b->param_animation_active)return 0;
+    b->param_animation_step=b->param_animation_plan.steps;
+    return param_animation_finish(b,1);
+}
 static int start_logo_track(KBootstrap *b,unsigned cell){
     if(!ax_control(&b->ax,3,0,cell))return error(b,"invalid logo AX track");
     return 0;
@@ -827,19 +1146,76 @@ static void title_extra(KBootstrap *b){
     if(b->vm->bytes[4004]==1)t->extra_ids[t->count++]=3;
     t->extra_ids[t->count++]=4;t->extra_ids[t->count++]=5;
 }
-static void exec526_release(KBootstrap *b){
-    /* 0x47ae90 releases the two native working surfaces and clears the
-       companion state field.  Keep this pair separate from CLetter and the
-       31/13 helper surfaces; an idle native pair is a valid no-op. */
-    for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);
-    b->exec526_active=0;
-}
+#include "location_label.inc"
 int bootstrap_dispatch(KBootstrap *b){
     KVM *v=b->vm;int32_t main=v->syscall,sub,a,c,d,e;
     if(v->status!=KVM_SYSCALL)return error(b,"VM is not at a syscall");
     /* Peek first: unsupported handlers preserve their arguments for diagnostics. */
     if(!v->sp||v->stack[v->sp-1].string)return error(b,"missing integer subcall");
     sub=v->stack[v->sp-1].number;
+    if(main==31&&sub==812){
+        /* 4f9bb0: sys70 <-> byte3570..3593; the local 24-byte buffer is
+           zeroed, and byte23 is explicitly terminated in both directions. */
+        if(v->sp<2||v->stack[v->sp-2].string)return error(b,"31/812 numeric action required (arguments preserved)");
+        int action=v->stack[v->sp-2].number;
+        if(action<0||action>1)return error(b,"31/812 action unsupported (arguments preserved)");
+        if(v->byte_count<3594||v->global_count[0]<=70)return error(b,"31/812 storage missing (arguments preserved)");
+        char name[24]={0};
+        if(!action){
+            const char *src=v->globals[0][70].string;
+            if(!src)return error(b,"31/812 sys70 must be a string (arguments preserved)");
+            size_t length=0;while(length<24&&src[length])length++;
+            /* 41cfa0 calls strcpy_s(dst,24,src), not a truncating copy. */
+            if(length==24)return error(b,"31/812 scene name exceeds 23 bytes (arguments preserved)");
+            memcpy(name,src,length);memcpy(v->bytes+3570,name,24);
+        }else{
+            memcpy(name,v->bytes+3570,24);name[23]=0;
+            if(owned_value(b,&v->globals[0][70],(KValue){0,name}))return -1;
+        }
+        v->sp-=2;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==320){
+        /* 4fae70 constructs CScMode/CHageScMode with no script arguments.
+           The native modal returns its selected scene value through the VM
+           stack; the frontend owns the input loop while scene_modal is set. */
+        if(v->sp<1)return error(b,"31/320 subcall value required (arguments preserved)");
+        b->scene_modal=1;b->scene_panel_request=3;b->scene_focus=0;
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
+    if(main==29&&sub==0){
+        /* CFuncBackLog::virtual_0 (4fe5f0 -> 4fe5b0 -> 4fe580) is the
+           zero-command history-container initialization.  It has no script
+           variants beyond the action value already at the top of the VM
+           stack; the native helper allocates an empty record list and then
+           returns to the caller.  Keep the portable 64-entry history intact
+           because it is populated by subsequent message records. */
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==810){
+        /* 4fd3f0 initializes the Japanese name-part object after name.mes
+           has loaded namepart.akb.  The constructor owns transient UI state;
+           expose the same CP932 name editor used by the title frontend and
+           consume the action word without manufacturing a script result. */
+        b->extra_active=1;b->extra_kind=b->extra_request=14;
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==811){
+        /* 4fd6c0 tears down the name-part helper created by 4fd3f0.  It has
+           no return value or additional variants; the entered CP932 bytes
+           remain in the VM name buffer for later 31/63 attachment. */
+        b->extra_active=b->extra_request=b->extra_kind=0;
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==43){
+        if(v->sp<2||v->stack[v->sp-2].string)return error(b,"CMesFadeSprite mode required (arguments preserved)");
+        int mode=v->stack[v->sp-2].number;
+        unsigned count=mode==3?5:mode>=4&&mode<=6?3:2;
+        if(v->sp<count)return error(b,"CMesFadeSprite missing parameters (arguments preserved)");
+        for(unsigned i=2;i<count;i++)if(v->stack[v->sp-1-i].string)
+            return error(b,"CMesFadeSprite numeric parameters required (arguments preserved)");
+        if(message_fade_call(b,mode))return -1;
+        v->sp-=count;b->handled++;return kvm_resume(v);
+    }
     if(main==31&&sub==110&&v->sp>=3&&!v->stack[v->sp-2].string&&!v->stack[v->sp-3].string&&
        (v->stack[v->sp-2].number==0||v->stack[v->sp-2].number==1)&&v->stack[v->sp-3].number==0){
         if(v->stack[v->sp-2].number==0?title_initial(b):title_open_native(b))return -1;
@@ -877,12 +1253,50 @@ int bootstrap_dispatch(KBootstrap *b){
         if(diary_reset(b))return -1;
         v->sp-=2;b->handled++;return kvm_resume(v);
     }
+    if(main==31&&sub==528&&v->sp>=2&&!v->stack[v->sp-2].string&&
+       (v->stack[v->sp-2].number==20||v->stack[v->sp-2].number==21)){
+        int action=v->stack[v->sp-2].number;unsigned needed=action==20?7:4;
+        if(v->sp<needed||v->word_count<396)return error(b,"CDiaryWnd arguments/state missing (arguments preserved)");
+        for(unsigned i=2;i<needed;i++)if(v->stack[v->sp-1-i].string)return error(b,"CDiaryWnd numeric values required (arguments preserved)");
+        int index=v->stack[v->sp-3].number;
+        if(index<0||index>=(action==20?24:96))return error(b,"CDiaryWnd record range (arguments preserved)");
+        int32_t people[96],events[96];memcpy(people,b->diary_people,sizeof(people));memcpy(events,b->diary_events,sizeof(events));
+        if(action==20)for(unsigned i=0;i<4;i++)people[index*4+i]=(uint16_t)v->stack[v->sp-4-i].number;
+        else events[index]=(uint16_t)v->stack[v->sp-4].number;
+        if(diary_draw(b,people,events,action==20?(unsigned)index+1:b->diary_days? (unsigned)b->diary_days:1))return -1;
+        if(action==20)for(unsigned i=0;i<4;i++)v->words[200+index*4+i]=(uint16_t)people[index*4+i];
+        else v->words[300+index]=(uint16_t)events[index];
+        v->sp-=needed;b->handled++;return kvm_resume(v);
+    }
     if(main==31&&sub==528&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==9){
-        /* 4fa9e0's four-case switch has no case for action 9 and returns
-           without touching the preceding library arguments.  The Japanese
-           liblary path builds subcall 528 as (9 + 10 + 518); consume only
-           action/subcall and leave its eight preceding values intact. */
-        v->sp-=2;b->handled++;return kvm_resume(v);
+        /* 4fd950 case 528 -> 4fc080 case 9 -> 4a00f0 is an animated
+           parameter update. 4fa9e0 belongs to 31/10, not this interface. */
+        if(v->sp<9)return error(b,"CKisakuParamWnd animation requires seven parameters (arguments preserved)");
+        for(unsigned i=3;i<=9;i++)if(v->stack[v->sp-i].string)
+            return error(b,"CKisakuParamWnd animation requires numeric parameters (arguments preserved)");
+        /* The VM pushes parameters in native call order and then sub/main:
+           [start-track2, chime, encoded3..encoded0, duration, 9, 528]. */
+        int32_t encoded[4];for(unsigned i=0;i<4;i++)encoded[i]=v->stack[v->sp-4-i].number;
+        int32_t duration=(int16_t)(uint16_t)v->stack[v->sp-3].number;
+        int chime=v->stack[v->sp-8].number,start2=v->stack[v->sp-9].number;
+        if(param_animation_begin(b,encoded,duration,chime,start2))return -1;
+        v->sp-=9;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==612&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==0){
+        /* 4fb5a0 event 0 drains five values before 4d5390 constructs the
+           bowling object.  Keep this exact ABI boundary explicit until the
+           native object graph and its draw/update loop are ported; do not
+           consume a partial constructor call or turn it into a fake success. */
+        if(v->sp<7)return error(b,"31/612 create requires five numeric values (arguments preserved)");
+        for(unsigned i=3;i<=7;i++)if(v->stack[v->sp-i].string)
+            return error(b,"31/612 create values must be numeric (arguments preserved)");
+        return error(b,"31/612 create/update path not mapped (arguments preserved)");
+    }
+    if(main==31&&sub==612&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==1){
+        /* Event 1 calls 4d46b0, pushes its completion value, then enters the
+           secondary destructor.  The completion result depends on the
+           unported bowling input/update loop, so preserve the call intact. */
+        return error(b,"31/612 run/result path not mapped (arguments preserved)");
     }
     if(main==31&&sub==612&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==2){
         /* 4fb5a0 -> CBowling secondary vtable 54519c +10 -> 4cfd20. */
@@ -929,9 +1343,15 @@ int bootstrap_dispatch(KBootstrap *b){
         if(animation521_draw(b,v->stack[v->sp-2].number))return -1;
         v->sp-=2;b->handled++;return kvm_resume(v);
     }
-    if(main==31&&sub==525&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==2){
-        if(letter_exit(b))return -1;
-        v->sp-=2;b->handled++;return kvm_resume(v);
+    if(main==31&&sub==525){
+        if(v->sp<2||v->stack[v->sp-2].string)return error(b,"CLetter numeric action required (arguments preserved)");
+        int action=v->stack[v->sp-2].number;
+        if(action==1){
+            if(v->sp<3||v->stack[v->sp-3].string)return error(b,"CLetter numeric read id required (arguments preserved)");
+            if(letter_text_begin(b,v->stack[v->sp-3].number))return -1;
+            v->sp-=3;
+        }else {if(letter_call(b,action))return -1;v->sp-=2;}
+        b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==524&&v->sp>=2&&!v->stack[v->sp-2].string){
         int action=v->stack[v->sp-2].number;
@@ -998,6 +1418,11 @@ int bootstrap_dispatch(KBootstrap *b){
         if(failed)return error(b,"FLAG merge failed (arguments preserved)");
         v->sp-=2;b->handled++;return kvm_resume(v);
     }
+    if(main==13&&sub>=1&&sub<=12){
+        if(ax_script_command(b,sub))return -1;
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
+    if(main==13&&(sub<0||sub>12))return error(b,"AX script command unsupported (arguments preserved)");
     if(getenv("KISAKU_TRACE_CALLS")){fprintf(stderr,"%s @%zx %d/%d stack=",v->modules[v->module].name,v->instruction_ip,main,sub);for(unsigned i=0;i<v->sp;i++)if(v->stack[i].string)fprintf(stderr," [string]");else fprintf(stderr," %d",v->stack[i].number);fputc('\n',stderr);}
     /* 486160 returns immediately with no selected native media stream.
        Preserve the error boundary for the still-unmapped active-stream case. */
@@ -1023,13 +1448,19 @@ int bootstrap_dispatch(KBootstrap *b){
     if(main==31&&sub==1011&&v->sp>=2&&!v->stack[v->sp-2].string){
         int action=v->stack[v->sp-2].number;
         if(action==11&&!b->video&&!b->mov_data){
-            /* 5042d0 consults CAnimeManager's registered (bank,cell) list,
-               not the direct AX playback state. Constructor 4de390 creates
-               an empty list; native manager start interfaces remain gated.
-               In this state only records with no conditions can match. */
+            /* 5042d0: membership AND exact registration count. Repeated
+               starts are duplicate registrations; stopped state alone is not
+               evidence that a track was removed (4ddc00 / 4057c0). */
+            uint64_t registered=0;
+            for(unsigned i=0;i<AX_CELLS;i++)registered+=b->ax_registered[i];
             size_t cursor=0;const KMediaRecord *record;
             while((record=kmedia_find(&b->media_tables,b->media_background_name,&cursor))){
-                if(record->conditions[0]!=-1)continue;
+                unsigned conditions=0;int matches=1;
+                for(;conditions<4&&record->conditions[conditions*2]!=-1;conditions++){
+                    int bank=record->conditions[conditions*2],cell=record->conditions[conditions*2+1];
+                    if(bank<0||bank>=10||cell<0||cell>=32||!b->ax_registered[bank*32+cell]){matches=0;break;}
+                }
+                if(!matches||registered!=conditions)continue;
                 if(record->flag<0||(unsigned)record->flag>=v->byte_count)return error(b,"media flag bounds (arguments preserved)");
                 v->bytes[record->flag]=1;
                 int mode=v->globals[1][61].number;
@@ -1059,6 +1490,24 @@ int bootstrap_dispatch(KBootstrap *b){
         if(choice_initialize(b))return -1;
         v->sp-=2;b->handled++;return kvm_resume(v);
     }
+    if(main==31&&sub==527){
+        /* CFuncExec::virtual_0 (4f9dc0) is an input poll, not a normal
+           parameterized game call.  It drains one IFlag from the native
+           queue, ORs 0x10/0x08 into the private status word for event 0/1,
+           and may enqueue the context's event-2 flag.  The VM contributes
+           only the selector; the two leading zeros in save.mes are caller
+           values and must remain on its operand stack.  Feed the same two
+           bits from the portable confirmation/cancel edge and clear them
+           after the poll.  No synthetic event-2 result is invented while
+           its producer is not present.
+        */
+        if(v->sp<1)return error(b,"31/527 event selector required (arguments preserved)");
+        unsigned edges=b->input_events&3u;
+        if(edges&1u)b->exec_status|=0x10u;
+        if(edges&2u)b->exec_status|=0x08u;
+        b->input_events&=~3u;
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
     /* 4fb980 constructs CFuncAnimeEx. The native dispatcher reads one
        variant command after subcall 520; commands 0, 1 and 12 then consume
        one, two and three additional variants respectively. Opening.mes uses
@@ -1074,24 +1523,51 @@ int bootstrap_dispatch(KBootstrap *b){
             /* 5032a0 -> CAnimeManagerEX +28 -> 4dec50: set all 320 tracks
                to 0xff. This is independent of syscall 13's animation bank. */
             for(unsigned i=0;i<AX_CELLS;i++)b->ax_extra.cells[i].state=AX_STOPPED;
-            b->ax_extra_clock=0;
+            b->ax_extra_clock=0;b->ax_extra.wait_cell=0;b->ax_extra_modal=0;b->ax_extra_pause_remove=0;
+            ax_unregister(b->ax_extra_registered,AX_CELLS);
             b->animation_track_selected=0;
             v->sp-=2;b->handled++;return kvm_resume(v);
         }
-        if(command.number==10){
-            /* 503480 -> 4de9a0 synchronizes the extended manager and drains
-               its native event queue.  The portable manager has no event
-               queue yet, so mirror the statically verified idle transition
-               (state 0 -> pending state 3); an active track stays on the
-               explicit unsupported boundary. */
+        if(command.number==10||command.number==11){
+            /* 503480 -> 4de9a0 pauses all at a boundary; 503230 ->
+               4de230 resumes only state 4, retaining cursor and delays. */
+            if(command.number==11)for(unsigned i=0;i<AX_CELLS;i++)
+                if(b->ax_extra.cells[i].state==4&&b->ax_extra_registered[i]==UINT32_MAX)
+                    return error(b,"extended AX registration overflow (arguments preserved)");
             for(unsigned i=0;i<AX_CELLS;i++){
                 struct ax_cell *c=&b->ax_extra.cells[i];
-                if(c->state==0)c->state=3;
-                else if(c->state!=AX_STOPPED&&c->state!=4)
-                    return error(b,"31/520 action 10 active manager unsupported (arguments preserved)");
+                if(command.number==10&&c->state==0)c->state=3;
+                if(command.number==11&&c->state==4){c->state=0;b->ax_extra_registered[i]++;}
             }
+            if(command.number==10){b->ax_extra_modal=2;b->ax_extra_pause_remove=AX_CELLS+1;}
             b->animation_track_selected=0;
             v->sp-=2;b->handled++;return kvm_resume(v);
+        }
+        if(command.number==5||command.number==8||command.number==9){
+            /* 5034f0/5034b0/503260 -> 4deb80/4dea60/4de2e0.
+               Action 8 waits for the whole manager, not just this track. */
+            if(v->sp<4)return error(b,"31/520 wait track values required (arguments preserved)");
+            if(v->stack[v->sp-3].string||v->stack[v->sp-4].string)
+                return error(b,"31/520 wait track values must be numeric (arguments preserved)");
+            int bank=v->stack[v->sp-3].number,cell=v->stack[v->sp-4].number;
+            if(bank<0||bank>=10||cell<0||cell>=32)
+                return error(b,"31/520 wait track range (arguments preserved)");
+            unsigned index=(unsigned)bank*32u+(unsigned)cell;
+            struct ax_cell *c=&b->ax_extra.cells[index];
+            if(command.number==5){
+                if(!ax_control(&b->ax_extra,1,(unsigned)bank,(unsigned)cell))
+                    return error(b,"31/520 wait track unavailable (arguments preserved)");
+                b->ax_extra.wait_cell=index+1;b->ax_extra_modal=1;
+            }else if(command.number==8){
+                if(c->state==0)c->state=3;
+                b->ax_extra_modal=2;b->ax_extra_pause_remove=index+1;
+            }else if(c->state==4){
+                if(b->ax_extra_registered[index]==UINT32_MAX)
+                    return error(b,"extended AX registration overflow (arguments preserved)");
+                c->state=0;b->ax_extra_registered[index]++;
+            }
+            b->animation_track_bank=(unsigned)bank;b->animation_track_cell=(unsigned)cell;b->animation_track_selected=1;
+            v->sp-=4;b->handled++;return kvm_resume(v);
         }
         if(command.number==0){
             /* 4fede0 -> 403bb0 -> manager +0x0c. Retain the selected
@@ -1110,7 +1586,8 @@ int bootstrap_dispatch(KBootstrap *b){
                 strcpy(b->animation_name,value.string);
                 b->ax_extra_clock=0;
             }else {b->animation_id=value.number;ax_reset(&b->ax_extra);b->ax_extra_clock=0;}
-            b->animation_track_selected=0;
+            b->animation_track_selected=0;b->ax_extra_modal=0;b->ax_extra_pause_remove=0;
+            memset(b->ax_extra_events,0,sizeof(b->ax_extra_events));
             v->sp-=3;b->handled++;return kvm_resume(v);
         }
         if(command.number==1){
@@ -1121,7 +1598,7 @@ int bootstrap_dispatch(KBootstrap *b){
             if(v->sp<4)return error(b,"31/520 action 1 track values required (arguments preserved)");
             if(v->stack[v->sp-3].string||v->stack[v->sp-4].string)
                 return error(b,"31/520 action 1 numeric track values required (arguments preserved)");
-            int bank=v->stack[v->sp-4].number,cell=v->stack[v->sp-3].number;
+            int bank=v->stack[v->sp-3].number,cell=v->stack[v->sp-4].number;
             if(bank<0||bank>=10||cell<0||cell>=32)
                 return error(b,"31/520 action 1 track range (arguments preserved)");
             unsigned index=(unsigned)bank*32u+(unsigned)cell;
@@ -1132,41 +1609,46 @@ int bootstrap_dispatch(KBootstrap *b){
             v->sp-=4;b->handled++;return kvm_resume(v);
         }
         if(command.number==2){
-            /* 4fee60 case 2 -> 4fed00 reads two variants and dispatches to
-               CAnimeManagerEX +0x1c (4df1f0 -> 4052d0).  The native helper
-               marks the selected extended track as running; it does not
-               advance or draw a frame until the manager tick runs. */
+            /* 4fee60 -> 4fed00 -> 5033a0 -> manager +0x18 ->
+               4de350/405270 starts state 0. State 1 is action 3's
+               pending stop at the next boundary, not normal playback. */
             if(v->sp<4)return error(b,"31/520 action 2 track values required (arguments preserved)");
             if(v->stack[v->sp-3].string||v->stack[v->sp-4].string)
                 return error(b,"31/520 action 2 numeric track values required (arguments preserved)");
-            int bank=v->stack[v->sp-4].number,cell=v->stack[v->sp-3].number;
+            int bank=v->stack[v->sp-3].number,cell=v->stack[v->sp-4].number;
             if(bank<0||bank>=10||cell<0||cell>=32)
                 return error(b,"31/520 action 2 track range (arguments preserved)");
-            if(!ax_control(&b->ax_extra,2,(unsigned)bank,(unsigned)cell))
+            unsigned index=(unsigned)bank*32u+(unsigned)cell;
+            if(b->ax_extra_registered[index]==UINT32_MAX)
+                return error(b,"extended AX registration overflow (arguments preserved)");
+            if(!ax_control(&b->ax_extra,1,(unsigned)bank,(unsigned)cell))
                 return error(b,"31/520 action 2 track unavailable (arguments preserved)");
+            b->ax_extra_registered[index]++;
             b->animation_track_bank=(unsigned)bank;b->animation_track_cell=(unsigned)cell;b->animation_track_selected=1;
             v->sp-=4;b->handled++;return kvm_resume(v);
         }
         if(command.number==3||command.number==4){
             /* 4fec90/4fec20 consume the same (bank,cell) pair and call
-               CAnimeManagerEX +0x1c/+0x20.  Those native setters only write
-               the track state; they do not require an AX stream to be loaded. */
+               CAnimeManager +0x1c/+0x20: change the track state and remove
+               one registration; an AX stream need not be loaded. */
             if(v->sp<4)return error(b,"31/520 action track values required (arguments preserved)");
             if(v->stack[v->sp-3].string||v->stack[v->sp-4].string)
                 return error(b,"31/520 action track values must be numeric (arguments preserved)");
-            int bank=v->stack[v->sp-4].number,cell=v->stack[v->sp-3].number;
+            int bank=v->stack[v->sp-3].number,cell=v->stack[v->sp-4].number;
             if(bank<0||bank>=10||cell<0||cell>=32)
                 return error(b,"31/520 action track range (arguments preserved)");
             struct ax_cell *track=&b->ax_extra.cells[(unsigned)bank*32u+(unsigned)cell];
             track->state=command.number==3?1:AX_STOPPED;
+            ax_unregister(b->ax_extra_registered,(unsigned)bank*32u+(unsigned)cell);
             b->animation_track_bank=(unsigned)bank;b->animation_track_cell=(unsigned)cell;b->animation_track_selected=1;
             v->sp-=4;b->handled++;return kvm_resume(v);
         }
         if(command.number==6){
             /* 5032e0 -> CAnimeManagerEX +0x24 (4df140): every track except
-               the stopped sentinel is put into the running state. */
+               the stopped sentinel requests a stop at its next boundary. */
             for(unsigned i=0;i<AX_CELLS;i++)
                 if(b->ax_extra.cells[i].state!=AX_STOPPED)b->ax_extra.cells[i].state=1;
+            ax_unregister(b->ax_extra_registered,AX_CELLS);
             b->animation_track_selected=0;
             v->sp-=2;b->handled++;return kvm_resume(v);
         }
@@ -1177,32 +1659,42 @@ int bootstrap_dispatch(KBootstrap *b){
                CAnimeManagerEX::virtual_48/52. */
             if(v->sp<5)return error(b,"31/520 action 12 values required (arguments preserved)");
             for(unsigned i=3;i<=5;i++)if(v->stack[v->sp-i].string)return error(b,"31/520 action 12 numeric values required (arguments preserved)");
-            int bank=v->stack[v->sp-5].number,cell=v->stack[v->sp-4].number;
+            int bank=v->stack[v->sp-3].number,cell=v->stack[v->sp-4].number;
             if(bank<0||bank>=10||cell<0||cell>=32)
                 return error(b,"31/520 action 12 track range (arguments preserved)");
-            if(v->stack[v->sp-3].string)return error(b,"31/520 action 12 target layer must be numeric (arguments preserved)");
-            b->animation_target_layer=v->stack[v->sp-3].number;
+            int target=v->stack[v->sp-5].number;
+            KImage *dst=surface(b,target);
+            if(!dst||!dst->pixels)return error(b,"31/520 action 12 target missing (arguments preserved)");
+            b->animation_target_layer=target;
             b->animation_track_bank=(unsigned)bank;b->animation_track_cell=(unsigned)cell;b->animation_track_selected=1;
-            if(!ax_first_frame(&b->ax_extra,(unsigned)bank*32u+(unsigned)cell,draw_ax_extra,b))
-                return error(b,"31/520 action 12 extended AX first frame invalid (arguments preserved)");
+            int drawn=ax_first_frame(&b->ax_extra,(unsigned)bank*32u+(unsigned)cell,draw_ax_extra,b);
+            b->animation_target_layer=0; /* 5031b0 restores the screen selector. */
+            if(!drawn)return error(b,"31/520 action 12 extended AX first frame invalid (arguments preserved)");
             if(b->error[0])return -1;
             v->sp-=5;b->handled++;return kvm_resume(v);
         }
         return error(b,"31/520 animation action unsupported (arguments preserved)");
     }
-    if(main==31&&sub==526&&v->sp>=3&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==1){
-        /* 4fd790 case 1 parses one variant, then 47ae90 releases its two
-           private working surfaces and resets the native pair state. */
-        if(v->stack[v->sp-3].string)return error(b,"31/526 action 1 value must be numeric (arguments preserved)");
+    if(main==31&&sub==526&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==1){
+        /* 4fd915 calls 47ae90 directly: no argument after the action. */
         exec526_release(b);
-        v->sp-=3;b->handled++;return kvm_resume(v);
+        v->sp-=2;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==526&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==2){
-        /* 4fd790 case 2 calls 48adf0, the same saved-surface crossfade
-           helper used by CLetter.  Keep the transition asynchronous on the
-           portable frame clock, then consume only the action and subcall. */
-        if(letter_exit(b))return -1;
+        if(exec526_location(b))return -1;
         v->sp-=2;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==526&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==0){
+        /* 4fd790 case 0 reads five numeric variants before 47b220.  Keep
+           the native order [source-x, source-y, width, height, right-bytes]
+           and do not consume anything until every value is validated. */
+        if(v->sp<7)return error(b,"31/526 create arguments required (arguments preserved)");
+        int q[5];for(unsigned i=0;i<5;i++){
+            if(v->stack[v->sp-3-i].string)return error(b,"31/526 create arguments numeric (arguments preserved)");
+            q[i]=v->stack[v->sp-3-i].number;
+        }
+        if(exec526_create(b,q[0],q[1],q[2],q[3],q[4]))return -1;
+        v->sp-=7;b->handled++;return kvm_resume(v);
     }
     /* 481b00 -> 4837a0 checks CMesWnd visibility before animating.
        A visible window still needs the Kisaku sprite transition implementation. */
@@ -1487,8 +1979,8 @@ int bootstrap_dispatch(KBootstrap *b){
     }else if(message_hidden){
         if(integer(b,&a))return -1;
         if(b->message_visible){
-            unsigned duration=12;int speed=option(b,"Display","EffectSpeed",0);if(speed==1)duration>>=1;else if(speed==2||(v->globals[0][50].number&0x4000))duration=0;
-            b->message_slide=duration+1;b->message_slide_frame=0;b->message_hiding=1;
+            if(b->message_revealing)message_copy_text(b);
+            message_slide_begin(b,1);
         }
     }else if(scene_reset){
         if(integer(b,&a))return -1;
@@ -1497,7 +1989,9 @@ int bootstrap_dispatch(KBootstrap *b){
         b->scene_mode=a==4;
     }else if(main==31&&sub==24){
         if(!b->animation_data||!ax_load(&b->ax,b->loaded_animation,b->animation_data,b->animation_size))return error(b,"invalid AX data");
-        if(play_pcm(b,&b->effects,"logo02.wav"))return -1;
+        /* The Japanese archive contains logo.wav; logo01/logo02 were names
+           from the reference runtime and are absent from Kisaku's effect.arc. */
+        if(play_pcm(b,&b->effects,"logo.wav"))return -1;
         b->logo_phase=1;b->ax_clock=0;
     }else if(animation_reset){
         if(integer(b,&a))return -1;
@@ -1569,7 +2063,7 @@ int bootstrap_dispatch(KBootstrap *b){
         if(strlen(name)>=sizeof(b->loaded_animation)||read_named(&b->data,name,&p,&n))return error(b,"AX load failed");
         if(!ax_load(&b->ax,name,p,n)){free(p);return error(b,"invalid AX data");}
         free(b->animation_data);b->animation_data=p;b->animation_size=n;strcpy(b->loaded_animation,name);
-    }else if(main==13){if(ax_script_command(b,sub))return -1;
+
     }else if(main==30&&sub==0){
         /* 437660 -> 4376a0 -> 426b00: fade the private canvas into view,
            commit it to page 0, stop the movie, and hide the transition UI. */
@@ -1677,14 +2171,14 @@ int bootstrap_dispatch(KBootstrap *b){
         }
         for(unsigned i=0;i<=v->script_depth;i++)b->saved_controls[b->saved_control_count++]=(KControlRecord){(uint16_t)i,0xffff,values[i],3};
     }else if(main==28&&sub==9){
-        /* 407a70 reconstructs the outer script chain; active script starts
+        /* Kisaku 4e2e00 reconstructs the outer script chain; active script starts
            at its restore preamble, then sub10 selects the checkpoint. */
         int ids[29];size_t offsets[29];unsigned count=0;
         for(unsigned i=0;i<b->control_count;i++){
             KControlRecord *r=&b->controls[i];if(r->type!=0xffff)continue;
             if(r->id!=count||r->count!=3||!r->values[0].string||r->values[1].string||r->values[2].string)return error(b,"saved script record invalid");
             char target[261];
-            if(krestore_name(target,r->values[0].string,r->values[2].number,v->bytes[8191],v->bytes[8190]))return error(b,"saved script name invalid");
+            if(krestore_name(target,r->values[0].string))return error(b,"saved script name invalid");
             int id=module(b,target);if(id<0)return -1;
             if(r->values[2].number){
                 if(r->values[2].number!=1||i+1!=b->control_count||r->values[1].number<0||kvm_checkpoint_offset(v,id,(unsigned)r->values[1].number,&offsets[count]))return error(b,"saved checkpoint invalid");
@@ -1848,13 +2342,6 @@ int bootstrap_dispatch(KBootstrap *b){
         if(b->video_active||b->logo_phase)return error(b,"concurrent music/movie not implemented");
         if(play_pcm(b,&b->music,name))return -1;
         int enabled=1,volume_db=music_volume_db(b,&enabled);
-        double gain=enabled?db_gain(volume_db):0;
-        for(size_t i=0;i+1<b->audio_size;i+=2){
-            int16_t sample=(int16_t)le16(b->audio_pcm+i);
-            int16_t out=(int16_t)(sample*gain);
-            b->audio_pcm[i]=(uint8_t)out;
-            b->audio_pcm[i+1]=(uint8_t)((uint16_t)out>>8);
-        }
         b->music_active=1;b->music_enabled=enabled;
         b->music_db=volume_db;
         b->fade_db=b->music_db;b->music_gain=1;b->music_fading=0;
@@ -1869,8 +2356,6 @@ int bootstrap_dispatch(KBootstrap *b){
         }
         if(play_pcm(b,&b->music,b->audio_objects[0][0].name))return -1;
         int enabled=1,volume_db=music_volume_db(b,&enabled);
-        double gain=enabled?db_gain(volume_db):0;
-        for(size_t i=0;i<b->audio_size;i+=2){int16_t sample=(int16_t)le16(b->audio_pcm+i);int16_t out=(int16_t)(sample*gain);b->audio_pcm[i]=(uint8_t)out;b->audio_pcm[i+1]=(uint8_t)((uint16_t)out>>8);}
         b->music_active=1;b->music_enabled=enabled;b->music_db=volume_db;b->fade_db=b->music_db;b->music_gain=1;b->music_fading=0;b->audio_objects[0][0].state=0;
         }
     }else if(((main==15||main==16)&&sub==5)||voice_register||(main==17&&sub==1)){
@@ -1882,11 +2367,12 @@ int bootstrap_dispatch(KBootstrap *b){
         int enabled=1;
         if(main==17){
             if(sub==5&&(v->globals[0][50].number&0x280)==0x280){if(b->message_index<0||(unsigned)b->message_index>=b->message_count)return error(b,"voice record slot missing");b->messages[b->message_index].flag=1;}
-            /* 4904c0: A/E/F/G/I/K/N female, all other prefixes male. */
-            const char *key=strchr("AEFGIKN",toupper((unsigned char)name[0]))?"IsWomanVoice":"IsManVoice";
-            for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,"Voice")&&equal(b->settings[i].key,key))enabled=atoi(b->settings[i].value)!=0;
+            /* 4b6350 -> 466630 -> 464140: per-character Kisaku switches.
+               The reference game's filename/gender heuristic is unrelated. */
+            int character=kisaku_voice_character(name);
+            if(character>=0)enabled=bootstrap_message_setting(b,KSET_CHARACTER_VOICE+(unsigned)character,0)!=0;
         }
-        if(main==17)snprintf(b->message_voice_name,sizeof(b->message_voice_name),"%s",enabled?name:"");
+        if(main==17)snprintf(b->message_voice_name,sizeof(b->message_voice_name),"%s",name);
         if(enabled){strcpy(b->audio_objects[bank][a].name,name);b->audio_objects[bank][a].state=1;if(main==17&&sub==1&&voice_play(b))return -1;}
         else {b->audio_objects[bank][a].state=0;b->audio_objects[bank][a].name[0]=0;}
     }else if((main>=15&&main<=17)&&(sub==2||sub==3)){
@@ -2011,7 +2497,9 @@ layer_fill_done:;
         const char *name;if(string(b,&name)||integer(b,&a))return -1;
         int32_t ox=0,oy=0;if(offset_image){if(integer(b,&ox)||integer(b,&oy))return -1;if(ox==-1)ox=0;if(oy==-1)oy=0;}
         if(ox < -16384||ox > 16384||oy < -16384||oy > 16384)return error(b,"RMT offset range");
-        if(a<1||(unsigned)a>b->layer_count||!b->layers[a].pixels)return error(b,"unallocated layer");
+        /* 4f60e0 -> 502c00 permits display layer0. install_image routes
+           it through the active backing surface, including async loads. */
+        if(a<0||(unsigned)a>b->layer_count||!b->layers[a].pixels)return error(b,"unallocated layer");
         if(b->image_worker){
             if(kimage_worker_submit(b->image_worker,name))return error(b,"image worker submission failed");
             b->image_layer=a;b->image_offset_x=ox;b->image_offset_y=oy;b->image_loading=1;snprintf(b->image_name,sizeof(b->image_name),"%s",name);
@@ -2023,16 +2511,16 @@ layer_fill_done:;
     }else if(main==25&&sub==1){
         if(b->read_flags&&b->read_size){memset(b->read_flags,0,b->read_size);b->read_dirty=1;}
     }else if(main==25&&sub==3){
-        if(bootstrap_flush_progress(b))return -1;
+        if(flush_read_history(b))return -1;
     }else if(main==25&&sub==0){
-        if(bootstrap_flush_progress(b))return -1;
+        if(flush_read_history(b))return -1;
         if(integer(b,&a))return -1;
         if(a<0||a>134217728)return error(b,"read flags capacity limit");
         if(resize_bytes(&b->read_flags,&b->read_size,((size_t)a+7)/8))return error(b,"read flags allocation failed");
     }else if(main==25&&sub==2){
         /* Original onemes.dat remains read-only; each selector owns a port file. */
         if(!b->read_size||v->byte_count<=8100)return error(b,"read flag buffer/selector uninitialized");
-        if(bootstrap_flush_progress(b))return -1;
+        if(flush_read_history(b))return -1;
         unsigned sel=v->bytes[8100];if(sel>3)sel=3;
         int loaded=kread_flags_load(bootstrap_save_dir(b),sel,b->read_flags,b->read_size);
         if(loaded<0)return error(b,"read history load failed");
@@ -2083,7 +2571,7 @@ static int draw_text(KBootstrap *b){
     if(layout)return error(b,"text layout or inline control invalid");
     if(!text_font(b,path,NULL,encoding))return error(b,"cannot load font; set Runtime FontFile to a supported font");
     KFont *active_font=b->font;
-    if(b->novel_mode){
+    if(b->novel_mode||b->letter_mode){
         if(!b->novel_font){
             const char *mincho=NULL;
             for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,"Runtime")&&equal(b->settings[i].key,"MinchoFontFile"))mincho=b->settings[i].value;
@@ -2109,31 +2597,32 @@ static int draw_text(KBootstrap *b){
     v->globals[0][46]=(KValue){x,NULL};v->globals[0][47]=(KValue){y,NULL};b->text_count++;
     return kvm_resume(v);
 }
-/* A novel checkpoint can begin a page containing several prompts. Rebuild
+/* Full-page message checkpoints can begin a page containing several prompts. Rebuild
    preceding paragraphs through the real script before exposing the saved one. */
 static int restore_message(KBootstrap *b){
     if(!b->restore_pending)return 0;
-    if(b->choice_active)return error(b,"novel restore encountered an unexpected choice");
+    if(b->choice_active)return error(b,"page restore encountered an unexpected choice");
     if(!b->message_active)return 0;
-    if(!b->novel_mode)return error(b,"novel restore reached a different message mode");
+    if((b->restore_mode==2&&!b->letter_active)||(b->restore_mode!=2&&!b->novel_mode))
+        return error(b,"page restore reached a different message mode");
     if(b->message_read_id==b->restore_read_id){b->restore_pending=0;return 0;}
-    if(!b->restore_remaining)return error(b,"novel restore target not reached");
+    if(!b->restore_remaining)return error(b,"page restore target not reached");
     b->restore_remaining--;
     if(b->novel_transition){b->novel_step=255;novel_fade_frame(b);}
     bootstrap_confirm(b);return b->error[0]?-1:0;
 }
-int bootstrap_run(KBootstrap *b,unsigned budget){
+static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
     if(!b||b->error[0])return -1;
     b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;
     if(restore_message(b))return -1;
     history_restore_apply(b);
     if(b->scene_replay_finished)return 1;
-    if(b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
+    if(b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
     while(budget--){b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;int old_module=b->vm->module;unsigned old_scripts=b->vm->script_depth;KStatus s=kvm_run(b->vm,1);
         /* Native 408060 notifies navigation on a script return, but library
            function calls only change the VM instruction source. */
         if(b->vm->script_depth<old_scripts&&scene_transition(b,b->vm->modules[old_module].name,b->vm->modules[b->vm->module].name))return -1;
-        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
+        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
         else if(s==KVM_TEXT){if(draw_text(b))return -1;}
         else if(s==KVM_BUDGET)kvm_resume(b->vm);
         else if(s==KVM_ERROR)return error(b,b->vm->error);
@@ -2141,9 +2630,16 @@ int bootstrap_run(KBootstrap *b,unsigned budget){
     }return error(b,"instruction budget exhausted");
 }
 
+int bootstrap_run(KBootstrap *b,unsigned budget){
+    if(!b)return -1;
+    exec526_restore(b);animation522_restore(b);message_fade_restore(b);param_animation_restore(b);
+    int result=bootstrap_run_inner(b,budget);
+    animation522_restore(b);message_fade_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);
+    return result;
+}
 void bootstrap_frame(KBootstrap *b){
     b->frames++;if(b->frames>b->input_event_until)b->input_events=0;
-    animation522_begin_frame(b);
+    exec526_restore(b);animation522_begin_frame(b);message_fade_restore(b);param_animation_restore(b);
     if(b->image_loading){
         KImage im={0};int ready=kimage_worker_poll(b->image_worker,&im);
         if(ready){
@@ -2152,6 +2648,7 @@ void bootstrap_frame(KBootstrap *b){
             im.x+=b->image_offset_x;im.y+=b->image_offset_y;int rc=install_image(b,b->image_layer,&im,b->image_name);rmt_free(&im);if(rc)return;
         }
     }
+    if(b->mes_fade_transition)message_fade_frame(b);
     if(b->letter_transition)letter_frame(b);
     if(b->novel_transition)novel_frame(b);
     if(b->voice_loading){
@@ -2209,36 +2706,37 @@ void bootstrap_frame(KBootstrap *b){
         }
     }
     if(b->logo_phase==1&&b->audio_cursor==b->audio_size){
-        if(play_pcm(b,&b->effects,"logo01.wav")||start_logo_track(b,0))return;
+        if(play_pcm(b,&b->effects,"potapota.wav")||start_logo_track(b,0))return;
         b->logo_phase=2;
     }else if(b->logo_phase>=2){
         b->ax_clock+=1000;
         while(b->ax_clock>=60*AX_TICK_MS){
             b->ax_clock-=60*AX_TICK_MS;
-            if(!ax_tick(&b->ax,draw_ax,b)){error(b,"invalid AX instruction");return;}
+            if(!ax_tick_native(&b->ax,b->ax_events,draw_ax,b)){error(b,"invalid AX instruction");return;}
         }
         if(!ax_waiting(&b->ax)){
             if(b->logo_phase==2){if(start_logo_track(b,1))return;b->logo_phase=3;}
             else b->logo_phase=0;
         }
     }
-    if(!b->logo_phase&&b->ax.size){
+    if(!b->logo_phase&&b->ax.size&&(b->vm->globals[0][50].number&0x10)){
         b->ax_clock+=1000;
-        while(b->ax_clock>=60*AX_TICK_MS){b->ax_clock-=60*AX_TICK_MS;if(!ax_tick(&b->ax,draw_ax,b)){error(b,"invalid story AX instruction");return;}if(b->error[0])return;}
+        while(b->ax_clock>=60*AX_TICK_MS){b->ax_clock-=60*AX_TICK_MS;if(!ax_tick_native(&b->ax,b->ax_events,draw_ax,b)){error(b,"invalid story AX instruction");return;}if(b->error[0])return;}
         for(unsigned i=0;i<AX_CELLS;i++)b->animation_status[i]=(uint8_t)b->ax.cells[i].state;
     }
     /* CAnimeManagerEX::virtual_4 (4dd5a0) ticks its independent 320-track
        manager on the same 20 ms cadence.  Keep it separate from the normal
        story AX clock: stopping/reloading one manager must not phase-shift the
        other. */
-    if(b->ax_extra.size){
+    if(b->ax_extra.size&&(b->vm->globals[0][50].number&0x10)){
         b->ax_extra_clock+=1000;
         while(b->ax_extra_clock>=60*AX_TICK_MS){
             b->ax_extra_clock-=60*AX_TICK_MS;
-            if(!ax_tick(&b->ax_extra,draw_ax_extra,b)){error(b,"invalid extended AX instruction");return;}
+            if(!ax_tick_native(&b->ax_extra,b->ax_extra_events,draw_ax_extra,b)){error(b,"invalid extended AX instruction");return;}
             if(b->error[0])return;
         }
     }
+    if(param_animation_frame(b))return;
     mam_frame(b);
     if(b->title.active){
         b->title.age++;
@@ -2251,19 +2749,26 @@ void bootstrap_frame(KBootstrap *b){
         }
     }
     if(b->flag_dialog.active&&kflag_dialog_draw(&b->flag_dialog,&b->layers[0])){error(b,"history dialog composition failed");return;}
+    /* 484a48 sets an absolute auto deadline before opening/revealing the
+       message. Typing and window motion are part of that interval. */
+    if(b->message_active&&option(b,"Msg","IsAutoMes",0))b->message_auto_clock+=1000;
     if(b->message_visible){
-        if(b->message_slide&&++b->message_slide_frame>=b->message_slide){
-            b->message_slide=0;
-            if(b->message_hiding){b->message_visible=0;memcpy(b->layers[0].pixels,b->message_base.pixels,640*480*4);}
+        if(b->message_slide){
+            b->message_slide_clock+=1000;
+            while(b->message_slide&&b->message_slide_clock>=900){
+                b->message_slide_clock-=900;
+                if(++b->message_slide_frame>=b->message_slide-1)message_slide_finish(b);
+            }
         }
         if(b->message_visible){
+            message_buttons_frame(b);
             if(b->message_voice_pending&&!b->message_slide){b->message_voice_pending=0;if(voice_play(b))return;}
-            if(b->message_active&&b->message_revealing&&!b->message_slide){
+            if(b->message_active&&b->message_revealing&&!b->message_slide&&!b->message_buttons_motion){
                 b->message_clock+=1000;
                 if(b->message_clock>=60*b->message_delay){
-                    b->message_clock=0;
                     int x=b->message_reveal_x,y=b->message_reveal_y,end=y==b->message_end_y?b->message_end_x:608;
                     if(x<end){
+                        b->message_clock=0;
                         int source_top=b->vm->globals[0][43].number,source_y=source_top+(y-408);
                         if(source_top<0||source_y<0||source_y+18>(int)b->layers[1].height)return;
                         for(int row=0;row<18&&y+row<462;row++)memcpy(b->message_text.pixels+(y-408+row)*b->message_text.stride+(x-32)*4,b->layers[1].pixels+(source_y+row)*b->layers[1].stride+x*4,(size_t)(x+16<=608?16:608-x)*4);
@@ -2315,21 +2820,22 @@ void bootstrap_frame(KBootstrap *b){
     if(b->scroll_active)scroll_frame(b);
     if(b->distort_count)distort_frame(b);
     if(b->blink_active)blink_frame(b);
-    if(!b->restore_pending&&b->message_active&&!b->message_user_hidden&&!b->message_slide&&!b->novel_transition&&!b->message_request){
-        if(b->message_timed&&!b->message_revealing){
+    if(!b->letter_active&&!b->restore_pending&&b->message_active&&!b->message_user_hidden&&!b->message_slide&&!b->message_buttons_motion&&!b->novel_transition&&!b->message_request){
+        if(b->message_timed&&!b->message_revealing&&!b->message_buttons_motion){
             b->message_timed_clock+=1000;
             if(b->message_timed_clock>=(uint64_t)b->message_timed_delay*60)bootstrap_confirm(b);
         }else if(b->force_skip||(option(b,"Msg","IsOneMes",0)&&b->message_was_read)){
             message_skip_voice(b);bootstrap_confirm(b);
-        }else if(option(b,"Msg","IsAutoMes",0)&&!b->message_revealing&&!b->voice_loading&&!b->voice_active){
-            b->message_auto_clock+=1000;
-            if(b->message_had_voice||b->message_auto_clock>=(uint64_t)b->message_auto_delay*60)bootstrap_confirm(b);
+        }else if(option(b,"Msg","IsAutoMes",0)){
+            if(!b->message_revealing&&!b->message_buttons_motion&&!b->voice_loading&&!b->voice_active&&
+               (b->message_had_voice||b->message_auto_clock>=(uint64_t)b->message_auto_delay*60))bootstrap_confirm(b);
         }
     }
+    letter_text_frame(b);
     if(b->bonus52_active)bonus52_frame(b);
     if(b->credits_active)credits_frame(b);
     if(b->montage_active)montage_frame(b);
-    animation522_present(b);
+    message_fade_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);
     if(!b->fade_steps)return;
     b->fade_frame++;
     int delta=(int)b->fade_to-(int)b->fade_from;
@@ -2340,15 +2846,22 @@ void bootstrap_frame(KBootstrap *b){
 #include "history_reset.inc"
 
 void bootstrap_confirm(KBootstrap *b){
+    if(b->letter_transition||b->letter_exit_pending)return;
+    if(b->letter_active){if(b->message_user_hidden)letter_text_hide(b,0);else letter_text_confirm(b);return;}
     if(b->message_active&&b->message_user_hidden){bootstrap_message_hide(b,0);return;}
     b->input_events|=1;b->input_event_until=b->frames+3;
-    if(ax_modal_skip(b))return;
+    if(b->param_animation_active){if(param_animation_skip(b))error(b,"CKisakuParamWnd animation skip failed");return;}
+    if(b->mes_fade_transition&&!(b->vm->globals[0][50].number&0x4000)){
+        exec526_restore(b);animation522_restore(b);message_fade_restore(b);message_fade_finish(b);
+        message_fade_present(b);animation522_present(b);exec526_present(b);return;
+    }
+    if(message_slide_skip(b)||ax_modal_skip(b,0))return;
     if(b->credits_active){credits_finish(b,1);return;}
     if(b->area_active){area_finish(b,0);return;}
     if(b->bonus52_active){if(b->bonus52_active==1)b->bonus52_motion+=240;return;}
     if(b->choice_active){
         /* 47dfbe returns registered item value + 1, distinct from read-history ID. */
-        if(b->choice_selected<0||(unsigned)b->choice_selected>=b->choice_count)return;
+        if(b->choice_selected<0||(unsigned)b->choice_selected>=b->choice_count||!choice_enabled(b,(unsigned)b->choice_selected))return;
         int result=b->choice_returns[b->choice_selected];
         if(b->choice_normal){
             b->vm->globals[0][18]=(KValue){result,NULL};
@@ -2429,13 +2942,21 @@ void bootstrap_confirm(KBootstrap *b){
     b->wait_input=0;b->wait_clock=0;
 }
 void bootstrap_message_hide(KBootstrap *b,int hidden){
+    if(b&&b->letter_active){if(!hidden)b->letter_backlog=0;letter_text_hide(b,hidden);return;}
     if(!b||!b->message_active)return;
     b->message_user_hidden=hidden!=0;
     if(b->novel_mode){const KImage *src=hidden?&b->novel_background:&b->novel_target;if(src->pixels)memcpy(b->layers[0].pixels,src->pixels,640*480*4);}
     else if(b->message_base.pixels)message_compose(b);
 }
 void bootstrap_cancel(KBootstrap *b){
-    if(ax_modal_skip(b))return;
+    if(b->letter_transition||b->letter_exit_pending)return;
+    if(b->letter_active){
+        if(b->message_user_hidden&&b->vm->byte_count>4010&&b->vm->bytes[4010]){
+            b->letter_exit_pending=1;b->message_request=19;return;
+        }
+        letter_text_hide(b,!b->message_user_hidden);return;
+    }
+    if(message_slide_skip(b)||ax_modal_skip(b,1))return;
     if(b->credits_active){credits_finish(b,1);return;}
     b->input_events|=2;b->input_event_until=b->frames+3;
     if(b->area_active){area_finish(b,1);return;}
@@ -2446,7 +2967,13 @@ void bootstrap_cancel(KBootstrap *b){
 void bootstrap_menu_move(KBootstrap *b,int dx,int dy){
     if(b->area_active){area_move(b,dy?dy:dx);return;}
     if(b->bonus52_active){if(dx||dy)b->bonus52_motion+=100;return;}
-    if(b->message_active&&b->message_open&&dx){b->message_hover=(b->message_hover+dx+8)%8;return;}
+    if(b->message_active&&b->message_buttons_motion)return;
+    if(b->message_active&&b->message_open&&dx){
+        int item=0;for(;item<6;item++)if(b->message_hover==(int)message_actions[item])break;
+        /* The atlas sprites run right to left; controller movement follows X. */
+        item=item==6?(dx>0?5:0):(item+(dx>0?5:1))%6;
+        b->message_hover=(int)message_actions[item];return;
+    }
     if(b->flag_dialog.active){kflag_dialog_move(&b->flag_dialog,dx,dy);return;}
     if(dy)bootstrap_title_move(b,dy);
 }
@@ -2460,15 +2987,29 @@ void bootstrap_title_move(KBootstrap *b,int delta){
     else b->title.selected=(b->title.selected+(delta>0?1:(int)b->title.count-1))%(int)b->title.count;
 }
 void bootstrap_pointer(KBootstrap *b,int x,int y,int click){
+    if(b->letter_active||b->letter_transition){if(click)bootstrap_confirm(b);return;}
     if(b->area_active){b->area_x=x;b->area_y=y;b->area_selected=area_hit(b,x,y);if(click)area_finish(b,0);return;}
     if(b->bonus52_active){
         if(b->bonus52_pointer_valid){int dx=abs(x-b->bonus52_x),dy=abs(y-b->bonus52_y);b->bonus52_motion+=(dx>50?50:dx)+(dy>50?50:dy);}
         b->bonus52_x=x;b->bonus52_y=y;b->bonus52_pointer_valid=1;return;
     }
     if(b->choice_active){
-        unsigned page=b->choice_selected<0?0:(unsigned)b->choice_selected/4,count=b->choice_count-page*4;if(count>4)count=4;
-        int top=(480-(int)count*52)/2;
-        if(x>=72&&x<568&&y>=top&&y<top+(int)count*52){b->choice_selected=(int)page*4+(y-top)/52;choice_draw(b);if(click)bootstrap_confirm(b);}
+        unsigned page=b->choice_selected<0?b->choice_page:(unsigned)b->choice_selected/4,count=b->choice_count-page*4;if(count>4)count=4;
+        int top=choice_top(b,count);
+        if(b->choice_normal){
+            /* 4f0910: only the inner 480x36 (navigation: 480x18) is hot. */
+            b->choice_selected=-1;b->choice_page=page;b->choice_page_hover=0;
+            if(x>=80&&x<560){
+                if(page&&y>=top-26&&y<top-8)b->choice_page_hover=1;
+                else if(page*4+4<b->choice_count&&y>=top+216&&y<top+234)b->choice_page_hover=2;
+                else if(y>=top+8){int row=(y-top-8)/52;
+                    if(row<(int)count&&(y-top-8)%52<36)b->choice_selected=(int)page*4+row;
+                }
+            }
+            if(click&&b->choice_page_hover){b->choice_page+=b->choice_page_hover==1?-1:1;b->choice_page_hover=0;}
+            choice_draw(b);if(click&&b->choice_selected>=0)bootstrap_confirm(b);
+        }
+        else if(x>=72&&x<568&&y>=top&&y<top+(int)count*52){b->choice_selected=(int)page*4+(y-top)/52;choice_draw(b);if(click)bootstrap_confirm(b);}
         else if(click&&b->choice_count>4&&y>=440&&y<480&&x>=224&&x<416){
             unsigned pages=(b->choice_count+3)/4;page=x<320?(page+pages-1)%pages:(page+1)%pages;b->choice_selected=(int)page*4;choice_draw(b);
         }
@@ -2476,10 +3017,12 @@ void bootstrap_pointer(KBootstrap *b,int x,int y,int click){
     }
     if(b->flag_dialog.active){b->flag_dialog.selected=kflag_dialog_hit(&b->flag_dialog,x,y);if(click)bootstrap_confirm(b);return;}
     if(b->message_active){
+        if(b->message_buttons_motion||b->message_slide){if(click)bootstrap_confirm(b);return;}
         b->message_hover=-1;
-        if(y>=464&&y<480)for(unsigned item=b->message_open?0:7;item<8;item++){
-            int left=item?320+((int)item-1)*44:278;
-            if(x>=left&&x<left+56){b->message_hover=(int)item;break;}
+        if(y>=464&&y<480)for(unsigned item=0;item<6;item++){
+            if(!b->message_open&&item>0&&item<5)continue;
+            KImage *button=&b->message_skin.buttons[item];
+            if(x>=button->x&&x<button->x+(int)button->width){b->message_hover=(int)message_actions[item];break;}
         }
         if(click){if(b->message_hover>=0)bootstrap_message_action(b,(unsigned)b->message_hover);else bootstrap_confirm(b);}return;
     }
@@ -2496,8 +3039,11 @@ size_t bootstrap_audio_read(const KBootstrap *b,size_t *position,uint8_t *out,si
         size_t n=end-*position;if(n>capacity-total)n=capacity-total;
         memcpy(out+total,b->audio_pcm+*position,n);*position+=n;total+=n;
     }
-    if(b->music_active&&b->music_gain!=1){
-        for(size_t i=0;i+1<total;i+=2){int16_t v=(int16_t)le16(out+i);int16_t q=(int16_t)(v*b->music_gain);out[i]=(uint8_t)q;out[i+1]=(uint8_t)((uint16_t)q>>8);}
+    double gain=1;
+    if(b->music_active){int enabled;int db=music_volume_db(b,&enabled);gain=enabled?db_gain(db)*b->music_gain:0;}
+    else if(b->voice_active)gain=voice_output_gain(b);
+    if(gain!=1){
+        for(size_t i=0;i+1<total;i+=2){int16_t v=(int16_t)le16(out+i);int16_t q=(int16_t)(v*gain);out[i]=(uint8_t)q;out[i+1]=(uint8_t)((uint16_t)q>>8);}
     }
     return total;
 }
@@ -2514,7 +3060,7 @@ size_t bootstrap_audio_mix_read(KBootstrap *b,size_t *position,uint8_t *out,size
     memset(out+count,0,capacity-count);
     if(b->voice_pcm&&b->voice_read_cursor<b->voice_size){
         size_t n=b->voice_size-b->voice_read_cursor;if(n>capacity)n=capacity;n-=n%4;
-        add_samples(out,b->voice_pcm+b->voice_read_cursor,n,1);b->voice_read_cursor+=n;if(n>count)count=n;
+        add_samples(out,b->voice_pcm+b->voice_read_cursor,n,voice_output_gain(b));b->voice_read_cursor+=n;if(n>count)count=n;
     }
     if(!b->video_paused&&b->movie_pcm&&b->movie_read<b->movie_pcm_size){
         size_t n=b->movie_pcm_size-b->movie_read;if(n>capacity)n=capacity;n-=n%4;
@@ -2523,11 +3069,14 @@ size_t bootstrap_audio_mix_read(KBootstrap *b,size_t *position,uint8_t *out,size
     for(unsigned i=0;i<65;i++){
         if(i==64&&b->video_paused)continue;
         KEffectTrack *t=i==64?&b->movie_effect:&b->effect_tracks[i];size_t total=0;
+        if(!t->pcm)continue;
+        int scene_sound=i==3||i==64,enabled=option(b,"Effect",scene_sound?"IsHEffect":"IsEffect",1);
+        double gain=enabled?db_gain(kisaku_sound_volume_db(option(b,"Effect",scene_sound?"HVolume":"Volume",83),1))*db_gain(-t->fade_attenuation):0;
         while(t->pcm&&total<capacity){
             size_t end=t->loop_end?t->loop_end:t->size;
             if(t->read>=end){if(!t->loop_end)break;t->read=t->loop_start;}
             size_t n=end-t->read;if(n>capacity-total)n=capacity-total;
-            add_samples(out+total,t->pcm+t->read,n,pow(10.0,-t->fade_attenuation/2000.0));total+=n;t->read+=n;
+            add_samples(out+total,t->pcm+t->read,n,gain);total+=n;t->read+=n;
         }
         if(total>count)count=total;
     }
@@ -2538,7 +3087,12 @@ size_t bootstrap_audio_mix_read(KBootstrap *b,size_t *position,uint8_t *out,size
 #include "scene_replay.inc"
 
 void bootstrap_message_action(KBootstrap *b,unsigned action){
-    if(!b||!b->message_active)return;
+    if(!b||!b->message_active||b->letter_transition||b->letter_exit_pending||b->message_slide||b->message_buttons_motion)return;
+    if(b->letter_active&&(action==4||action==7))return;
+    if(b->letter_active&&action==5){
+        if(b->message_user_hidden||!b->history_count)return;
+        b->letter_backlog=1;letter_text_hide(b,1);return;
+    }
     if(action<=1){
         const char *key=action?"IsOneMes":"IsAutoMes";int enabled=!option(b,"Msg",key,0);
         if(setting_put(b,"Msg",key,enabled?"1":"0"))return;
@@ -2546,7 +3100,13 @@ void bootstrap_message_action(KBootstrap *b,unsigned action){
         b->message_auto_clock=0;
         if(action&&enabled&&!b->message_was_read)setting_put(b,"Msg",key,"0");
         settings_save(b);
-    }else if(action==7){b->message_open=!b->message_open;b->message_hover=-1;}
+    }else if(action==7){
+        if(b->message_open&&option(b,"Msg","IsOneMes",0))return;
+        b->message_open=!b->message_open;b->message_hover=-1;message_buttons_begin(b);
+        if(setting_put(b,"Msg","EnableOpen",b->message_open?"1":"0"))return;
+        settings_save(b);
+    }
+    else if(action==9)b->vm->globals[0][50].number^=0x8000;
     else if((action>=2&&action<=6)||action==8)b->message_request=action;
 }
 
@@ -2563,8 +3123,6 @@ int bootstrap_music_select(KBootstrap *b,unsigned index){
     if(!b||!b->extra_active||b->extra_kind!=9||!bootstrap_music_unlocked(b,index))return -1;
     if(play_pcm(b,&b->music,music_catalog[index]))return -1;
     int enabled=1;b->music_db=music_volume_db(b,&enabled);b->music_gain=1;b->music_active=1;b->music_enabled=enabled;b->music_fading=0;
-    int16_t *samples=(int16_t *)b->audio_pcm;double gain=enabled?db_gain(b->music_db):0;
-    for(size_t i=0;i<b->audio_size/2;i++)samples[i]=(int16_t)(samples[i]*gain);
     return 0;
 }
 void bootstrap_extra_close(KBootstrap *b){
@@ -2661,7 +3219,7 @@ int bootstrap_gallery_animation(KBootstrap *b,unsigned variant){
     if(movie_open(b,"ev242.mov",variant*2)){movie_stop(b);free(base);b->error[0]=0;return -1;}
     b->gallery_movie_base=(KImage){0,0,640,480,2560,base};b->gallery_animation=1;
     if(play_pcm(b,&b->music,"bgm11.wav")){bootstrap_gallery_movie_stop(b);b->error[0]=0;return -1;}
-    int enabled=1;b->music_db=music_volume_db(b,&enabled);b->music_enabled=enabled;b->music_gain=enabled?db_gain(b->music_db):0;b->music_active=1;b->music_fading=0;
+    int enabled=1;b->music_db=music_volume_db(b,&enabled);b->music_enabled=enabled;b->music_gain=1;b->music_active=1;b->music_fading=0;
     return 0;
 }
 void bootstrap_gallery_movie_stop(KBootstrap *b){
@@ -2704,12 +3262,13 @@ int bootstrap_nawa_select(KBootstrap *b,unsigned item){
 }
 
 int bootstrap_name_submit(KBootstrap *b,const char *utf8){
-    if(!b||!b->extra_active||b->extra_kind!=14||b->title.variant!=2)return -1;
+    if(!b||!b->extra_active||b->extra_kind!=14)return -1;
     if(!utf8){b->extra_active=b->extra_request=b->extra_kind=0;return 0;}
     uint8_t name[33];size_t size;if(ktext_name_encode(utf8,name,&size))return -1;
     memcpy(b->vm->bytes+1950,name,size+1);
-    b->extra_active=b->extra_request=b->extra_kind=0;b->title.active=0;
-    return kvm_push(b->vm,(KValue){0,NULL});
+    b->extra_active=b->extra_request=b->extra_kind=0;
+    if(b->title.variant==2){b->title.active=0;return kvm_push(b->vm,(KValue){0,NULL});}
+    return owned_value(b,&b->vm->globals[0][70],(KValue){1,(const char *)name});
 }
 int bootstrap_name_preview(KBootstrap *b,const char *utf8,KImage *out){
     uint8_t name[33];size_t size,count;KTextChar chars[32];

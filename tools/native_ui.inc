@@ -1,4 +1,5 @@
 /* Shared software composition for original 640x480 menu artwork. */
+#include "akb.h"
 static inline int ui_canvas(KImage *p){
     if(p->pixels&&p->width==640&&p->height==480)return 0;
     rmt_free(p);*p=(KImage){0,0,640,480,2560,calloc(640*480,4)};return p->pixels?0:-1;
@@ -9,6 +10,11 @@ static inline int ui_asset(KBootstrap *b,const char *name,KImage *out){
        ships outside rmt.arc is used by the UI panels too. */
     uint8_t *data=NULL;size_t size=0;
     int bad=ai6_read_named(&b->images,name,&data,&size)||rmt_decode(data,size,out);free(data);return bad?-1:0;
+}
+static inline int ui_akb_asset(KBootstrap *b,const char *name,KImage *out){
+    if(out->pixels)return 0;
+    uint8_t *data=NULL;size_t size=0;
+    int bad=ai6_read_named(&b->images,name,&data,&size)||akb_decode(data,size,out);free(data);return bad?-1:0;
 }
 static inline void ui_fill(KImage *p,int x,int y,int w,int h,unsigned rgb){
     for(int j=y;j<y+h;j++)for(int i=x;i<x+w;i++)if(i>=0&&j>=0&&(unsigned)i<p->width&&(unsigned)j<p->height){
