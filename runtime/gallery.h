@@ -9,9 +9,7 @@ typedef struct {
 } KGallery;
 int kgallery_load(KGallery *g,Ai6Archive *data,const char *root,unsigned selector);
 int kgallery_flush(KGallery *g,const char *root);
-/* Mark a native CG resource. Returns 1 when the name belongs to bmptbl.dat,
- * 0 when it is not a gallery resource. */
-int kgallery_mark(KGallery *g,const char *name);
+void kgallery_mark(KGallery *g,const char *name);
 int kgallery_catalog(KGallery *g,const uint8_t *data,size_t size);
 unsigned kgallery_group_count(const KGallery *g,unsigned group);
 unsigned kgallery_variant_count(const KGallery *g,unsigned group,unsigned item);

@@ -91,7 +91,7 @@ typedef struct {
     KVoiceWorker *voice_worker;unsigned voice_loading;
     KImageWorker *image_worker;unsigned image_loading;int image_layer,image_offset_x,image_offset_y;
     int restore_read_id;unsigned restore_pending,restore_remaining,restore_mode;
-    unsigned read_loaded,read_dirty,read_selector,quit_requested,title_load_requested;
+    unsigned read_loaded,read_dirty,read_selector,quit_requested,quit_modal,title_load_requested;
     Ai6Archive scripts,images,data,effects,movies,music,voice;
     uint8_t *module_data[KVM_MODULES];
     KImage layers[64]; unsigned layer_count;
@@ -210,6 +210,7 @@ void bootstrap_menu_move(KBootstrap *b,int dx,int dy);
 int bootstrap_enable_async_voice(KBootstrap *b);
 int bootstrap_enable_async_images(KBootstrap *b);
 int bootstrap_flush_progress(KBootstrap *b);
+int bootstrap_quit_dialog_close(KBootstrap *b,int accept);
 int bootstrap_can_save(const KBootstrap *b);
 int bootstrap_save_slot(KBootstrap *b,unsigned slot);
 int bootstrap_save_slot_comment(KBootstrap *b,unsigned slot,const char *utf8);

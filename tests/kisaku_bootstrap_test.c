@@ -14,6 +14,33 @@ static int call(KBootstrap *b,int sub,int action){
     kvm_push(b->vm,(KValue){action,NULL});kvm_push(b->vm,(KValue){sub,NULL});
     return bootstrap_dispatch(b);
 }
+static void test_native_tint(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=3;
+    for(unsigned i=2;i<=3;i++){rmt_free(&b->layers[i]);b->layers[i]=(KImage){0,0,642,481,642*4,calloc(642*481,4)};}
+    assert(b->layers[2].pixels&&b->layers[3].pixels);
+    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+        uint8_t *p=b->layers[0].pixels+y*b->layers[0].stride+x*4;
+        p[0]=(uint8_t)x;p[1]=(uint8_t)y;p[2]=(uint8_t)(x+y);p[3]=23;
+    }
+    memset(b->layers[3].pixels,91,642*481*4);
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=31;
+    assert(!kvm_push(b->vm,(KValue){73,NULL})&&!kvm_push(b->vm,(KValue){41,NULL}));
+    assert(!bootstrap_dispatch(b)&&b->vm->sp==1&&b->vm->stack[0].number==73);
+    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+        const uint8_t *src=b->layers[0].pixels+y*b->layers[0].stride+x*4;
+        const uint8_t *dst=b->layers[3].pixels+y*b->layers[3].stride+x*4;
+        unsigned mean=((unsigned)src[0]+src[1]+src[2])/3;
+        assert(!memcmp(src,b->layers[2].pixels+y*b->layers[2].stride+x*4,4));
+        assert(dst[0]==mean&&dst[1]==(mean>239?255:mean+16)&&dst[2]==dst[1]&&dst[3]==91);
+    }
+    assert(b->layers[3].pixels[480*b->layers[3].stride]==91);
+    b->layers[3].height=479;b->layers[0].pixels[0]=99;
+    b->vm->status=KVM_SYSCALL;assert(!kvm_push(b->vm,(KValue){41,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==2&&b->layers[2].pixels[0]==0);
+    bootstrap_destroy(b);
+    puts("Kisaku 31/41 snapshot/tint: RGB, Alpha, padded surfaces, preserved stack and failed preflight: PASS");
+}
 static int call_gallery_mark(KBootstrap *b,const char *name){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     kvm_push(b->vm,(KValue){0,name});kvm_push(b->vm,(KValue){1012,NULL});
@@ -1383,10 +1410,20 @@ int main(int argc,char **argv){
     }
     assert(!b->choice_active&&b->choice_selected==-1);
     puts("Kisaku choice initialization and independent animation state: PASS");
-    assert(!kgallery_load(&b->gallery,&b->data,bootstrap_save_dir(b),0));
-    char gallery_name[sizeof(b->gallery.names[0])];strcpy(gallery_name,b->gallery.names[0]);
-    assert(!call_gallery_mark(b,gallery_name)&&!b->vm->sp&&b->vm->bytes[4001]&&b->vm->bytes[4004]);
-    b->vm->sp=0;assert(call_gallery_mark(b,"missing-gallery-resource.rmt")<0&&b->vm->sp==2);
-    puts("Kisaku 31/1012 gallery unlock registration and ABI preservation: PASS");
+    test_native_tint(argv[1],argv[2]);
+    assert(!call(b,1011,0));
+    b->vm->bytes[3600]=b->vm->bytes[5038]=b->vm->bytes[4001]=b->vm->bytes[4004]=0;
+    assert(!call_gallery_mark(b,"ev45d_1.mov")&&!b->vm->sp);
+    assert(b->vm->bytes[3600]&&b->vm->bytes[5038]&&b->vm->bytes[4001]&&b->vm->bytes[4004]);
+    uint8_t media_before[sizeof(b->vm->bytes)];memcpy(media_before,b->vm->bytes,sizeof(media_before));
+    assert(!call_gallery_mark(b,"missing-resource.mov")&&!b->vm->sp);
+    assert(!memcmp(media_before,b->vm->bytes,sizeof(media_before)));
+    unsigned media_capacity=b->vm->byte_count;b->vm->byte_count=5038;
+    assert(call_gallery_mark(b,"EV45D_1.MOV")<0&&b->vm->sp==2);
+    assert(!memcmp(media_before,b->vm->bytes,sizeof(media_before)));b->vm->byte_count=media_capacity;
+    assert(call_gallery_mark(b,NULL)<0&&b->vm->sp==2);
+    char media_long[1025];memset(media_long,'a',sizeof(media_long)-1);media_long[1024]=0;
+    assert(call_gallery_mark(b,media_long)<0&&b->vm->sp==2);
+    puts("Kisaku 31/1012 native media links, case folding, absent-key no-op and atomic bounds: PASS");
     bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
 }

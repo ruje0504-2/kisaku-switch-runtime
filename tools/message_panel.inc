@@ -46,6 +46,7 @@ static unsigned scene_replay_slots(MessagePanel *p,KBootstrap *b,unsigned slots[
 static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
     if(p->kind==6||p->kind==18||p->kind==19){
         if(action==1){
+            if(p->kind==6)bootstrap_quit_dialog_close(b,0);
             if(p->kind==19&&bootstrap_letter_exit(b,0)){snprintf(p->status,sizeof(p->status),"信件画面に戻れませんでした");return;}
             p->kind=0;p->viewing=0;b->message_hover=-1;return;
         }
@@ -57,9 +58,9 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
                 if(bootstrap_letter_exit(b,p->selected==1)){snprintf(p->status,sizeof(p->status),"回想画面に戻れませんでした");return;}
             }else if(p->selected==1){
                 if(p->kind==18)p->return_title=1;
-                else if(bootstrap_flush_progress(b)){snprintf(p->status,sizeof(p->status),"進行状況を保存できませんでした");return;}
-                else b->quit_requested=1;
+                else if(bootstrap_quit_dialog_close(b,1)){snprintf(p->status,sizeof(p->status),"進行状況を保存できませんでした");return;}
             }
+            if(p->kind==6&&p->selected==0)bootstrap_quit_dialog_close(b,0);
             p->kind=0;p->viewing=0;b->message_hover=-1;
         }
         return;

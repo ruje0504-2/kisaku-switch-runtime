@@ -5,6 +5,35 @@
 #include <assert.h>
 #include <dirent.h>
 #include <unistd.h>
+static void test_native_quit(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){77,NULL})&&!kvm_push(b->vm,(KValue){3,NULL}));
+    assert(!bootstrap_dispatch(b)&&b->quit_modal&&b->message_request==6);
+    assert(b->vm->sp==1&&b->vm->stack[0].number==77);
+    unsigned frames=b->frames,events=b->input_events;
+    bootstrap_frame(b);bootstrap_confirm(b);bootstrap_cancel(b);
+    assert(bootstrap_run(b,1)==1&&b->frames==frames&&b->input_events==events);
+    assert(!bootstrap_can_save(b));
+    MessagePanel p={.kind=6};b->message_request=0;
+    message_panel_action(&p,b,0);assert(p.kind==6&&b->quit_modal);
+    message_panel_action(&p,b,5);message_panel_action(&p,b,0);
+    assert(!p.kind&&!b->quit_modal&&!b->quit_requested&&b->vm->sp==1);
+    for(unsigned cancel=0;cancel<2;cancel++){
+        b->vm->status=KVM_SYSCALL;assert(!kvm_push(b->vm,(KValue){3,NULL}));
+        assert(!bootstrap_dispatch(b));p.kind=6;p.viewing=0;
+        if(!cancel){message_panel_action(&p,b,1);assert(!p.kind&&!b->quit_modal&&!b->message_request);}
+        else{
+            b->reset_pending=1;message_panel_action(&p,b,4);message_panel_action(&p,b,0);
+            assert(p.kind==6&&b->quit_modal&&!b->quit_requested&&p.status[0]);
+            b->reset_pending=0;message_panel_action(&p,b,0);
+            assert(!p.kind&&!b->quit_modal&&b->quit_requested&&b->vm->sp==1);
+            assert(bootstrap_run(b,1)==1);
+        }
+    }
+    bootstrap_destroy(b);
+    puts("Kisaku 31/3 exit dialog: suspended VM, no return value, No/cancel, Yes and flush failure: PASS");
+}
 static void test_saved_parameters(SaveMenu *m,KBootstrap *b,SDL_Renderer *r,const char *shot){
     KFlags *saved=m->states[0];assert(saved&&saved->word_count==600);
     uint16_t words[600];memcpy(words,saved->words,sizeof(words));
@@ -44,6 +73,8 @@ static void test_saved_parameters(SaveMenu *m,KBootstrap *b,SDL_Renderer *r,cons
     unsigned old_detail=saved->bytes[108];saved->bytes[108]=1;m->draw_key=0;
     save_menu_pointer(m,b,30,80,1);assert(m->character_detail&&m->detail_index==0);
     save_menu_draw(m,b,r);assert(m->detail_artwork.pixels&&m->detail_status_artwork.pixels&&m->character_detail);
+    uint64_t detail_pixels=ui_hash(1,m->canvas.pixels,m->canvas.stride*m->canvas.height);
+    m->draw_key=0;save_menu_draw(m,b,r);assert(ui_hash(1,m->canvas.pixels,m->canvas.stride*m->canvas.height)==detail_pixels);
     save_menu_action(m,b,1);assert(!m->character_detail&&m->active);
     saved->bytes[108]=(uint8_t)old_detail;m->draw_key=0;
     memcpy(saved->words,words,sizeof(words));rmt_free(&image);rmt_free(&atlas);rmt_free(&m->previews[0]);m->draw_key=0;
@@ -475,6 +506,7 @@ int main(int argc,char **argv){
     b->quit_requested=0;b->reset_pending=1;p.kind=6;p.viewing=0;
     message_dialog_pointer(&p,b,240,260,1);
     assert(p.kind==6&&p.status[0]&&!b->quit_requested); /* Failed progress flush keeps the dialog open. */
+    test_native_quit(argv[1],argv[2]);
     test_config(&p,b,renderer,argc==4?argv[3]:NULL);
     test_config_audio(argv[1],argv[2]);
     test_config_motion(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);

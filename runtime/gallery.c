@@ -36,12 +36,11 @@ int kgallery_load(KGallery *g,Ai6Archive *arc,const char *root,unsigned selector
     if(f){int bad=fread(flags,1,sizeof(flags),f)!=sizeof(flags)||fgetc(f)!=EOF||ferror(f);fclose(f);if(bad)return -1;}
     memcpy(g->flags,flags,sizeof(flags));g->loaded=1;g->selector=selector;g->dirty=0;return 0;
 }
-int kgallery_mark(KGallery *g,const char *name){
-    if(!g||!g->loaded||!name)return 0;
+void kgallery_mark(KGallery *g,const char *name){
+    if(!g->loaded)return;
     for(unsigned i=0;i<KGALLERY_COUNT;i++)if(same(g->names[i],name)){
-        if(!g->flags[g->ids[i]]){g->flags[g->ids[i]]=g->flags[KGALLERY_COUNT]=1;g->dirty=1;}return 1;
+        if(!g->flags[g->ids[i]]){g->flags[g->ids[i]]=g->flags[KGALLERY_COUNT]=1;g->dirty=1;}return;
     }
-    return 0;
 }
 
 /* 4167d0: seven relative category offsets; category byte 1 is entry count.

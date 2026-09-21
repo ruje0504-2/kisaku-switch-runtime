@@ -144,7 +144,9 @@ static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
             static const char *status_names[]={"stathiro.akb","statmado.akb","statayan.akb","statmomo.akb","statnade.akb","statshou.akb","statyuri.akb","stataoi.akb"};
             static const unsigned status_rows[]={8,9,6,6,4,7,7,5};
             unsigned role=m->detail_index<8?m->detail_index:0;
-            if(!m->detail_status_artwork.pixels&&!ui_asset(b,status_names[role],&m->detail_status_artwork)){
+            if(!m->detail_status_artwork.pixels&&ui_asset(b,status_names[role],&m->detail_status_artwork))
+                snprintf(m->status,sizeof(m->status),"人物状態データを読み込めませんでした");
+            if(m->detail_status_artwork.pixels){
                 unsigned rows=status_rows[role];
                 ui_blit(d,&m->detail_status_artwork,0,0,192,36,352,24,1);
                 for(unsigned row=0;row<rows;row++){
