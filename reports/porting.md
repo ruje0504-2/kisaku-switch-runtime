@@ -497,3 +497,10 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - `31/30/0` 的步数会先被 Display/EffectSpeed 与 flag `0x4000` 缩放，因此夹具测两次：按当前设置一次，再中和这两项缩放一次，后者固定为 49 帧对应 48 个请求步；淡入/淡出分别固定为 64/64 与 32/32 帧。夹具按淡出→闪烁→画布过渡的顺序执行，因为启动脚本会把淡入覆盖层留在可见状态，而闪烁与画布过渡的原生入口都要求覆盖层已经隐藏。夹具还断言隐藏状态下的 `31/21/1` 不会重新武装动画。
 - 验证：`local/deepseek-cadence-regression.log` 的完整主机回归 51 项全部通过（含新的节奏夹具以及既有 bootstrap/save/letter/message-panel 全部专项），`build-host.sh` 在 `-Werror` 下通过，`git diff --check` 通过。没有启动 PC 程序：本轮帧数来自移植运行时自身的帧循环，是对移植实现的固定，**不是**与 PC 参考帧的逐帧比对；Switch 实机与 PC 对照仍由用户验收。
 - 待办：`31/30` 的过渡曲线与 PC 参考帧仍需逐帧核对；12 帧全黑停留是在移植运行时的 60Hz 帧驱动假设下成立的，若后续引入真实毫秒时钟需一并复核。未改动的 `31/x` 边界（`31/528/9` 的窗口/队列/音效生命周期、`31/520` 原生事件队列、`31/612/0/1`）继续保留参数并明确报错。
+
+### 2026-09-22：包 1a —— 回想回放与 New Game 初期化的堆容量检查（8192 → 9192）
+
+- `runtime/scene_replay.inc`：`bootstrap_scene_replay_begin` 原先要求源 VM `byte_count == 8192`。8192 只是 `kvm_create` 的初始值；《鬼作》运行时在 `31/14/0` 之后实际声明 9192 字节（word 600 / global 15000 / bank1 100），因此该检查对真实运行时**恒为假**，回想回放每次都直接返回失败、根本起不来。改为接受 9192，并在注释中写明 8192 的来源与不再作为判定依据的理由。
+- `runtime/history_reset.inc`：`bootstrap_history_reset` 同一个 8192 判定让 New Game 的"初期化"四个勾选框永久报 `history reset state invalid`。同时该函数的暂存缓冲 `uint8_t bytes[8192]` 与逐字节清零长度一并改为 `sizeof(bytes)`（9192），使暂存区与原生 byte 区等长，不再截断。
+- 验证：`build-host.sh` 在 `-Werror` 下通过；`test-host.sh` 完整主机回归 51 项全部通过（`local/ds-test.log`），其中 `kisaku-bootstrap-test`、`save-runtime-test`、`letter-save-test` 覆盖本次两处改动的存档合并与回放路径；资源审计 0 失败、AKB 2191/2191 解码。日志写在 `local/ds-test.log`（本次重跑）与 `local/deepseek-cadence-regression.log`（当轮）。
+- 边界：本轮只修容量判定，**没有**把回想回放与初期化的下游脚本路径当作已验证的完整流程；`31/1012`（681 个 MES、2479 次调用）等未接通接口继续保留参数并明确报错。未启动 PC 程序，Switch 实机未验证。

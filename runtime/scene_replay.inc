@@ -7,7 +7,10 @@ int bootstrap_scene_replay_begin(KBootstrap *b,const KBootstrap *owner,unsigned 
     int id=module(b,target.module);size_t offset;
     if(id<0||kvm_checkpoint_offset(b->vm,id,target.checkpoint,&offset))return -1;
     const KVM *source=owner->vm;KVM *v=b->vm;
-    if(source->byte_count!=8192||source->word_count<381||source->global_count[0]<=50||source->global_count[1]<=69)return -1;
+    /* The live story VM declares its capacity through 31/14/0 (a=9192, c=600,
+       d=15000, e=100); 8192 is only kvm_create's initial value.  This check
+       must accept the real runtime, not the reference game's default. */
+    if(source->byte_count!=9192||source->word_count<381||source->global_count[0]<=50||source->global_count[1]<=69)return -1;
     uint8_t *raw=malloc(owner->raw_size?owner->raw_size:1);KScene *scene=owner->scene?malloc(sizeof(*scene)):NULL;
     if(!raw||(owner->scene&&!scene)){free(raw);free(scene);return -1;}
     if(owner->raw_size)memcpy(raw,owner->raw_variables,owner->raw_size);

@@ -18,9 +18,12 @@ int bootstrap_history_reset(KBootstrap *b,int confirm){
     KVM *v=b->vm;KFlagDialog *dialog=&b->flag_dialog;
     unsigned all=dialog->checked[3]==1,read=all||dialog->checked[0]==1,choice=all||dialog->checked[1]==1,nav=all||dialog->checked[2]==1;
     if(!read&&!choice&&!nav)return -1;
-    if(v->byte_count!=8192||v->word_count<600||v->global_count[1]<100||b->raw_size<6000||!b->read_size)return error(b,"history reset state invalid");
+    /* The live VM declares 9192 bytes through 31/14/0; 8192 is only
+       kvm_create's initial value.  The staging copy below is the same size as
+       the native byte area, so accepting the runtime here cannot truncate it. */
+    if(v->byte_count!=9192||v->word_count<600||v->global_count[1]<100||b->raw_size<6000||!b->read_size)return error(b,"history reset state invalid");
     unsigned selector=v->bytes[8100];if(selector>3)return error(b,"history reset selector invalid");
-    uint8_t bytes[8192];uint16_t words[8192];KValue bank1[8192];
+    uint8_t bytes[9192];uint16_t words[8192];KValue bank1[8192];
     memcpy(bytes,v->bytes,sizeof(bytes));memcpy(words,v->words,v->word_count*sizeof(*words));memcpy(bank1,v->globals[1],v->global_count[1]*sizeof(*bank1));
     uint8_t *raw=malloc(b->raw_size),*reads=calloc(b->read_size,1),*flag_data=NULL,*empty_data=NULL;size_t flag_size=0,empty_size=0;
     if(!raw||!reads){free(raw);free(reads);return error(b,"history reset allocation failed");}memcpy(raw,b->raw_variables,b->raw_size);
@@ -31,7 +34,7 @@ int bootstrap_history_reset(KBootstrap *b,int confirm){
         if(!history.loaded&&khistory_load(&history,bootstrap_save_dir(b)))goto bad;
         memset(history.data+4,0,2400+600);for(unsigned i=0;i<600;i++)history.data[3004+i*32]=0;
     }
-    if(all){memset(bytes,0,8192);memset(words,0,600*sizeof(*words));memset(raw,0,6000);memset(bank1,0,100*sizeof(*bank1));}
+    if(all){memset(bytes,0,sizeof(bytes));memset(words,0,600*sizeof(*words));memset(raw,0,6000);memset(bank1,0,100*sizeof(*bank1));}
     KFlags flags={0};
     if(v->module>=0)snprintf((char *)flags.module,sizeof(flags.module),"%s",v->modules[v->module].name);
     flags.globals[0]=v->globals[0];flags.counts[0]=v->global_count[0];flags.globals[1]=bank1;flags.counts[1]=v->global_count[1];
