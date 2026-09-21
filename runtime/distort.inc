@@ -46,7 +46,9 @@ static int distort_begin(KBootstrap *b){
     return 0;
 }
 
-/* 42c890: close black horizontal bands from both edges, hold 200 ms, reopen. */
+/* 31/17 blink: close black horizontal bands from both edges, hold 200 ms,
+   reopen. The old "42c890" citation is a reference-project address and is NOT
+   verified for 鬼作; see reports/porting.md before reusing it as evidence. */
 static int blink_begin(KBootstrap *b){
     if(b->fade_visible||b->fade_steps||b->helper_steps)return error(b,"blink overlay already in use");
     if(!b->canvas.pixels||b->canvas.width!=640||b->canvas.height!=480)return error(b,"blink canvas missing");
@@ -65,16 +67,25 @@ static void blink_frame(KBootstrap *b){
             b->fade_surface.pixels[(y+row)*2560+x*4+3]=closing?255:0;
             b->fade_surface.pixels[(456-y+row)*2560+x*4+3]=closing?255:0;
         }
-        /* 42c890 holds the closed overlay for 200 ms. Re-arm the clock with the
-           new wait: carrying the remainder of the previous 900-unit step left
-           only eleven fully black frames (183 ms at 60 Hz), not twelve. */
+        /* The 12000-unit wait below is meant to hold the closed overlay for
+           200 ms and it does: tests/transition_cadence_test.c measures twelve
+           fully black frames at 60 Hz. What the carried-over residual does
+           change is the closing ramp - each 900-unit step leaves 100 units
+           behind, so the last two closing steps land in one frame and the whole
+           effect runs 30 frames instead of 31 (one step per frame). Whether the
+           original re-arms the clock on every step is UNPROVEN, and the address
+           once cited here (42c890) is a reference-project address that lands
+           inside CRendererInputPin.virtual_16 in 鬼作/AI6WIN.exe, not in effect
+           code. Behaviour is left unchanged; the ramp question is OPEN in
+           reports/porting.md. */
         b->blink_wait=b->blink_step==10?12000:900;
-        b->blink_clock=0;
         if(b->blink_step==20){b->blink_active=0;b->fade_visible=0;}
     }
 }
 
-/* 42bd20: vertical scroll of page 2; direction 0 joins two 480-row panels. */
+/* 31/30-style vertical scroll of page 2; direction 0 joins two 480-row panels.
+   "42bd20" is a reference-project address, unverified for 鬼作 (same caveat as
+   the blink entry above). */
 static void scroll_frame(KBootstrap *b){
     unsigned pos=b->scroll_offset,target=b->scroll_target;
     if(pos>target)pos=target;
