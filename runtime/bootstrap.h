@@ -43,7 +43,11 @@ typedef struct {
     KImage exec522_sprites[4],exec522_backing[4];
     int exec522_x[4],exec522_y[4],exec522_drawn_x[4],exec522_drawn_y[4];
     unsigned exec522_visible[4],exec522_drawn[4],exec522_state;
+    int portrait_tracks[2];
     int exec522_current;
+    unsigned exec522_motion,exec522_step,exec522_clock;
+    unsigned exec522_pulse,exec522_pulse_phase,exec522_pulse_clock;
+    int exec522_moving,exec522_previous,exec522_origin[4],exec522_delta[4];
     KMediaTables media_tables;
     KMessageSkin message_skin;
     unsigned auxiliary_windows_enabled;

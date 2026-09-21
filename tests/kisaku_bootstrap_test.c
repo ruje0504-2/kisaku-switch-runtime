@@ -14,6 +14,40 @@ static int call(KBootstrap *b,int sub,int action){
     kvm_push(b->vm,(KValue){action,NULL});kvm_push(b->vm,(KValue){sub,NULL});
     return bootstrap_dispatch(b);
 }
+static void week_call(KBootstrap *b,int mode,int value){
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    if(mode==5)kvm_push(b->vm,(KValue){0,NULL});
+    kvm_push(b->vm,(KValue){value,NULL});kvm_push(b->vm,(KValue){mode,NULL});
+    kvm_push(b->vm,(KValue){522,NULL});assert(!bootstrap_dispatch(b));
+}
+static void test_week(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=9;rmt_free(&b->layers[7]);
+    b->layers[7]=(KImage){0,0,640,400,2560,calloc(640*400,4)};
+    for(unsigned y=0;y<400;y++)for(unsigned x=0;x<640;x++){
+        uint8_t *p=b->layers[7].pixels+y*2560+x*4;p[0]=y;p[1]=x;p[3]=255;
+    }
+    week_call(b,0,0);week_call(b,1,0);assert(b->exec522_motion);
+    for(unsigned n=0;n<8;n++)bootstrap_frame(b);
+    assert(!b->error[0]&&!b->exec522_motion&&b->exec522_x[0]==172);
+    week_call(b,3,1);
+    assert(b->exec522_sprites[0].pixels[60*432+8*4]==208);
+    assert(b->exec522_sprites[0].pixels[84*432+8*4]==24);
+    week_call(b,1,1);
+    for(unsigned n=0;n<12;n++)bootstrap_frame(b);
+    assert(!b->error[0]&&!b->exec522_motion&&b->exec522_visible[0]&&b->exec522_visible[1]);
+    assert(b->exec522_x[1]==280);
+    for(unsigned n=0;n<30;n++)bootstrap_frame(b);
+    assert(b->exec522_drawn[0]&&b->exec522_drawn[1]);
+    week_call(b,5,0);assert(b->exec522_visible[0]);
+    for(unsigned n=0;n<12;n++)bootstrap_frame(b);
+    assert(!b->exec522_motion&&!b->exec522_visible[0]&&!b->exec522_visible[1]);
+    b->param_animation_active=1;b->param_animation_step=7;b->input_events=0;
+    bootstrap_confirm(b);bootstrap_cancel(b);bootstrap_pointer(b,50,400,1);
+    assert(b->param_animation_active&&b->param_animation_step==7&&!b->input_events);
+    bootstrap_destroy(b);
+    puts("Weekly panels: retained weeks, label rows, timed movement; parameter click isolation: PASS");
+}
 static void test_native_tint(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     b->layer_count=3;
@@ -640,6 +674,23 @@ static void test_startup_native_ax(const char *root,const char *saves){
     bootstrap_frame(b);bootstrap_frame(b);
     assert(!b->error[0]&&!memcmp(dst,pixels,3)&&dst[3]==77);
     for(unsigned i=4;i<8;i++)assert(dst[i]==77);
+    audit_put32(data+33*4,0x580);audit_put32(data+66*4,0x580);
+    assert(ax_load(&b->ax,"portrait.ax",data,sizeof(data)));
+    KValue setup[]={{73,NULL},{1,NULL},{1,NULL},{2,NULL},{11,NULL}};
+    assert(!call_anime520(b,setup,5)&&b->vm->sp==1&&b->vm->stack[0].number==73);
+    setup[1].number=2;setup[2].number=2;
+    assert(!call_anime520(b,setup,5)&&b->portrait_tracks[0]==33&&b->portrait_tracks[1]==66);
+    assert(b->ax.cells[33].state==255&&b->ax.cells[66].state==255);
+    assert(!call(b,11,3)&&b->ax.cells[33].state==0&&b->ax.cells[66].state==0);
+    assert(b->ax_registered[33]==1&&b->ax_registered[66]==1);
+    KValue query[]={{73,NULL},{1,NULL},{1,NULL},{5,NULL},{11,NULL}};
+    assert(!call_anime520(b,query,5)&&b->vm->sp==2&&b->vm->stack[1].number==0);
+    memset(dst,77,8);b->ax_clock=0;bootstrap_frame(b);bootstrap_frame(b);
+    assert(!b->error[0]&&dst[0]==19&&b->ax.cells[33].ip&&b->ax.cells[66].ip);
+    b->ax.cells[33].state=255;
+    assert(!call_anime520(b,query,5)&&b->vm->stack[1].number==255);
+    setup[2].number=10;assert(call_anime520(b,setup,5)<0&&b->vm->sp==5);
+    puts("Portrait bank/cell setup, two-track simultaneous start, pixels and status ABI: PASS");
     bootstrap_destroy(b);
     puts("Kisaku startup AX: layer 8, RGB/keyed copy, Y wrap, enable flag and boundary timing: PASS");
 }
@@ -1410,6 +1461,7 @@ int main(int argc,char **argv){
     }
     assert(!b->choice_active&&b->choice_selected==-1);
     puts("Kisaku choice initialization and independent animation state: PASS");
+    test_week(argv[1],argv[2]);
     test_native_tint(argv[1],argv[2]);
     assert(!call(b,1011,0));
     b->vm->bytes[3600]=b->vm->bytes[5038]=b->vm->bytes[4001]=b->vm->bytes[4004]=0;

@@ -156,7 +156,7 @@ KBootstrap *bootstrap_create_split(const char *root,const char *save_root){
         uint8_t *p=calloc(640*480,4);if(!p){error(b,"screen allocation failed");return b;}
         *initial[i]=(KImage){0,0,640,480,640*4,p};
     }
-    strcpy(b->root,root);strcpy(b->save_root,save_root);b->last_loaded_layer=-1;b->animation_id=-1;b->message_hover=-1;b->exec522_current=-1;
+    strcpy(b->root,root);strcpy(b->save_root,save_root);b->last_loaded_layer=-1;b->animation_id=-1;b->message_hover=-1;b->exec522_current=-1;b->portrait_tracks[0]=b->portrait_tracks[1]=-1;
     b->reset_pending=1;
     if(kreset_recover(save_root)){error(b,"history reset recovery failed");return b;}
     b->reset_pending=0;
@@ -1123,11 +1123,6 @@ static int param_animation_frame(KBootstrap *b){
     }
     return param_animation_present(b);
 }
-static int param_animation_skip(KBootstrap *b){
-    if(!b->param_animation_active)return 0;
-    b->param_animation_step=b->param_animation_plan.steps;
-    return param_animation_finish(b,1);
-}
 static int start_logo_track(KBootstrap *b,unsigned cell){
     if(!ax_control(&b->ax,3,0,cell))return error(b,"invalid logo AX track");
     return 0;
@@ -1333,6 +1328,57 @@ int bootstrap_dispatch(KBootstrap *b){
         int chime=v->stack[v->sp-8].number,start2=v->stack[v->sp-9].number;
         if(param_animation_begin(b,encoded,duration,chime,start2))return -1;
         v->sp-=9;b->handled++;return kvm_resume(v);
+    }
+    /* 4fa6a0 -> 4ffef0/4ffe40/4ffdc0. Portrait setup queues TWO
+       bank/cell pairs; action 3 starts them together, it does not stop them. */
+    if(main==31&&sub==11&&v->sp>=2&&!v->stack[v->sp-2].string){
+        int action=v->stack[v->sp-2].number;
+        if(action<0||action>5)return error(b,"31/11 unknown action (arguments preserved)");
+        unsigned count=action==0?1:action==1?3:(action==2||action==5)?2:0;
+        if(v->sp<2+count)return error(b,"31/11 missing operands (arguments preserved)");
+        if(action==0){
+            const char *name=v->stack[v->sp-3].string;
+            if(!name||strlen(name)>=sizeof(b->animation_name))return error(b,"31/11 context invalid (arguments preserved)");
+            strcpy(b->animation_name,name);
+        }else if(action==1||action==2||action==5){
+            for(unsigned n=3;n<=2+count;n++)if(v->stack[v->sp-n].string)
+                return error(b,"31/11 numeric operands required (arguments preserved)");
+            int bank=v->stack[v->sp-3].number,cell=v->stack[v->sp-4].number;
+            if(bank<0||bank>=10||cell<0||cell>=32)return error(b,"31/11 track range (arguments preserved)");
+            unsigned index=(unsigned)bank*32+(unsigned)cell;
+            struct ax_cell *track=&b->ax.cells[index];
+            if(action!=5&&(track->start<0x500||track->start>=b->ax.size))
+                return error(b,"31/11 track unavailable (arguments preserved)");
+            if(action==5){
+                int result=track->state==0?0:255;
+                v->sp-=4;if(kvm_push(v,(KValue){result,NULL}))return error(b,"31/11 result stack allocation failed");
+                b->handled++;return kvm_resume(v);
+            }
+            if(action==1){
+                int target=v->stack[v->sp-5].number;
+                KImage *dst=surface(b,target);
+                if(!dst||!dst->pixels)return error(b,"31/11 destination invalid (arguments preserved)");
+                uint32_t start=track->start;memset(track,0,sizeof(*track));track->start=start;track->state=AX_STOPPED;
+                b->ax_destination=target;int ok=ax_first_frame(&b->ax,index,draw_ax,b);b->ax_destination=0;
+                if(!ok||b->error[0])return error(b,"31/11 first frame invalid (arguments preserved)");
+            }else{
+                uint32_t start=track->start;memset(track,0,sizeof(*track));track->start=start;track->state=AX_STOPPED;
+                if(b->portrait_tracks[0]<0)b->portrait_tracks[0]=(int)index;
+                else if(b->portrait_tracks[1]<0)b->portrait_tracks[1]=(int)index;
+            }
+        }else if(action==3){
+            for(unsigned n=0;n<2;n++)if(b->portrait_tracks[n]>=0){
+                unsigned index=(unsigned)b->portrait_tracks[n];
+                if(b->ax_registered[index]==UINT32_MAX)return error(b,"31/11 registration overflow (arguments preserved)");
+            }
+            for(unsigned n=0;n<2;n++)if(b->portrait_tracks[n]>=0){
+                unsigned index=(unsigned)b->portrait_tracks[n];b->ax.cells[index].state=0;b->ax_registered[index]++;
+            }
+            b->portrait_tracks[0]=b->portrait_tracks[1]=-1;
+        }else{
+            b->animation_name[0]=0;b->portrait_tracks[0]=b->portrait_tracks[1]=-1;
+        }
+        v->sp-=2+count;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==612&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==0){
         /* 4fb5a0 event 0 drains five values before 4d5390 constructs the
@@ -2055,47 +2101,6 @@ int bootstrap_dispatch(KBootstrap *b){
            from the reference runtime and are absent from Kisaku's effect.arc. */
         if(play_pcm(b,&b->effects,"logo.wav"))return -1;
         b->logo_phase=1;b->ax_clock=0;
-    }else if(animation_reset){
-        if(integer(b,&a))return -1;
-        if(a==0){mam_stop(b);b->mouth_sheet_ready=0;const char *name;if(string(b,&name))return -1;if(strlen(name)>=sizeof(b->animation_name))return error(b,"animation context name too long");strcpy(b->animation_name,name);}
-        else if(a==1||a==2){
-            if(integer(b,&c))return -1;
-            if(c<0||c>=32||!ax_control(&b->ax,1,0,(unsigned)c))return error(b,"invalid story AX track");
-            if(a==1){
-                if(integer(b,&d))return -1;
-                if(!surface(b,d))return error(b,"invalid AX destination");
-                b->ax_destination=d;b->ax_fast=1;
-                int ok=ax_first_frame(&b->ax,(unsigned)c,draw_ax,b);
-                b->ax_destination=0;b->ax_fast=0;
-                if(!ok)return error(b,"invalid AX first frame");
-                if(b->error[0])return -1;
-            }else b->animation_id=c;
-        }
-        else if(a==5){
-            mam_stop(b);b->mouth_sheet_ready=0;
-            if(integer(b,&c))return -1;
-            /* 42ba1f/41ad80: optional mouth sheet, native save selector 3 skips it. */
-            if(v->byte_count<=8100)return error(b,"animation save selector missing");
-            if(v->bytes[8100]!=3){
-                char name[288],stem[261];memcpy(stem,b->animation_name,sizeof(stem));
-                char *dot=strrchr(stem,'.');if(dot)*dot=0;
-                snprintf(name,sizeof(name),"%s_%02d_k.rmt",stem,c);
-                uint8_t *data=NULL;size_t size=0;KImage im={0};
-                if(!read_named(&b->images,name,&data,&size)){
-                    if(rmt_decode(data,size,&im)){free(data);return error(b,"mouth RMT decode failed");}free(data);
-                    KImage *dst=&b->layers[7];
-                    if(!dst->pixels||im.x<0||im.y<0||(uint64_t)im.x+im.width>dst->width||(uint64_t)im.y+im.height>dst->height){rmt_free(&im);return error(b,"mouth RMT outside layer 7");}
-                    for(unsigned y=0;y<im.height;y++)memcpy(dst->pixels+(y+(size_t)im.y)*dst->stride+(size_t)im.x*4,im.pixels+y*im.stride,im.stride);
-                    rmt_free(&im);b->mouth_sheet_ready=1;
-                }
-            }
-        }
-        /* 42ba09 clears the animation context name and resets its ID. */
-        else {mam_stop(b);if(a==3){
-            if(b->animation_id>=32)return error(b,"animation ID out of range");
-            if(b->animation_id>=0){b->animation_status[b->animation_id]=1;b->ax.cells[b->animation_id].state=1;}
-        }else b->animation_name[0]=0;
-        b->animation_id=-1;}
     }else if(message_reset){
         if(integer(b,&a)||message_init(b))return -1;
     }else if(main==21&&sub==4){
@@ -2679,12 +2684,12 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
     if(restore_message(b))return -1;
     history_restore_apply(b);
     if(b->scene_replay_finished)return 1;
-    if(b->quit_modal||b->quit_requested||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
+    if(b->quit_modal||b->quit_requested||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
     while(budget--){b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;int old_module=b->vm->module;unsigned old_scripts=b->vm->script_depth;KStatus s=kvm_run(b->vm,1);
         /* Native 408060 notifies navigation on a script return, but library
            function calls only change the VM instruction source. */
         if(b->vm->script_depth<old_scripts&&scene_transition(b,b->vm->modules[old_module].name,b->vm->modules[b->vm->module].name))return -1;
-        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->quit_modal||b->quit_requested||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
+        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->quit_modal||b->quit_requested||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
         else if(s==KVM_TEXT){if(draw_text(b))return -1;}
         else if(s==KVM_BUDGET)kvm_resume(b->vm);
         else if(s==KVM_ERROR)return error(b,b->vm->error);
@@ -2799,6 +2804,7 @@ void bootstrap_frame(KBootstrap *b){
             if(b->error[0])return;
         }
     }
+    animation522_frame(b);
     if(param_animation_frame(b))return;
     mam_frame(b);
     if(b->title.active){
@@ -2909,12 +2915,12 @@ void bootstrap_frame(KBootstrap *b){
 #include "history_reset.inc"
 
 void bootstrap_confirm(KBootstrap *b){
+    if(b&&(b->param_animation_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_transition||b->letter_exit_pending)return;
     if(b->letter_active){if(b->message_user_hidden)letter_text_hide(b,0);else letter_text_confirm(b);return;}
     if(b->message_active&&b->message_user_hidden){bootstrap_message_hide(b,0);return;}
     b->input_events|=1;b->input_event_until=b->frames+3;
-    if(b->param_animation_active){if(param_animation_skip(b))error(b,"CKisakuParamWnd animation skip failed");return;}
     if(b->mes_fade_transition&&!(b->vm->globals[0][50].number&0x4000)){
         exec526_restore(b);animation522_restore(b);message_fade_restore(b);message_fade_finish(b);
         message_fade_present(b);animation522_present(b);exec526_present(b);return;
@@ -3013,6 +3019,7 @@ void bootstrap_message_hide(KBootstrap *b,int hidden){
     else if(b->message_base.pixels)message_compose(b);
 }
 void bootstrap_cancel(KBootstrap *b){
+    if(b&&(b->param_animation_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_transition||b->letter_exit_pending)return;
     if(b->letter_active){
@@ -3053,6 +3060,7 @@ void bootstrap_title_move(KBootstrap *b,int delta){
     else b->title.selected=(b->title.selected+(delta>0?1:(int)b->title.count-1))%(int)b->title.count;
 }
 void bootstrap_pointer(KBootstrap *b,int x,int y,int click){
+    if(b&&(b->param_animation_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_active||b->letter_transition){if(click)bootstrap_confirm(b);return;}
     if(b->area_active){b->area_x=x;b->area_y=y;b->area_selected=area_hit(b,x,y);if(click)area_finish(b,0);return;}

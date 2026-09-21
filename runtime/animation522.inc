@@ -5,8 +5,7 @@
  * images and composes them over layer 0 at the positions maintained by the
  * native +34 method.  The atlas writes and the keyed/alpha copy flags below
  * follow 0046cad0, 0046d350, 0046c8f0, 0046c760 and 0046cee0.  Native waits
- * 20 ms while moving a window; the completed position is deterministic, so
- * the VM observes the same final state without blocking the host thread.
+ * 20 ms while moving a window; the VM yields until movement completes.
  */
 
 static int animation522_require(KBootstrap *b){
@@ -66,7 +65,7 @@ static void animation522_restore(KBootstrap *b){
        always the real page-0 layer. */
     KImage *screen=&b->layers[0];
     if(!screen||!screen->pixels)return;
-    for(unsigned i=0;i<4;i++)if(b->exec522_drawn[i]){
+    for(int i=3;i>=0;i--)if(b->exec522_drawn[i]){
         int x=b->exec522_drawn_x[i],y=b->exec522_drawn_y[i];
         if(x>=0&&y>=0&&(unsigned)x+108<=screen->width&&(unsigned)y+124<=screen->height)
             for(unsigned row=0;row<124;row++)memcpy(screen->pixels+(size_t)(y+(int)row)*screen->stride+(size_t)x*4,
@@ -120,16 +119,25 @@ static int animation522_mode0(KBootstrap *b,int selector){
 static int animation522_mode1(KBootstrap *b,int target){
     if(target<0||target>3)return error(b,"31/522 mode 1 target out of range (arguments preserved)");
     if(animation522_require(b))return -1;
-    /* 0046d350 copies the common frame through the prepared atlas row. */
-    if(animation522_copy_atlas(b,0x208,0x3c,0x5c,0x30,0,0xe8,1))return -1;
-    if(animation522_sprite_copy(b,(unsigned)target,8,0x3c,0x5c,0x30,0x208,0x7c,-1,1))return -1;
-    for(unsigned i=0;i<4;i++){b->exec522_visible[i]=0;b->overlays.visible[i]=0;}
+    animation522_restore(b);
+    if(animation522_copy_atlas(b,0x210,0x3c,0x5c,0x30,0,0xe8,1))return -1;
+    if(animation522_sprite_copy(b,(unsigned)target,8,0x3c,0x5c,0x30,0x210,0xb8,-1,1))return -1;
+    int previous=b->exec522_current;
+    b->exec522_previous=previous;b->exec522_step=0;b->exec522_clock=0;
+    b->exec522_moving=target;
+    if(previous<0){
+        b->exec522_x[target]=16;b->exec522_y[target]=16;
+        b->exec522_motion=1;
+    }else if(previous<target){
+        b->exec522_x[target]=b->exec522_x[previous];b->exec522_y[target]=16;
+        b->exec522_motion=2;
+    }else if(previous>target){
+        b->exec522_moving=previous;b->exec522_motion=3;
+    }
     b->exec522_visible[target]=1;b->overlays.visible[target]=1;
-    /* Initial entry ends at x=0x10+6*0x1a; subsequent entries move by ten
-       12-pixel steps, so the same closed form is 0xac+target*0x78. */
-    b->exec522_x[target]=0xac+target*0x78;b->exec522_y[target]=0x10;
     b->exec522_current=target;b->exec522_state=1;
-    animation522_restore(b);animation522_present(b);return b->error[0]?-1:0;
+    b->exec522_pulse=b->exec522_pulse_phase=b->exec522_pulse_clock=0;
+    animation522_present(b);return b->error[0]?-1:0;
 }
 
 static int animation522_mode3(KBootstrap *b,int item){
@@ -138,8 +146,10 @@ static int animation522_mode3(KBootstrap *b,int item){
     if(b->exec522_current<0||b->exec522_current>3)
         return error(b,"31/522 mode 3 has no current sprite (arguments preserved)");
     int sy=0xd0-(item-1)*0x18;
+    if(animation522_copy_atlas(b,0x210,0x3c,0x5c,0x18,0,sy,1))return -1;
+    if(animation522_sprite_copy(b,(unsigned)b->exec522_current,8,0x3c,0x5c,0x18,0,sy,-1,1))return -1;
     if(animation522_copy_atlas(b,0x210,0x54,0x5c,0x18,0,0x118,1))return -1;
-    if(animation522_sprite_copy(b,(unsigned)b->exec522_current,8,0x54,0x5c,0x18,0,sy,-1,1))return -1;
+    if(animation522_sprite_copy(b,(unsigned)b->exec522_current,8,0x54,0x5c,0x18,0,0x118,-1,1))return -1;
     b->exec522_state=0;animation522_restore(b);animation522_present(b);return b->error[0]?-1:0;
 }
 
@@ -160,18 +170,69 @@ static int animation522_mode5(KBootstrap *b,int packed,int variant){
        cleanup.  0046cee0 itself only moves/destroys the four windows; retain
        both values at the boundary while applying that cleanup. */
     (void)packed;(void)variant;
-    /* 0046cee0 moves and destroys all four native windows.  Restore the
-       covered page immediately, then leave no visible windows behind. */
     animation522_restore(b);
-    for(unsigned i=0;i<4;i++){b->exec522_visible[i]=0;b->overlays.visible[i]=0;}
-    b->exec522_current=-1;b->exec522_state=0;return 0;
+    b->exec522_motion=4;b->exec522_step=0;b->exec522_clock=0;
+    for(unsigned i=0;i<4;i++){
+        b->exec522_origin[i]=b->exec522_x[i];
+        b->exec522_delta[i]=(b->exec522_x[i]-16)/10;
+    }
+    b->exec522_state=0;
+    animation522_present(b);return 0;
+}
+
+/* Native movement waits 20 ms at each position. Keep the syscall blocked
+   until its last displayed position has had its full dwell time. */
+static void animation522_frame(KBootstrap *b){
+    /* CSelWeek::virtual_4 (46c4e0), 20 ms constructor period. The small
+       Alpha ramps blend into the preceding pixels, rather than a fixed base. */
+    if(!b->exec522_motion&&b->exec522_state&&b->exec522_current>=0&&
+       b->overlays.visible[b->exec522_current]){
+        b->exec522_pulse_clock+=1000;
+        while(b->exec522_pulse_clock>=1200){
+            b->exec522_pulse_clock-=1200;
+            if(++b->exec522_pulse==32){b->exec522_pulse=0;b->exec522_pulse_phase^=1;}
+            unsigned a=b->exec522_pulse;
+            int y=b->exec522_state==1?60:84,h=b->exec522_state==1?48:24;
+            KImage *src=surface(b,7),*dst=&b->exec522_sprites[b->exec522_current];
+            if(!src||!src->pixels||src->width<628||src->height<400){error(b,"31/522 pulse atlas missing");return;}
+            for(int row=0;row<h;row++)for(int x=0;x<92;x++){
+                uint8_t *d=dst->pixels+(y+row)*dst->stride+(8+x)*4;
+                const uint8_t *p=src->pixels+(y+row+124*b->exec522_pulse_phase)*src->stride+(528+x)*4;
+                for(unsigned c=0;c<3;c++)d[c]=(uint8_t)(d[c]*(255-a)/255+p[c]*a/255);
+            }
+        }
+    }
+    if(!b->exec522_motion)return;
+    b->exec522_clock+=1000;
+    while(b->exec522_clock>=1200&&b->exec522_motion){
+        b->exec522_clock-=1200;
+        unsigned mode=b->exec522_motion,step=++b->exec522_step;
+        int i=b->exec522_moving;
+        if(mode==1){
+            b->exec522_x[i]=16+26*(int)step;
+            if(step==6)b->exec522_motion=0;
+        }else if(mode==2||mode==3){
+            if(step<10)b->exec522_x[i]+=mode==2?12:-12;
+            else {
+                if(mode==3){b->exec522_visible[i]=0;b->overlays.visible[i]=0;}
+                b->exec522_motion=0;
+            }
+        }else {
+            if(step<10)for(unsigned n=0;n<4;n++)
+                b->exec522_x[n]=b->exec522_origin[n]-b->exec522_delta[n]*(int)step;
+            else {
+                for(unsigned n=0;n<4;n++){b->exec522_visible[n]=0;b->overlays.visible[n]=0;}
+                b->exec522_current=-1;b->exec522_motion=0;
+            }
+        }
+    }
 }
 
 static int animation522_draw(KBootstrap *b,int mode,const int *args,unsigned count){
     switch(mode){
     case 0: if(count!=1)return error(b,"31/522 mode 0 selector missing (arguments preserved)");return animation522_mode0(b,args[0]);
     case 1: if(count!=1)return error(b,"31/522 mode 1 target missing (arguments preserved)");return animation522_mode1(b,args[0]);
-    case 2: if(count!=1)return error(b,"31/522 mode 2 selector missing (arguments preserved)");b->exec522_state=2;return 0;
+    case 2: if(count!=1)return error(b,"31/522 mode 2 selector missing (arguments preserved)");b->exec522_state=2;b->exec522_pulse=b->exec522_pulse_phase=b->exec522_pulse_clock=0;return 0;
     case 3: if(count!=1)return error(b,"31/522 mode 3 item missing (arguments preserved)");return animation522_mode3(b,args[0]);
     case 4: if(count!=2)return error(b,"31/522 mode 4 selectors missing (arguments preserved)");return animation522_mode4(b,args[0],args[1]);
     case 5: if(count!=2)return error(b,"31/522 mode 5 selectors missing (arguments preserved)");return animation522_mode5(b,args[0],args[1]);
