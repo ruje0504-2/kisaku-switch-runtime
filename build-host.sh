@@ -20,6 +20,7 @@ ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime $(pkg-config --cflags sdl
     runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c runtime/ax.c runtime/mam.c runtime/video.c runtime/flags.c runtime/gallery.c runtime/control_store.c runtime/save_slot.c runtime/scene.c runtime/scene_view.c runtime/title.c runtime/flag_dialog.c runtime/scene_history.c runtime/text_encoding.c runtime/text_layout.c runtime/font.c runtime/read_flags.c runtime/voice_worker.c runtime/image_worker.c runtime/bootstrap.c runtime/switch_hos.c runtime/image_sdl.c tests/message_panel_test.c \
     -lSDL2_test $(pkg-config --libs sdl2) $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample freetype2) -o build/message-panel-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/rmt.c runtime/akb.c tests/akb_test.c -o build/akb-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/ax.c tests/bowling_asset_test.c -o build/bowling-asset-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/image_sdl.c tools/image_viewer.c $(pkg-config --cflags --libs sdl2) -lSDL2_test -o build/kisaku-image-viewer
 
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/vm.c tests/vm_memory_test.c -o build/vm-memory-test

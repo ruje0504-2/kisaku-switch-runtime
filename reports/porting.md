@@ -506,3 +506,8 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 验证：`build-host.sh` 在 `-Werror` 下通过；`test-host.sh` 完整主机回归 51 项全部通过（`local/ds-test.log`），其中 `kisaku-bootstrap-test`、`save-runtime-test`、`letter-save-test` 覆盖本次两处改动的存档合并与回放路径；资源审计 0 失败、AKB 2191/2191 解码。日志写在 `local/ds-test.log`（本次重跑）与 `local/deepseek-cadence-regression.log`（当轮）。
 - 边界：本轮只修容量判定，**没有**把回想回放与初期化的下游脚本路径当作已验证的完整流程；`31/1012`（681 个 MES、2479 次调用）等未接通接口继续保留参数并明确报错。未启动 PC 程序，Switch 实机未验证。
 - 本包的独立交付记录（改动范围、复现命令、回归日志、边界）见 `reports/移植记录-包01a.md`。
+
+### 2026-09-22：CBowling 资源门槛
+
+- 新增 `tests/bowling_asset_test.c`，从真实 `layer.arc`/`data.arc` 读取 `bow_ball.akb`、`bow_bg.akb`、`bow_pin.akb`、`bow_pt.akb`、`bow_pt02.akb`、`bow_sr.akb`、`tutbow.akb`，逐项执行 AKB 解码；同时验证 `bow.ax` 可装载、轨道 0 的边界计数有限，并从 `effect.arc` 核对构造器使用的 8 个音效条目。
+- 该专项只证明素材和轨道输入可靠，不把未知的 CBowling 窗口、投球输入、计分和完成返回伪装为动作 0/1 已实现；这两个动作仍保留参数并明确报错。

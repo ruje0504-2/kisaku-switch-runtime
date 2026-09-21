@@ -12,6 +12,7 @@ build/akb-test
 build/vm-memory-test
 build/param-change-test
 build/bowling-test
+build/bowling-asset-test "$game"
 build/flags-test "$test_save/flags-test.dat"
 build/kisaku-bootstrap-test "$game" "$test_save"
 build/save-runtime-test "$game" "$roundtrip_save"
