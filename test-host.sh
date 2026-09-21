@@ -12,6 +12,11 @@ build/akb-test
 build/vm-memory-test
 build/param-change-test
 build/bowling-test
+build/bowling-score-test
+build/bowling-player-test
+build/bowling-throw-test
+build/bowling-motion-test
+build/bowling-match-test
 build/bowling-asset-test "$game"
 build/flags-test "$test_save/flags-test.dat"
 build/kisaku-bootstrap-test "$game" "$test_save"

@@ -2,6 +2,7 @@
 set -eu
 cd "$(dirname "$0")"
 python3 tools/native_media_tables.py "${KISAKU_EXE:-鬼作/AI6WIN.exe}" build/media_tables.h
+python3 tools/native_bowling_tables.py "${KISAKU_EXE:-鬼作/AI6WIN.exe}" build/bowling_tables.h
 mkdir -p build
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c runtime/ax.c runtime/mam.c runtime/video.c runtime/flags.c runtime/gallery.c runtime/control_store.c runtime/save_slot.c runtime/scene.c runtime/scene_view.c runtime/title.c runtime/flag_dialog.c runtime/scene_history.c runtime/text_encoding.c runtime/text_layout.c runtime/font.c runtime/read_flags.c runtime/voice_worker.c runtime/image_worker.c runtime/bootstrap.c runtime/switch_hos.c tools/bootstrap_probe.c $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample freetype2) -o build/kisaku-bootstrap
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror runtime/lzss.c runtime/ai6arc.c runtime/probe.c -o build/kisaku-probe
@@ -27,3 +28,9 @@ ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/vm.c tests/vm_mem
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/flags.c tests/flags_test.c -o build/flags-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_test.c -o build/bowling-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/ax.c tests/param_change_test.c -o build/param-change-test
+
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_score_test.c -o build/bowling-score-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_player_test.c -o build/bowling-player-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_throw_test.c -lm -o build/bowling-throw-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_motion_test.c -lm -o build/bowling-motion-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_match_test.c -o build/bowling-match-test
