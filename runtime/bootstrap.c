@@ -1833,11 +1833,21 @@ int bootstrap_dispatch(KBootstrap *b){
                 if(!b->scene||v->byte_count<8101||v->word_count<381)return error(b,"scene completion state missing");
                 KScene *next=malloc(sizeof(*next));if(!next)return error(b,"scene completion allocation failed");*next=*b->scene;
                 if(kscene_complete(next,c,d)){free(next);return error(b,"scene completion range invalid");}
-                uint8_t bytes[8192];memcpy(bytes,v->bytes,sizeof(bytes));
+                /* The stage must hold the VM's whole byte area, not one particular
+                   capacity. The startup `14/0` call declares the living story VM as
+                   9192 bytes (a=9192, c=600, d=15000, e=100; see scene_replay.inc /
+                   history_reset.inc), and that same entry accepts any
+                   a <= sizeof(v->bytes). The copy used to be a fixed 8192, so
+                   kflags_progress merged `byte_count` bytes (9192 here) out of a
+                   stack buffer that ended at 8192: ~1000 bytes read past it.
+                   Sizing it from the VM's own area keeps every capacity that entry
+                   admits working; the explicit bound stays as a guard. */
+                uint8_t bytes[sizeof(v->bytes)];if(v->byte_count>sizeof(bytes)){free(next);return error(b,"scene progress capacity");}
+                memset(bytes,0,sizeof(bytes));memcpy(bytes,v->bytes,v->byte_count);
                 memcpy(bytes+3000,next->visited,1000);memcpy(bytes+4500,next->status,370);memcpy(bytes+5000,next->flags,370);
                 unsigned selector=v->bytes[8100];if(selector>3)selector=3;
                 if(kflags_progress(bootstrap_save_dir(b),selector,bytes,v->byte_count)){free(next);return error(b,"scene progress save failed");}
-                memcpy(v->bytes,bytes,sizeof(bytes));memcpy(v->words+11,next->counters,sizeof(next->counters));*b->scene=*next;free(next);
+                memcpy(v->bytes,bytes,v->byte_count);memcpy(v->words+11,next->counters,sizeof(next->counters));*b->scene=*next;free(next);
             }
             if(khistory_completion(&b->scene_history,bootstrap_save_dir(b),c,d,e,NULL))return error(b,"scene completion update failed");
         }
