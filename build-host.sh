@@ -34,3 +34,7 @@ ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_player_test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_throw_test.c -lm -o build/bowling-throw-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_motion_test.c -lm -o build/bowling-motion-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_match_test.c -o build/bowling-match-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_contact_test.c -lm -o build/bowling-contact-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_world_test.c -lm -o build/bowling-world-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_cpu_throw_test.c -lm -o build/bowling-cpu-throw-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_session_test.c -lm -o build/bowling-session-test

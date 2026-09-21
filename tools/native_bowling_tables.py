@@ -29,26 +29,39 @@ def extract(path):
     # Character 6 has its own rand() path, but retain its table as stored.
     if any(not 1 <= value <= 127 for i, value in enumerate(spread) if i != 6):
         raise ValueError('Invalid bowling random spread')
+    def action_stream(va):
+        rows = []
+        for row in range(256):
+            command, delay = struct.unpack('<hH', read(va+row*4, 4))
+            if command < -3:
+                raise ValueError('Invalid bowling animation command')
+            rows.append((command, delay))
+            if command == -1:
+                return rows
+        raise ValueError('Unterminated bowling animation')
     streams = []
     for table, count in [(0x56bb88, 27), (0x56bc18, 3)]:
         for index in range(count):
-            va = struct.unpack('<I', read(table+index*4, 4))[0]
-            rows = []
-            for row in range(256):
-                command, delay = struct.unpack('<hH', read(va+row*4, 4))
-                if command < -3:
-                    raise ValueError('Invalid bowling animation command')
-                rows.append((command, delay))
-                if command == -1:
-                    break
-            else:
-                raise ValueError('Unterminated bowling animation')
-            streams.append(rows)
-    return profiles, spread, streams
+            streams.append(action_stream(struct.unpack('<I', read(table+index*4, 4))[0]))
+    throws = [action_stream(va) for va in (0x542d4c, 0x542dc8, 0x542e44,
+              0x542e8c, 0x542edc, 0x542f38, 0x542fa0, 0x543004, 0x54305c)]
+    aim = [struct.unpack('<fff', read(0x5453b8+i*12, 12)) for i in range(6)]
+    # 4ccebe..4ccf98 constructs character 0's 30 floats on the stack.
+    refs = (0,0x548acc,0x548d24, 0,0x548acc,0x548acc,
+            0,0x548a78,0x548d20, 0,0x548a78,0x548a78,
+            0,0,0x548d1c, 0,0,0, 0,0x548d18,0x548d14,
+            0,0x548d18,0x548d10, 0,0x548d0c,0x548d0c,
+            0,0x548d0c,0x548d08)
+    values = [struct.unpack('<f', read(va,4))[0] if va else 0.0 for va in refs]
+    lanes = [[values[i:i+3] for i in range(0,30,3)]]
+    lanes += [[struct.unpack('<fff',read(va+i*12,12)) for i in range(10)]
+              for va in (0x545400,0x545478,0x5454f0,0x545568)]
+    positions = [struct.unpack('<fff', read(0x5431a8+i*12, 12)) for i in range(10)]
+    return profiles, spread, streams, positions, throws, aim, lanes
 
 
 def render(tables):
-    profiles, spread, streams = tables
+    profiles, spread, streams, positions, throws, aim, lanes = tables
     lines = ['/* Generated from verified Japanese EXE '+EXE_SHA256+' */',
              'static const unsigned char kisaku_bowling_profiles[9][21]={']
     lines += ['{'+','.join(map(str, row))+'},' for row in profiles]
@@ -59,6 +72,22 @@ def render(tables):
         lines += ['};']
     lines += ['static const KBowlingActionStream kisaku_bowling_actions[30]={']
     lines += [f'{{kisaku_bowling_action_{i},{len(rows)}}},' for i, rows in enumerate(streams)]
+    lines += ['};', 'static const float kisaku_bowling_pin_positions[10][3]={']
+    lines += ['{'+','.join(float(value).hex()+'f' for value in position)+'},' for position in positions]
+    lines += ['};']
+    for index, rows in enumerate(throws):
+        lines += [f'static const KBowlingAction kisaku_bowling_throw_{index}[]={{']
+        lines += ['{'+str(command)+','+str(delay)+'},' for command, delay in rows]
+        lines += ['};']
+    lines += ['static const KBowlingActionStream kisaku_bowling_throws[9]={']
+    lines += [f'{{kisaku_bowling_throw_{i},{len(rows)}}},' for i, rows in enumerate(throws)]
+    lines += ['};', 'static const float kisaku_bowling_aim[6][3]={']
+    lines += ['{'+','.join(float(v).hex()+'f' for v in row)+'},' for row in aim]
+    lines += ['};', 'static const float kisaku_bowling_lanes[5][10][3]={']
+    for lane in lanes:
+        lines += ['{']
+        lines += ['{'+','.join(float(v).hex()+'f' for v in row)+'},' for row in lane]
+        lines += ['},']
     return '\n'.join(lines+['};', ''])
 
 
