@@ -561,3 +561,13 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 最终源码 `./build-host.sh`、`./test-host.sh 鬼作`、`./build-switch.sh` 与 `git diff --check` 通过。日志：`local/bowling-final-build.log`、`local/bowling-final-tests.log`、`local/bowling-final-switch.log`；主机回归含全部2191张AKB解码及资源审计0失败。Switch主入口/兼容名SHA-256均为 `4c91fa5abb3cdc6d613c5bc011f6c198dcba2fbdc6bd0f2b30ee6bc8e7e22458`。交叉编译不等于实机回归。
 - 新增保龄球projection/rack/draw/turn/game/session/world七个专项以 `clang -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer` 构建，`ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1` 执行均通过；日志 `local/bowling-final-focused-sanitized.log`。包含真实图集与九角色绘制、18场比赛和388次物理投球。完整bootstrap的ASan运行因逐帧绘制耗时主动终止，未记为通过；完整bootstrap普通回归已通过。
 - `python3 tools/package_sd.py 鬼作` 通过，SD目录两入口哈希与上述构建产物一致。此后只更新交付reports文档；没有改动NRO。用户自有icon.png与kisaku_square_640.png删除保持原样，不加入本轮提交或源码同步。
+
+## 2026-09-22 重新接手：31/523逐帧演出
+
+- 基线为Codex目录bd27c53；按最新remaining-work交接继续，仅在本目录操作，DeepSeek负责监督。用户自有图标改动保持原样。
+- 静态核对4fce50、508b70、508620及508540/4e25f0：两个模式各呈现六步，每步之后独立等待20ms，含末步；mode1最后恢复上方底图。VM等待整个演出结束，禁止中途保存，确认/取消/指针/消息菜单不穿透。
+- 508540按Shift/Ctrl或sys50的0x8000位将时间增量乘16；byte4012==1只禁止脚本加速，不禁止按键加速。EffectSpeed不改变该调用步数。
+- 两种模式的layer2最大读写高度都是180，修正旧预检查只要求30的错误；缺少表面保留参数并在绘制前失败。
+- 专项检查六个中间画面的边框/内容像素、目标Alpha保留、最终底图恢复、VM指令位置和输入隔离、加速四种组合及错误参数保留。日志见local/animation523-tests.log。
+- 精度边界：当前60Hz虚拟帧驱动，每次独立20ms等待量化为2帧，普通模式12帧，加速模式6帧。没有把帧数报成原版实际120ms，也未运行PC程序或Switch实机。
+- 主机构建、完整test-host、Switch交叉编译、SD打包和git diff --check通过。专项ASan/UBSan通过（macOS关闭LeakSanitizer），日志local/animation523-asan.log；静态证据local/animation523-disassembly.txt。四份NRO主入口/兼容名与交付副本SHA-256：61edb8ed933adaca766241ffe87ab18bf57d7b895cc374805fc5cfac1eba96b8。

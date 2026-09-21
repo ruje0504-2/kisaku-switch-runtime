@@ -1423,7 +1423,7 @@ int bootstrap_dispatch(KBootstrap *b){
     if(main==31&&sub==523){
         /* 4fce50 dispatches the two Sungeki board renderers and then
            releases its temporary actor.  The renderer performs the same
-           fixed six-step layer copies before the syscall is consumed. */
+           first layer copy immediately, then yields until all six waits finish. */
         if(v->sp<2)return error(b,"31/523 mode value required (arguments preserved)");
         if(v->stack[v->sp-2].string)return error(b,"31/523 mode must be numeric (arguments preserved)");
         if(animation523_draw(b,v->stack[v->sp-2].number))return -1;
@@ -2682,12 +2682,12 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
     if(restore_message(b))return -1;
     history_restore_apply(b);
     if(b->scene_replay_finished)return 1;
-    if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
+    if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
     while(budget--){b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;int old_module=b->vm->module;unsigned old_scripts=b->vm->script_depth;KStatus s=kvm_run(b->vm,1);
         /* Native 408060 notifies navigation on a script return, but library
            function calls only change the VM instruction source. */
         if(b->vm->script_depth<old_scripts&&scene_transition(b,b->vm->modules[old_module].name,b->vm->modules[b->vm->module].name))return -1;
-        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
+        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
         else if(s==KVM_TEXT){if(draw_text(b))return -1;}
         else if(s==KVM_BUDGET)kvm_resume(b->vm);
         else if(s==KVM_ERROR)return error(b,b->vm->error);
@@ -2804,6 +2804,7 @@ void bootstrap_frame(KBootstrap *b){
     }
     bowling_frame(b);
     animation522_frame(b);
+    if(animation523_frame(b))return;
     if(param_animation_frame(b))return;
     mam_frame(b);
     if(b->title.active){
@@ -2915,7 +2916,7 @@ void bootstrap_frame(KBootstrap *b){
 
 void bootstrap_confirm(KBootstrap *b){
     if(bootstrap_bowling_active(b)){bowling_confirm(b);return;}
-    if(b&&(b->param_animation_active||b->exec522_motion))return;
+    if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_transition||b->letter_exit_pending)return;
     if(b->letter_active){if(b->message_user_hidden)letter_text_hide(b,0);else letter_text_confirm(b);return;}
@@ -3020,7 +3021,7 @@ void bootstrap_message_hide(KBootstrap *b,int hidden){
 }
 void bootstrap_cancel(KBootstrap *b){
     if(bootstrap_bowling_active(b))return;
-    if(b&&(b->param_animation_active||b->exec522_motion))return;
+    if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_transition||b->letter_exit_pending)return;
     if(b->letter_active){
@@ -3062,7 +3063,7 @@ void bootstrap_title_move(KBootstrap *b,int delta){
 }
 void bootstrap_pointer(KBootstrap *b,int x,int y,int click){
     if(bootstrap_bowling_active(b)){bootstrap_bowling_pointer(b,x,y,click!=0);return;}
-    if(b&&(b->param_animation_active||b->exec522_motion))return;
+    if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_active||b->letter_transition){if(click)bootstrap_confirm(b);return;}
     if(b->area_active){b->area_x=x;b->area_y=y;b->area_selected=area_hit(b,x,y);if(click)area_finish(b,0);return;}
@@ -3175,7 +3176,7 @@ int bootstrap_quit_dialog_close(KBootstrap *b,int accept){
 }
 
 void bootstrap_message_action(KBootstrap *b,unsigned action){
-    if(!b||bootstrap_bowling_active(b)||b->param_animation_active||b->exec522_motion)return;
+    if(!b||bootstrap_bowling_active(b)||b->param_animation_active||b->exec523_active||b->exec522_motion)return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(!b||!b->message_active||b->letter_transition||b->letter_exit_pending||b->message_slide||b->message_buttons_motion)return;
     if(b->letter_active&&(action==4||action==7))return;

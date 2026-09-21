@@ -49,6 +49,7 @@ typedef struct {
     unsigned exec522_motion,exec522_step,exec522_clock;
     unsigned exec522_pulse,exec522_pulse_phase,exec522_pulse_clock;
     int exec522_moving,exec522_previous,exec522_origin[4],exec522_delta[4];
+    unsigned exec523_active,exec523_mode,exec523_step,exec523_clock;
     KMediaTables media_tables;
     KMessageSkin message_skin;
     unsigned auxiliary_windows_enabled;

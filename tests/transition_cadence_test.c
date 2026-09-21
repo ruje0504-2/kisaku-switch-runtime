@@ -161,6 +161,63 @@ static void test_canvas_transition(KBootstrap *b)
     if (slot >= 0) memcpy(b->settings[slot].value, saved, sizeof(saved));
 }
 
+static uint8_t *board_pixel(KBootstrap *b,unsigned x,unsigned y){
+    return b->layers[0].pixels+y*b->layers[0].stride+x*4;
+}
+
+static void test_board(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=8;
+    const unsigned ids[]={0,1,2,3,7};
+    const uint8_t colors[]={31,17,59,83,101};
+    for(unsigned i=0;i<5;i++){
+        unsigned id=ids[i];rmt_free(&b->layers[id]);
+        b->layers[id]=(KImage){0,0,640,480,2560,malloc(640*480*4)};
+        assert(b->layers[id].pixels);
+        memset(b->layers[id].pixels,colors[i],640*480*4);
+    }
+    /* Preflight must reject the formerly accepted 30-row scratch buffer. */
+    b->layers[2].height=30;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;
+    assert(!kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){523,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==2&&!b->exec523_active);
+    assert(board_pixel(b,32,92)[0]==31);
+    b->layers[2].height=480;
+    for(unsigned mode=0;mode<2;mode++){
+        const int args[]={(int)mode,523};dispatch_native(b,31,args,2);
+        assert(b->exec523_active&&!b->vm->sp);
+        size_t ip=b->vm->ip;
+        for(unsigned step=0;step<6;step++){
+            unsigned row=mode?5-step:step;
+            unsigned x=mode?592-112*row:32,y=mode?272-36*row:92;
+            assert(board_pixel(b,x,y)[0]==101&&board_pixel(b,x,y)[3]==31);
+            assert(board_pixel(b,x+8+112*row,y)[0]==101);
+            if(row)assert(board_pixel(b,x+8,y+8)[0]==59);
+            assert(b->exec523_step==step);
+            assert(bootstrap_run(b,100)==1&&b->vm->ip==ip);
+            b->input_events=0;bootstrap_confirm(b);bootstrap_cancel(b);
+            bootstrap_pointer(b,50,400,1);bootstrap_message_action(b,6);
+            assert(!b->input_events&&!b->message_request&&!bootstrap_can_save(b));
+            bootstrap_frame(b);assert(!b->error[0]&&b->exec523_step==step);
+            bootstrap_frame(b);assert(!b->error[0]&&b->exec523_step==step+1);
+            assert(b->exec523_active==(step<5));
+        }
+    }
+    for(unsigned y=92;y<288;y++)for(unsigned x=32;x<608;x++){
+        assert(board_pixel(b,x,y)[0]==17&&board_pixel(b,x,y)[3]==31);
+    }
+    for(unsigned kind=0;kind<4;kind++){
+        b->effect_fast=kind==0||kind==3;
+        b->vm->globals[0][50].number=kind?0x8000:0;
+        b->vm->bytes[4012]=kind>=2;
+        const int args[]={0,523};dispatch_native(b,31,args,2);
+        unsigned frames=0;
+        while(b->exec523_active){assert(frames++<20);bootstrap_frame(b);assert(!b->error[0]);}
+        assert(frames==(kind==2?12:6));
+    }
+    bootstrap_destroy(b);
+    puts("31/523: six visible rows, fresh 20ms waits (12 host frames), Alpha, VM/input isolation, speed gates and scratch preflight: PASS");
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 3);
@@ -168,6 +225,7 @@ int main(int argc, char **argv)
     /* Order matters: the startup script leaves the fade overlay visible, so
        the fade fixture runs first and hands a hidden overlay to the other
        two, which the native entry points require. */
+    test_board(argv[1],argv[2]);
     test_fade(b);
     test_blink(b);
     test_canvas_transition(b);
