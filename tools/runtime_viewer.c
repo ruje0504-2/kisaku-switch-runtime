@@ -108,7 +108,7 @@ int main(int argc,char **argv){
         uint64_t buttons=padGetButtonsDown(&pad);
         if(navigation.phase==3&&(buttons&HidNpadButton_ZL))navigation.cancel=1;
         int opened_menu=0;
-        if((buttons&HidNpadButton_L)&&!panel.kind&&!menu.active&&!b->scene_replay){save_menu_open(&menu,b,0);opened_menu=1;}
+        if((buttons&HidNpadButton_L)&&!bootstrap_bowling_active(b)&&!panel.kind&&!menu.active&&!b->scene_replay){save_menu_open(&menu,b,0);opened_menu=1;}
         if(!panel.kind&&!menu.active&&b->message_active&&!b->choice_active&&!b->area_active&&!b->extra_active){
             if(navigation.phase!=3&&(buttons&HidNpadButton_ZL))bootstrap_message_action(b,0);
             if(buttons&HidNpadButton_ZR)bootstrap_message_action(b,1);
@@ -141,6 +141,19 @@ int main(int argc,char **argv){
             if(buttons&HidNpadButton_Right)save_menu_action(&menu,b,5);
             if(buttons&HidNpadButton_Y)save_menu_action(&menu,b,6);
             if(buttons&HidNpadButton_X)save_menu_action(&menu,b,7);
+        }else if(bootstrap_bowling_active(b)){
+            HidAnalogStickState stick=padGetStickPos(&pad,0);
+            KBowlingRuntime *r=b->bowling_runtime;
+            int x=r->pointer_x+(abs(stick.x)>6000?stick.x/6000:0);
+            int y=r->pointer_y-(abs(stick.y)>6000?stick.y/6000:0);
+            x=x<0?0:x>639?639:x;y=y<0?0:y>479?479:y;
+            if(r->game.phase==KB_GAME_TUTORIAL){
+                if(buttons&HidNpadButton_Right)r->game.tutorial_page=1;
+                if(buttons&HidNpadButton_Left)r->game.tutorial_page=0;
+                if(buttons&HidNpadButton_A){r->focus=0;bootstrap_confirm(b);}
+            }else if(r->game.phase==KB_GAME_RESULTS){if(buttons&HidNpadButton_A)bootstrap_confirm(b);}
+            else bootstrap_bowling_pointer(b,x,y,(padGetButtons(&pad)&HidNpadButton_A)!=0);
+            cursor.x=x;cursor.y=y;cursor.valid=1;
         }else{
         HidAnalogStickState left=padGetStickPos(&pad,0),right=padGetStickPos(&pad,1);
         cursor_sticks(&cursor,b,left.x,left.y,right.x,right.y);
@@ -165,6 +178,28 @@ int main(int argc,char **argv){
             if(e.type==SDL_MOUSEMOTION){cursor.x=(e.motion.x-160)*640/960;cursor.y=e.motion.y*2/3;cursor.valid=1;cursor.auto_hidden=0;cursor.last_stick=SDL_GetTicks64();}
             if(e.type==SDL_MOUSEBUTTONDOWN){cursor.x=(e.button.x-160)*640/960;cursor.y=e.button.y*2/3;cursor.valid=1;if(cursor.auto_hidden)continue;
             }if(e.type==SDL_WINDOWEVENT){if(e.window.event==SDL_WINDOWEVENT_LEAVE||e.window.event==SDL_WINDOWEVENT_FOCUS_LOST){cursor.valid=0;cursor.focused=0;panel.config_mouse_drag=0;kconfig_audio_release(&panel.config_audio);}if(e.window.event==SDL_WINDOWEVENT_ENTER||e.window.event==SDL_WINDOWEVENT_FOCUS_GAINED)cursor.focused=1;}if(e.type==SDL_QUIT)running=0;
+            if(bootstrap_bowling_active(b)){
+                KBowlingRuntime *r=b->bowling_runtime;
+                if(e.type==SDL_MOUSEMOTION)bootstrap_bowling_pointer(b,cursor.x,cursor.y,(e.motion.state&SDL_BUTTON_LMASK)!=0);
+                else if((e.type==SDL_MOUSEBUTTONDOWN||e.type==SDL_MOUSEBUTTONUP)&&e.button.button==SDL_BUTTON_LEFT)
+                    bootstrap_bowling_pointer(b,(e.button.x-160)*640/960,e.button.y*480/720,e.type==SDL_MOUSEBUTTONDOWN);
+                else if(e.type==SDL_FINGERDOWN||e.type==SDL_FINGERMOTION||e.type==SDL_FINGERUP){
+                    if(e.type==SDL_FINGERDOWN&&!touch.active){touch.active=1;touch.finger=e.tfinger.fingerId;touch.runtime=b;}
+                    if(touch.active&&touch.runtime==b&&touch.finger==e.tfinger.fingerId){
+                        bootstrap_bowling_pointer(b,(int)((e.tfinger.x*1280-160)*640/960),(int)(e.tfinger.y*480),e.type!=SDL_FINGERUP);
+                        if(e.type==SDL_FINGERUP)touch.active=0;
+                    }
+                }else if(e.type==SDL_KEYDOWN){
+                    SDL_Keycode key=e.key.keysym.sym;
+                    if(r->game.phase==KB_GAME_TUTORIAL||r->game.phase==KB_GAME_RESULTS){
+                        if(key==SDLK_LEFT)r->game.tutorial_page=0;
+                        if(key==SDLK_RIGHT)r->game.tutorial_page=1;
+                        if(key==SDLK_RETURN||key==SDLK_SPACE){r->focus=0;bootstrap_confirm(b);}
+                    }else if(key==SDLK_SPACE)bootstrap_bowling_pointer(b,r->pointer_x,r->pointer_y,1);
+                }else if(e.type==SDL_KEYUP&&e.key.keysym.sym==SDLK_SPACE)
+                    bootstrap_bowling_pointer(b,r->pointer_x,r->pointer_y,0);
+                continue;
+            }
             if(menu_touch_event(&touch,&menu,&panel,b,&e,SDL_GetTicks64()))continue;
             if(menu.active&&menu.overwrite&&!panel.kind){
                 ui_edit_text(menu.note,sizeof(menu.note),&e);
@@ -249,6 +284,16 @@ int main(int argc,char **argv){
             if(e.type==SDL_MOUSEBUTTONDOWN){cursor.x=e.button.x<160?-1:(e.button.x-160)*640/960;cursor.y=e.button.y<0?-1:e.button.y*480/720;cursor.valid=1;if(e.button.button==SDL_BUTTON_RIGHT){game_cancel(&menu,&panel,b);continue;}if(e.button.button!=SDL_BUTTON_LEFT)continue;if(b->area_active||b->choice_active||b->title.active||b->flag_dialog.active||b->message_active)bootstrap_pointer(b,cursor.x,cursor.y,1);else bootstrap_confirm(b);}
         }
         if(navigation.phase==3&&SDL_GetKeyboardState(NULL)[SDL_SCANCODE_F8])navigation.cancel=1;
+        if(bootstrap_bowling_active(b)&&b->bowling_runtime->game.phase==KB_GAME_TURN){
+            KBowlingRuntime *r=b->bowling_runtime;
+            int dx=(keys[SDL_SCANCODE_RIGHT]-keys[SDL_SCANCODE_LEFT])*5;
+            int dy=(keys[SDL_SCANCODE_DOWN]-keys[SDL_SCANCODE_UP])*5;
+            if(dx||dy){
+                int x=r->pointer_x+dx,y=r->pointer_y+dy;
+                x=x<0?0:x>639?639:x;y=y<0?0:y>479?479:y;
+                bootstrap_bowling_pointer(b,x,y,keys[SDL_SCANCODE_SPACE]!=0);
+            }
+        }
         if(b->scene_panel_request){
             int request=b->scene_panel_request;b->scene_panel_request=0;
             if(request<0&&(panel.kind==4||panel.kind==16))panel.kind=0;

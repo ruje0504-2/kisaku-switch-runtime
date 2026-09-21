@@ -57,11 +57,11 @@ def extract(path):
     lanes += [[struct.unpack('<fff',read(va+i*12,12)) for i in range(10)]
               for va in (0x545400,0x545478,0x5454f0,0x545568)]
     positions = [struct.unpack('<fff', read(0x5431a8+i*12, 12)) for i in range(10)]
-    return profiles, spread, streams, positions, throws, aim, lanes
+    return profiles, spread, streams, positions, throws, aim, lanes, action_stream(0x542cbc)
 
 
 def render(tables):
-    profiles, spread, streams, positions, throws, aim, lanes = tables
+    profiles, spread, streams, positions, throws, aim, lanes, user_throw = tables
     lines = ['/* Generated from verified Japanese EXE '+EXE_SHA256+' */',
              'static const unsigned char kisaku_bowling_profiles[9][21]={']
     lines += ['{'+','.join(map(str, row))+'},' for row in profiles]
@@ -88,7 +88,10 @@ def render(tables):
         lines += ['{']
         lines += ['{'+','.join(float(v).hex()+'f' for v in row)+'},' for row in lane]
         lines += ['},']
-    return '\n'.join(lines+['};', ''])
+    lines += ['};', 'static const KBowlingAction kisaku_bowling_user_throw_commands[]={']
+    lines += ['{'+str(command)+','+str(delay)+'},' for command, delay in user_throw]
+    lines += ['};', 'static const KBowlingActionStream kisaku_bowling_user_throw={kisaku_bowling_user_throw_commands,'+str(len(user_throw))+'};']
+    return '\n'.join(lines+[''])
 
 
 def main():

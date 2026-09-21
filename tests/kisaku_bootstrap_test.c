@@ -106,6 +106,74 @@ static int call_anime520(KBootstrap *b,const KValue *args,unsigned count){
     for(unsigned i=0;i<count;i++)kvm_push(b->vm,args[i]);
     return bootstrap_dispatch(b);
 }
+static void test_bowling_modal(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    const unsigned layers[]={0,1,2,3,4,5,8,9};
+    const char *names[]={"bow_bg.akb","bow_pin.akb","bow_ball.akb","bow_sr.akb","bow_pt02.akb","bow_pt.akb","bow_c0.akb","bow_men.akb"};
+    b->layer_count=9;
+    for(unsigned i=0;i<8;i++){
+        uint8_t *data=NULL;size_t size=0;rmt_free(&b->layers[layers[i]]);
+        assert(!ai6_read_named(&b->images,names[i],&data,&size));
+        assert(!rmt_decode(data,size,&b->layers[layers[i]]));free(data);
+    }
+    KValue args[]={{73,NULL},{3,NULL},{2,NULL},{1,NULL},{0,NULL},{1,NULL},{0,NULL},{612,NULL}};
+    assert(!call_anime520(b,args,8)&&b->vm->sp==1&&b->vm->stack[0].number==73&&bootstrap_bowling_active(b));
+    assert(!bootstrap_can_save(b));bootstrap_confirm(b);
+    unsigned frames=0,throws=0;
+    for(unsigned half=0;half<2;half++){
+        while(bootstrap_bowling_active(b)){
+            KBowlingRuntime *r=b->bowling_runtime;
+            if(r->game.phase==KB_GAME_TURN&&r->game.turn.phase==KB_TURN_AIM){
+                bootstrap_bowling_pointer(b,320,440,1);bootstrap_bowling_pointer(b,320,200,1);bootstrap_bowling_pointer(b,320,200,0);throws++;
+            }
+            if(r->game.phase==KB_GAME_RESULTS)bootstrap_confirm(b);
+            bootstrap_frame(b);
+            if(b->error[0])fprintf(stderr,"Bowling modal: %s\n",b->error);
+            assert(!b->error[0]&&++frames<100000);
+        }
+        if(!half){
+            assert(b->bowling_runtime&&b->bowling_runtime->game.session.match.first_finished&&b->vm->sp==1);
+            assert(!call(b,612,1)&&bootstrap_bowling_active(b)&&!b->vm->sp);
+        }
+    }
+    assert(!b->bowling_runtime&&!b->current_bowling&&b->vm->sp==1&&b->vm->stack[0].number>=0&&throws>=10);
+    assert(!call(b,612,2));bootstrap_destroy(b);
+    printf("Bowling real-asset modal: two halves, %u user throws, %u rendered frames, result and cleanup: PASS\n",throws,frames);
+}
+static void test_bowling_scripts(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    int result=1;unsigned ticks=0;
+    while(!(b->title.active&&b->title.age>=64)){
+        result=bootstrap_run(b,100000);assert(result==1);bootstrap_frame(b);assert(++ticks<20000&&!b->error[0]);
+    }
+    b->title.active=0;
+    for(unsigned i=0;i<4;i++)b->vm->bytes[1504+i]=(uint8_t)i;
+    b->vm->bytes[1508]=1;
+    unsigned seen=0;
+    for(unsigned half=0;half<2;half++){
+        uint8_t *data=NULL;size_t size=0;const char *name=half?"bowl2nd.mes":"bowl1st.mes";
+        assert(!ai6_read_named(&b->scripts,name,&data,&size));
+        int id=kvm_add_module(b->vm,name,data,size);assert(id>=0);b->module_data[id]=data;
+        assert(!kvm_start(b->vm,id));
+        unsigned frames=0;
+        do {
+            result=bootstrap_run(b,100000);
+            if(bootstrap_bowling_active(b)){
+                KBowlingRuntime *r=b->bowling_runtime;seen|=1u<<half;
+                if(r->game.phase==KB_GAME_TUTORIAL||r->game.phase==KB_GAME_RESULTS)bootstrap_confirm(b);
+                else if(r->game.phase==KB_GAME_TURN&&r->game.turn.phase==KB_TURN_AIM){
+                    bootstrap_bowling_pointer(b,320,440,1);bootstrap_bowling_pointer(b,320,200,1);bootstrap_bowling_pointer(b,320,200,0);
+                }
+            }
+            if(result<0||b->error[0])fprintf(stderr,"Original bowling MES: %s\n",b->error);
+            assert(result>=0&&!b->error[0]&&++frames<100000);
+            if(result)bootstrap_frame(b);
+        }while(result);
+        assert(!bootstrap_bowling_active(b));
+    }
+    assert(seen==3&&!b->bowling_runtime&&b->vm->bytes[1509]<=1&&b->vm->bytes[1510]<=1);
+    bootstrap_destroy(b);puts("Original bowl1st/bowl2nd MES resource setup, physical play, score flags and returns: PASS");
+}
 static int call_layer(KBootstrap *b,const KValue *args,unsigned count,int sub){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=19;b->vm->sp=0;
     for(unsigned i=0;i<count;i++)kvm_push(b->vm,args[i]);
@@ -1338,13 +1406,13 @@ int main(int argc,char **argv){
     assert(b->vm->globals[0][18].number==91&&b->ax.cells[0].state==17);
     assert(!call(b,612,2)&&bowling_released==1);
     assert(call(b,612,0)<0&&b->vm->sp==2);
-    b->vm->sp=0;kvm_push(b->vm,(KValue){4,NULL});kvm_push(b->vm,(KValue){3,NULL});
+    b->vm->sp=0;kvm_push(b->vm,(KValue){9,NULL});kvm_push(b->vm,(KValue){3,NULL});
     kvm_push(b->vm,(KValue){2,NULL});kvm_push(b->vm,(KValue){1,NULL});
     kvm_push(b->vm,(KValue){0,NULL});kvm_push(b->vm,(KValue){0,NULL});kvm_push(b->vm,(KValue){612,NULL});
-    assert(bootstrap_dispatch(b)<0&&b->vm->sp==7&&b->vm->stack[0].number==4&&b->vm->stack[4].number==0);
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==7&&b->vm->stack[0].number==9&&b->vm->stack[4].number==0);
     assert(call(b,612,1)<0&&b->vm->sp==2);
     b->bowling.slots[1]=(KBowlingResource){malloc(4),bowling_free};assert(b->bowling.slots[1].object);
-    puts("Kisaku 31/612/2 resource cleanup and unsupported-action boundary: PASS");
+    puts("Kisaku 31/612/2 resource cleanup and invalid-constructor boundary: PASS");
     /* Native extended animation state must not affect the ordinary manager. */
     KValue anime_string[]={{0,"z00.ax"},{520,NULL}};
     assert(!call_anime520(b,anime_string,2)&&!b->vm->sp);
@@ -1461,6 +1529,8 @@ int main(int argc,char **argv){
     }
     assert(!b->choice_active&&b->choice_selected==-1);
     puts("Kisaku choice initialization and independent animation state: PASS");
+    test_bowling_scripts(argv[1],argv[2]);
+    test_bowling_modal(argv[1],argv[2]);
     test_week(argv[1],argv[2]);
     test_native_tint(argv[1],argv[2]);
     assert(!call(b,1011,0));

@@ -254,7 +254,7 @@ static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     if(layer==8)snprintf(b->normal_atlas_name,sizeof(b->normal_atlas_name),"%s",name);
     return 0;
 }
-void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
+void bootstrap_destroy(KBootstrap *b){if(!b)return;kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
 static int message_init(KBootstrap *b){
     /* 481be0: the layout rectangle is (32,8,560,54), but 481d68/481dca
        clear both complete 640x84 text surfaces. 481a50 copies that surface
@@ -349,8 +349,8 @@ static void audio_settings_changed(KBootstrap *b){
     int attenuation=b->music_db-b->fade_db;
     int enabled;b->music_db=music_volume_db(b,&enabled);b->music_enabled=(unsigned)enabled;
     b->fade_db=b->music_db-(b->music_fading?attenuation:0);
-    for(unsigned i=0;i<65;i++){
-        KEffectTrack *t=i==64?&b->movie_effect:&b->effect_tracks[i];
+    for(unsigned i=0;i<92;i++){
+        KEffectTrack *t=i>=65?&b->bowling_effects[i-65]:i==64?&b->movie_effect:&b->effect_tracks[i];
         if(!t->fade_step)t->fade_limit=5000+kisaku_sound_volume_db(option(b,"Effect",i==3||i==64?"HVolume":"Volume",83),1);
     }
 }
@@ -1002,6 +1002,7 @@ static void draw_ax_extra(const uint32_t d[7],unsigned cell,void *context){
 }
 #include "ax_runtime.inc"
 #include "mam_runtime.inc"
+#include "bowling_runtime.inc"
 #include "credits.inc"
 #include "montage.inc"
 #include "novel.inc"
@@ -1381,25 +1382,22 @@ int bootstrap_dispatch(KBootstrap *b){
         v->sp-=2+count;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==612&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==0){
-        /* 4fb5a0 event 0 drains five values before 4d5390 constructs the
-           bowling object.  Keep this exact ABI boundary explicit until the
-           native object graph and its draw/update loop are ported; do not
-           consume a partial constructor call or turn it into a fake success. */
         if(v->sp<7)return error(b,"31/612 create requires five numeric values (arguments preserved)");
-        for(unsigned i=3;i<=7;i++)if(v->stack[v->sp-i].string)
-            return error(b,"31/612 create values must be numeric (arguments preserved)");
-        return error(b,"31/612 create/update path not mapped (arguments preserved)");
+        int32_t args[5];
+        for(unsigned i=0;i<5;i++){
+            if(v->stack[v->sp-3-i].string)return error(b,"31/612 create values must be numeric (arguments preserved)");
+            args[i]=v->stack[v->sp-3-i].number;
+        }
+        if(bowling_begin(b,args))return -1;
+        v->sp-=7;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==612&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==1){
-        /* Event 1 calls 4d46b0, pushes its completion value, then enters the
-           secondary destructor.  The completion result depends on the
-           unported bowling input/update loop, so preserve the call intact. */
-        return error(b,"31/612 run/result path not mapped (arguments preserved)");
+        if(bowling_second(b))return -1;
+        v->sp-=2;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==612&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==2){
-        /* 4fb5a0 -> CBowling secondary vtable 54519c +10 -> 4cfd20. */
         if(kbowling_release(&b->bowling,&b->current_bowling))return error(b,"CBowling resource ownership invalid (arguments preserved)");
-        v->sp-=2;b->handled++;return kvm_resume(v);
+        bowling_free(b);v->sp-=2;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==522){
         /* 4fcef0 consumes the mode followed by one selector for modes 0..3
@@ -2684,12 +2682,12 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
     if(restore_message(b))return -1;
     history_restore_apply(b);
     if(b->scene_replay_finished)return 1;
-    if(b->quit_modal||b->quit_requested||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
+    if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
     while(budget--){b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;int old_module=b->vm->module;unsigned old_scripts=b->vm->script_depth;KStatus s=kvm_run(b->vm,1);
         /* Native 408060 notifies navigation on a script return, but library
            function calls only change the VM instruction source. */
         if(b->vm->script_depth<old_scripts&&scene_transition(b,b->vm->modules[old_module].name,b->vm->modules[b->vm->module].name))return -1;
-        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->quit_modal||b->quit_requested||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
+        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
         else if(s==KVM_TEXT){if(draw_text(b))return -1;}
         else if(s==KVM_BUDGET)kvm_resume(b->vm);
         else if(s==KVM_ERROR)return error(b,b->vm->error);
@@ -2701,7 +2699,7 @@ int bootstrap_run(KBootstrap *b,unsigned budget){
     if(!b)return -1;
     exec526_restore(b);animation522_restore(b);message_fade_restore(b);param_animation_restore(b);
     int result=bootstrap_run_inner(b,budget);
-    animation522_restore(b);message_fade_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);
+    animation522_restore(b);message_fade_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
     return result;
 }
 void bootstrap_frame(KBootstrap *b){
@@ -2742,9 +2740,9 @@ void bootstrap_frame(KBootstrap *b){
         b->voice_clock_cursor+=advance<b->voice_size-b->voice_clock_cursor?advance:b->voice_size-b->voice_clock_cursor;
         if(b->voice_clock_cursor==b->voice_size)b->voice_active=0;
     }else if(!b->voice_loading&&!b->voice_pcm&&b->voice_active&&b->audio_cursor==b->audio_size)b->voice_active=0;
-    for(unsigned i=0;i<65;i++){
+    for(unsigned i=0;i<92;i++){
         if(i==64&&b->video_paused)continue;
-        KEffectTrack *t=i==64?&b->movie_effect:&b->effect_tracks[i];if(!t->pcm)continue;
+        KEffectTrack *t=i>=65?&b->bowling_effects[i-65]:i==64?&b->movie_effect:&b->effect_tracks[i];if(!t->pcm)continue;
         if(t->fade_step){t->fade_clock+=1000;while(t->fade_clock>=900){t->fade_clock-=900;t->fade_attenuation+=t->fade_step;}
             if(t->fade_attenuation>=t->fade_limit){free(t->pcm);memset(t,0,sizeof(*t));continue;}}
         if(t->clock_position>=t->size)continue;
@@ -2804,6 +2802,7 @@ void bootstrap_frame(KBootstrap *b){
             if(b->error[0])return;
         }
     }
+    bowling_frame(b);
     animation522_frame(b);
     if(param_animation_frame(b))return;
     mam_frame(b);
@@ -2889,7 +2888,7 @@ void bootstrap_frame(KBootstrap *b){
     if(b->scroll_active)scroll_frame(b);
     if(b->distort_count)distort_frame(b);
     if(b->blink_active)blink_frame(b);
-    if(!b->letter_active&&!b->restore_pending&&b->message_active&&!b->message_user_hidden&&!b->message_slide&&!b->message_buttons_motion&&!b->novel_transition&&!b->message_request){
+    if(!bootstrap_bowling_active(b)&&!b->letter_active&&!b->restore_pending&&b->message_active&&!b->message_user_hidden&&!b->message_slide&&!b->message_buttons_motion&&!b->novel_transition&&!b->message_request){
         if(b->message_timed&&!b->message_revealing&&!b->message_buttons_motion){
             b->message_timed_clock+=1000;
             if(b->message_timed_clock>=(uint64_t)b->message_timed_delay*60)bootstrap_confirm(b);
@@ -2904,7 +2903,7 @@ void bootstrap_frame(KBootstrap *b){
     if(b->bonus52_active)bonus52_frame(b);
     if(b->credits_active)credits_frame(b);
     if(b->montage_active)montage_frame(b);
-    message_fade_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);
+    message_fade_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
     if(!b->fade_steps)return;
     b->fade_frame++;
     int delta=(int)b->fade_to-(int)b->fade_from;
@@ -2915,6 +2914,7 @@ void bootstrap_frame(KBootstrap *b){
 #include "history_reset.inc"
 
 void bootstrap_confirm(KBootstrap *b){
+    if(bootstrap_bowling_active(b)){bowling_confirm(b);return;}
     if(b&&(b->param_animation_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_transition||b->letter_exit_pending)return;
@@ -3019,6 +3019,7 @@ void bootstrap_message_hide(KBootstrap *b,int hidden){
     else if(b->message_base.pixels)message_compose(b);
 }
 void bootstrap_cancel(KBootstrap *b){
+    if(bootstrap_bowling_active(b))return;
     if(b&&(b->param_animation_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_transition||b->letter_exit_pending)return;
@@ -3060,6 +3061,7 @@ void bootstrap_title_move(KBootstrap *b,int delta){
     else b->title.selected=(b->title.selected+(delta>0?1:(int)b->title.count-1))%(int)b->title.count;
 }
 void bootstrap_pointer(KBootstrap *b,int x,int y,int click){
+    if(bootstrap_bowling_active(b)){bootstrap_bowling_pointer(b,x,y,click!=0);return;}
     if(b&&(b->param_animation_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_active||b->letter_transition){if(click)bootstrap_confirm(b);return;}
@@ -3141,9 +3143,9 @@ size_t bootstrap_audio_mix_read(KBootstrap *b,size_t *position,uint8_t *out,size
         size_t n=b->movie_pcm_size-b->movie_read;if(n>capacity)n=capacity;n-=n%4;
         add_samples(out,b->movie_pcm+b->movie_read,n,1);b->movie_read+=n;if(n>count)count=n;
     }
-    for(unsigned i=0;i<65;i++){
+    for(unsigned i=0;i<92;i++){
         if(i==64&&b->video_paused)continue;
-        KEffectTrack *t=i==64?&b->movie_effect:&b->effect_tracks[i];size_t total=0;
+        KEffectTrack *t=i>=65?&b->bowling_effects[i-65]:i==64?&b->movie_effect:&b->effect_tracks[i];size_t total=0;
         if(!t->pcm)continue;
         int scene_sound=i==3||i==64,enabled=option(b,"Effect",scene_sound?"IsHEffect":"IsEffect",1);
         double gain=enabled?db_gain(kisaku_sound_volume_db(option(b,"Effect",scene_sound?"HVolume":"Volume",83),1))*db_gain(-t->fade_attenuation):0;
@@ -3173,6 +3175,7 @@ int bootstrap_quit_dialog_close(KBootstrap *b,int accept){
 }
 
 void bootstrap_message_action(KBootstrap *b,unsigned action){
+    if(!b||bootstrap_bowling_active(b)||b->param_animation_active||b->exec522_motion)return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(!b||!b->message_active||b->letter_transition||b->letter_exit_pending||b->message_slide||b->message_buttons_motion)return;
     if(b->letter_active&&(action==4||action==7))return;

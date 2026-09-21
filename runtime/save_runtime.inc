@@ -1,7 +1,7 @@
 /* Included after the dispatcher; loading is applied only to a fresh initialized
    runtime so stale image jobs, animations, audio and dialogue cannot survive. */
 int bootstrap_can_save(const KBootstrap *b){
-    if(!b||b->exec522_motion||b->param_animation_active||b->vm->byte_count!=9192||b->vm->word_count!=600||b->raw_size!=15000||b->vm->global_count[1]<=61||b->vm->globals[1][61].string||(unsigned)b->vm->globals[1][61].number>1||b->quit_modal||b->quit_requested||b->load_modal||b->scene_modal||b->scene_replay||b->error[0]||b->restore_pending||b->history_restore||b->ax_modal||b->ax_extra_modal||!b->message_active||b->message_timed||b->message_slide||b->message_buttons_motion||b->novel_transition||b->letter_transition||b->image_loading||b->choice_active)return 0;
+    if(!b||bootstrap_bowling_active(b)||b->exec522_motion||b->param_animation_active||b->vm->byte_count!=9192||b->vm->word_count!=600||b->raw_size!=15000||b->vm->global_count[1]<=61||b->vm->globals[1][61].string||(unsigned)b->vm->globals[1][61].number>1||b->quit_modal||b->quit_requested||b->load_modal||b->scene_modal||b->scene_replay||b->error[0]||b->restore_pending||b->history_restore||b->ax_modal||b->ax_extra_modal||!b->message_active||b->message_timed||b->message_slide||b->message_buttons_motion||b->novel_transition||b->letter_transition||b->image_loading||b->choice_active)return 0;
     /* Letter checkpoints reconstruct a page from its first paragraph. Only
        publish a visible, settled prompt with a stable native read ID. */
     if(b->letter_mode&&(!b->letter_active||b->message_revealing||b->message_user_hidden||b->letter_backlog||b->message_request||b->message_read_id<0))return 0;

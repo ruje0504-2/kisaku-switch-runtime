@@ -68,7 +68,7 @@ static inline int kbowling_session_score(KBowlingSession *s){
     KBowlingSession next=*s;
     unsigned previous_frame=s->match.frame,previous_player=s->match.player;
     unsigned pins=kbowling_world_count(&s->world);
-    unsigned split=s->match.ball==0?kbowling_world_split(&s->world):0;
+    unsigned split=!s->same_rack?kbowling_world_split(&s->world):0;
     int result=kbowling_match_throw(&next.match,pins,split,s->world.gutter,s->tables.profiles,s->tables.spreads,&next.rng);
     if(result<0)return -1;
     next.awaiting_score=0;

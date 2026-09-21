@@ -549,3 +549,15 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 用户要求参数条动画不能点击跳过：确认/取消/指针在参数演出期间不写输入事件、不结束演出。新增每周移动期间相同隔离，并拒绝中途保存。
 - `./build-host.sh`、`./test-host.sh`通过；主机夹具覆盖两bank轨道同时启动/像素/状态返回、面板两行源坐标、前周持续可见、逐帧运动、点击隔离。新游戏探针3417调用、2427帧、212文本、11选择、栈0回标题，不能作为全路线验证。
 - 尚未逐个女性角色/每周真实剧情场景回放；Switch实机视觉未验证。此处不以合成夹具代替用户实际画面的回归。保龄球渲染/回合控制批次仍在工作树中，未接通31/612游戏内流程。
+
+## 2026-09-22 保龄球原版脚本与可交互模态接通
+
+- 覆盖旧记录中31/612/0、1未实现状态。按4fb5a0/4d5390/4d46b0/41cf20接通五参数构建、首五局模态、保留比分、后五局、结果返回和自动释放；动作2保持重复释放安全。借用层与私有背景/教程/AX/声音分开管理。创建失败和未知调用保留脚本参数。
+- 新增projection/draw/panels/rack/turn/game/view/runtime组件：原版相机投影、深度排序、十个球瓶姿态、用户与九名对手动作、20ms助跑/摆瓶/扫瓶、教程/比分/结果、15ms进退淡化与4秒300分演出。原版4d47c0的AX绘制采用layer4，真实bow.ax完整回合测试通过；未知描述符仍明确报错。
+- 使用27个独立音效游标，投球、按瓶编号的碰撞音、沟球、喝彩及满分音效不挤占剧情轨道。4d12b0汇编确认实际调用按瓶编号的bowh，计算出的soft替代值未使用。物理10ms循环、MSVC随机数和前轮已核对的特殊计分规则保留。
+- SDL鼠标/触摸与方向键+空格、Switch左摇杆+A接入拖动投球，模态隔离剧情输入与保存。球路提示采用便携方笔画线，未声称与Win32 GDI逐像素一致。
+- 原始bowl1st.mes与bowl2nd.mes直接执行通过：原始资源装载、物理投球、两半场返回及byte1509/1510结果标记完成；另一真实素材模态夹具20次玩家投球、34009帧后完成并释放。18场固定种子模型比赛覆盖两模式与九角色；模型测试中AX完成使用应答，bootstrap测试执行真实AX。
+- 没有运行PC原版。没有Switch设备回归；没有从完整剧情逐路线进入保龄球。完整剩余项与验证边界见remaining-work.md。
+- 最终源码 `./build-host.sh`、`./test-host.sh 鬼作`、`./build-switch.sh` 与 `git diff --check` 通过。日志：`local/bowling-final-build.log`、`local/bowling-final-tests.log`、`local/bowling-final-switch.log`；主机回归含全部2191张AKB解码及资源审计0失败。Switch主入口/兼容名SHA-256均为 `4c91fa5abb3cdc6d613c5bc011f6c198dcba2fbdc6bd0f2b30ee6bc8e7e22458`。交叉编译不等于实机回归。
+- 新增保龄球projection/rack/draw/turn/game/session/world七个专项以 `clang -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer` 构建，`ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1` 执行均通过；日志 `local/bowling-final-focused-sanitized.log`。包含真实图集与九角色绘制、18场比赛和388次物理投球。完整bootstrap的ASan运行因逐帧绘制耗时主动终止，未记为通过；完整bootstrap普通回归已通过。
+- `python3 tools/package_sd.py 鬼作` 通过，SD目录两入口哈希与上述构建产物一致。此后只更新交付reports文档；没有改动NRO。用户自有icon.png与kisaku_square_640.png删除保持原样，不加入本轮提交或源码同步。

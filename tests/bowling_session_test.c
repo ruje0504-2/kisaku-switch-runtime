@@ -11,6 +11,16 @@ int main(void){
     layout.fallen[6]=layout.fallen[9]=0;assert(kbowling_world_split(&layout));
     layout.fallen[9]=1;assert(!kbowling_world_split(&layout));
     layout.fallen[0]=0;layout.fallen[9]=0;assert(!kbowling_world_split(&layout));
+    /* 4d4970: a fresh second/third rack in frame ten can also be split. */
+    KBowlingSession bonus;int32_t bonus_roles[4]={0,1,2,3};
+    assert(!kbowling_session_create(&bonus,0,bonus_roles,1,1,tables));
+    bonus.match.frame=9;bonus.match.half=1;bonus.match.ball=1;
+    assert(!kbowling_score_set(&bonus.match.scores[0],9,0,10,0,0));
+    bonus.awaiting_score=1;
+    for(unsigned i=0;i<10;i++)bonus.world.fallen[i]=i!=6&&i!=9;
+    assert(kbowling_session_score(&bonus)==1);
+    assert(bonus.match.scores[0].rolls[9][1]&16);
+    assert(bonus.same_rack&&bonus.match.rack_remaining==2);
     unsigned throws=0;
     for(unsigned mode=0;mode<2;mode++)for(unsigned role=0;role<9;role++){
         int32_t roles[4]={(int32_t)role,1,2,3};KBowlingSession s;

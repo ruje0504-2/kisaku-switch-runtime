@@ -21,6 +21,11 @@ build/bowling-contact-test
 build/bowling-world-test
 build/bowling-cpu-throw-test
 build/bowling-session-test
+build/bowling-projection-test
+build/bowling-turn-test
+build/bowling-game-test
+build/bowling-rack-test
+build/bowling-draw-test "$game"
 build/bowling-asset-test "$game"
 build/flags-test "$test_save/flags-test.dat"
 build/kisaku-bootstrap-test "$game" "$test_save"

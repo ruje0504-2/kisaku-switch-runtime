@@ -21,6 +21,7 @@
 #include "font.h"
 #include "overlay_state.h"
 #include "bowling.h"
+#include "bowling_runtime.h"
 #include "media_tables.h"
 #include "message_skin.h"
 #include "param_change.h"
@@ -59,6 +60,8 @@ typedef struct {
     KImage diary_surface;int32_t diary_people[96],diary_events[96];
     int diary_days,diary_content_height,diary_viewport_height,diary_page_height,diary_scroll;
     KBowling bowling;KBowling *current_bowling;
+    KBowlingRuntime *bowling_runtime;
+    KEffectTrack bowling_effects[27];
     KImage mes_fade_surfaces[3]; /* CFadeSprite and two private CSprite bitmaps. */
     unsigned mes_fade_visible,mes_fade_shade_visible;
     KImage mes_fade_backing;
@@ -215,6 +218,8 @@ int bootstrap_enable_async_voice(KBootstrap *b);
 int bootstrap_enable_async_images(KBootstrap *b);
 int bootstrap_flush_progress(KBootstrap *b);
 int bootstrap_quit_dialog_close(KBootstrap *b,int accept);
+void bootstrap_bowling_pointer(KBootstrap *b,int x,int y,unsigned held);
+int bootstrap_bowling_active(const KBootstrap *b);
 int bootstrap_can_save(const KBootstrap *b);
 int bootstrap_save_slot(KBootstrap *b,unsigned slot);
 int bootstrap_save_slot_comment(KBootstrap *b,unsigned slot,const char *utf8);

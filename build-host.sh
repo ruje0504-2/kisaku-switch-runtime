@@ -38,3 +38,9 @@ ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_contact_tes
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_world_test.c -lm -o build/bowling-world-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_cpu_throw_test.c -lm -o build/bowling-cpu-throw-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_session_test.c -lm -o build/bowling-session-test
+
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_projection_test.c -lm -o build/bowling-projection-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_rack_test.c -lm -o build/bowling-rack-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_draw_test.c runtime/ai6arc.c runtime/lzss.c runtime/akb.c runtime/rmt.c -lm -o build/bowling-draw-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_turn_test.c -lm -o build/bowling-turn-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/bowling_game_test.c -lm -o build/bowling-game-test

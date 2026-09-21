@@ -2,6 +2,7 @@
 set -eu
 cd "$(dirname "$0")"
 python3 tools/native_media_tables.py "${KISAKU_EXE:-鬼作/AI6WIN.exe}" build/media_tables.h
+python3 tools/native_bowling_tables.py "${KISAKU_EXE:-鬼作/AI6WIN.exe}" build/bowling_tables.h
 dkp=${DEVKITPRO:-/opt/devkitpro}
 mkdir -p build-switch
 PKG_CONFIG_LIBDIR="$dkp/portlibs/switch/lib/pkgconfig"
