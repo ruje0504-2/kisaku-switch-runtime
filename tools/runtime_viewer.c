@@ -36,6 +36,7 @@ static void panel_text(SDL_Renderer *r,int x,int y,const char *text){
 #include "menu_touch.inc"
 #include "scene_replay_menu.inc"
 #include "cursor_panel.inc"
+#include "controls_overlay.inc"
 static void game_cancel(SaveMenu *m,MessagePanel *p,KBootstrap *b){
     if(b->scene_replay&&!b->letter_active){p->scene_cancel=1;return;}
     int was_hidden=b->message_user_hidden;
@@ -51,6 +52,7 @@ static int capture(SDL_Renderer *r,const char *path){
     SDL_FreeSurface(s);return rc;
 }
 int main(int argc,char **argv){
+    ControlsOverlay controls={0};
     CursorPanel cursor={0};
     SceneReplayMenu navigation={0};unsigned restore_navigation_audio=0;
     MenuTouch touch={0};SaveMenu menu={0};MessagePanel panel={0};KHistoryAudio history_audio={0};unsigned history_serial=0;
@@ -99,8 +101,9 @@ int main(int argc,char **argv){
     (void)SDL_SetTextureScaleMode(fade,SDL_ScaleModeNearest);
 #endif
     b=bootstrap_create_split(root,save_root);if(!b)goto done;
-    char video_log[4096];
-    if(snprintf(video_log,sizeof(video_log),"%s/video-decoder.log",save_root)<(int)sizeof(video_log))kvideo_set_log_path(video_log);
+    /* Decoder diagnostics remain on stderr; normal play must not create or
+       append a video-decoder.log file on the SD card. */
+    kvideo_set_log_path(NULL);
     for(unsigned i=0;i<b->setting_count;i++)if(!strcmp(b->settings[i].section,"Runtime")&&!strcmp(b->settings[i].key,"VideoDecoder")){
         if(!strcmp(b->settings[i].value,"software"))kvideo_set_default_mode(KVIDEO_SOFTWARE);
         else if(!strcmp(b->settings[i].value,"auto"))kvideo_set_default_mode(KVIDEO_AUTO);
@@ -145,15 +148,15 @@ int main(int argc,char **argv){
             else if(held&&now>=ui_repeat_at){buttons|=held;ui_repeat_at=now+90;}
         }else{ui_held_previous=0;}
         if(panel.kind){
-            if((panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_L))message_panel_action(&panel,b,8);
-            if((panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_R))message_panel_action(&panel,b,9);
-            if((buttons&HidNpadButton_X)&&(panel.kind==4||panel.kind==10||panel.kind==11||panel.kind==23||panel.kind==8||panel.kind==14))message_panel_action(&panel,b,7);
+            if((panel.kind==22||panel.kind==20||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_L))message_panel_action(&panel,b,8);
+            if((panel.kind==22||panel.kind==20||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_R))message_panel_action(&panel,b,9);
+            if((buttons&HidNpadButton_X)&&(panel.kind==22||panel.kind==20||panel.kind==4||panel.kind==10||panel.kind==11||panel.kind==23||panel.kind==8||panel.kind==14))message_panel_action(&panel,b,7);
             if(buttons&HidNpadButton_A)message_panel_action(&panel,b,0);
             /* The original CName has a separate 決定 button.  Give the
                controller a dedicated finish action instead of requiring the
                user to move the character cursor back to the name field. */
             if((buttons&HidNpadButton_ZR)&&panel.kind==14){panel.name_focus=0;message_panel_action(&panel,b,0);}
-            if((buttons&HidNpadButton_Y)&&(panel.kind==5||panel.kind==16||panel.kind==14||panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==9||panel.kind==11||panel.kind==23))message_panel_action(&panel,b,6);
+            if((buttons&HidNpadButton_Y)&&(panel.kind==22||panel.kind==20||panel.kind==5||panel.kind==16||panel.kind==14||panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==9||panel.kind==11||panel.kind==23))message_panel_action(&panel,b,6);
             /* The original CName has no B/back command; only its own
                confirmation path can finish the name modal. */
             if((buttons&HidNpadButton_B)&&panel.kind!=14)message_panel_action(&panel,b,1);
@@ -162,6 +165,8 @@ int main(int argc,char **argv){
             if(buttons&HidNpadButton_Left)message_panel_action(&panel,b,4);
             if(buttons&HidNpadButton_Right)message_panel_action(&panel,b,5);
         }else if(menu.active){
+            HidAnalogStickState portrait_stick=padGetStickPos(&pad,0);
+            character_portrait_stick(&menu,portrait_stick.x,SDL_GetTicks64());
             if((buttons&HidNpadButton_L)&&!opened_menu)save_menu_action(&menu,b,8);
             if(buttons&HidNpadButton_R)save_menu_action(&menu,b,9);
             if(buttons&HidNpadButton_A)save_menu_action(&menu,b,0);
@@ -301,7 +306,7 @@ int main(int argc,char **argv){
                     if(bootstrap_native_cg_pointer(b,cursor.x,cursor.y,click))snprintf(panel.status,sizeof(panel.status),"CGを表示できませんでした");
                     if(!b->native_cg)panel.kind=0;
                 }
-                if(e.type==SDL_KEYDOWN){SDL_Keycode key=e.key.keysym.sym;int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_PAGEUP&&(panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?8:key==SDLK_PAGEDOWN&&(panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?9:(key==SDLK_r||key==SDLK_g)&&(panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==11||panel.kind==23)?7:-1;if(action>=0)message_panel_action(&panel,b,action);}
+                if(e.type==SDL_KEYDOWN){SDL_Keycode key=e.key.keysym.sym;int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_x&&(panel.kind==22||panel.kind==20||panel.kind==11||panel.kind==10)?7:key==SDLK_y&&(panel.kind==22||panel.kind==20||panel.kind==11||panel.kind==10)?6:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_PAGEUP&&(panel.kind==22||panel.kind==20||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?8:key==SDLK_PAGEDOWN&&(panel.kind==22||panel.kind==20||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?9:(key==SDLK_r||key==SDLK_g)&&(panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==11||panel.kind==23)?7:-1;if(action>=0)message_panel_action(&panel,b,action);}
                 continue;
             }
             if(e.type==SDL_KEYDOWN&&e.key.keysym.sym==SDLK_s){save_menu_open(&menu,b,0);continue;}
@@ -312,7 +317,7 @@ int main(int argc,char **argv){
                 if(e.type==SDL_KEYDOWN){
                     SDL_Keycode key=e.key.keysym.sym;
                     if(menu.param_detail&&(key==SDLK_LSHIFT||key==SDLK_RSHIFT||key==SDLK_LCTRL||key==SDLK_RCTRL)){save_menu_param_skip(&menu);continue;}
-                    int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_g?7:key==SDLK_PAGEUP?8:key==SDLK_PAGEDOWN?9:-1;
+                    int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_x&&(panel.kind==22||panel.kind==20||panel.kind==11||panel.kind==10)?7:key==SDLK_y&&(panel.kind==22||panel.kind==20||panel.kind==11||panel.kind==10)?6:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_g?7:key==SDLK_PAGEUP?8:key==SDLK_PAGEDOWN?9:-1;
                     if(action>=0)save_menu_action(&menu,b,action);
                 }
                 continue;
@@ -502,10 +507,8 @@ int main(int argc,char **argv){
         if(b->area_active){
             SDL_SetRenderDrawColor(r,255,235,96,255);
             if(!cursor.texture&&b->area_selected>=0){int x=160+b->area_x*3/2,y=b->area_y*3/2;SDL_RenderDrawLine(r,x-9,y,x+9,y);SDL_RenderDrawLine(r,x,y-9,x,y+9);}
-            SDL_Rect hint={208,674,864,34};SDL_SetRenderDrawColor(r,16,20,28,230);SDL_RenderFillRect(r,&hint);SDL_SetRenderDrawColor(r,240,240,240,255);
-            if(b->area_active==2){char line[96];snprintf(line,sizeof(line),"D-pad/sticks: target  A: use  B: tool (%u / %u)",b->vm->bytes[1950]+1,b->vm->bytes[1951]);panel_text(r,224,684,line);}else panel_text(r,224,684,"D-pad/sticks: target  A: inspect  B: return");
+
         }
-        if(b->bonus52_active==1){SDL_SetRenderDrawColor(r,240,240,240,255);panel_text(r,224,684,"Move either stick or press A repeatedly to fill the meter.");}
         if(state<0||getenv("KISAKU_DEBUG_OVERLAY")){
         SDL_SetRenderDrawColor(r,230,235,245,255);
         SDLTest_DrawString(r,24,640,"KISAKU / AI6WIN - STARTUP PREVIEW - PORT IN PROGRESS");
@@ -513,9 +516,10 @@ int main(int argc,char **argv){
         SDLTest_DrawString(r,24,662,line);
         if(state<0){snprintf(line,sizeof(line),"%.150s",b->error);SDLTest_DrawString(r,24,684,line);}
         }
-        if(navigation.phase==3){SDL_SetRenderDrawColor(r,245,245,245,255);panel_text(r,224,692,"SCENE REPLAY - ZL / F8: return to story");}
         if(menu.active)save_menu_draw(&menu,b,r);
         if(panel.kind)message_panel_draw(&panel,b,r);
+        controls.replay=navigation.phase==3;
+        controls_overlay_draw(&controls,&panel,&menu,b,r);
         if(limit&&++ticks>=limit){if(shot&&capture(r,shot))goto done;running=0;}
         /* CName is a native mouse modal; keep its software cursor visible
            while the story canvas remains covered by the panel. */
@@ -556,5 +560,6 @@ int main(int argc,char **argv){
     rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
     rmt_free(&panel.image);SDL_DestroyTexture(panel.name_help_texture);rmt_free(&panel.name_help);present_gles_clear(&present_gles);free(present_pixels);texture_cache_clear(&hires_cache);texture_cache_clear(&panel.cg_frame);SDL_DestroyTexture(present_texture);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
     if(audio)SDL_CloseAudioDevice(audio);
+    SDL_DestroyTexture(controls.texture);rmt_free(&controls.image);
     bootstrap_destroy(navigation.next);bootstrap_destroy(navigation.owner);bootstrap_destroy(menu.next);bootstrap_destroy(b);SDL_DestroyTexture(fade);SDL_DestroyTexture(texture);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return rc;
 }

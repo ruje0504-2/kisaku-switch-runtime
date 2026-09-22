@@ -64,5 +64,5 @@ static int replay_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint6
     gallery_panel_copy(r,p->cg_textures[2],0,96,96,52,532,388);
     SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,225);SDL_Rect footer={160,676,960,44};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(r,245,245,245,255);char text[96];snprintf(text,sizeof(text),"Scene %02u/%02u  %s",p->selected+1,count,bootstrap_replay_unlocked(b,p->back,p->selected)?"Available":"Locked");
-    panel_text(r,200,680,p->status[0]?p->status:text);panel_text(r,200,701,"D-pad: grid  X/Y: character  A: play  B: back");return 0;
+    panel_text(r,200,680,p->status[0]?p->status:text);return 0;
 }

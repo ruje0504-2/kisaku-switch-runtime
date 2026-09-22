@@ -117,6 +117,26 @@ static void character_live_close(SaveMenu *m,KBootstrap *b){
         rmt_free(&m->portrait);m->draw_key=0;
     }
 }
+/* Native 4b2630 enables auto rotation; 4b1590 advances once per 40ms.
+   4b2820 clears auto on the first arrow operation. The left stick maps the
+   native left/right arrows, with a dead zone and 20ms held repeat. */
+static void character_portrait_auto(SaveMenu *m,uint64_t now){
+    if(!m->live_character||m->detail_phase||m->detail_view||m->portrait_manual||!m->portrait.pixels)return;
+    if(now>=m->portrait_started&&now-m->portrait_started>=40){
+        m->portrait_frame=(m->portrait_frame+31)%32;m->portrait_started=now;
+    }
+}
+static inline void character_portrait_stick(SaveMenu *m,int x,uint64_t now){
+    int direction=x < -10000?-1:x > 10000?1:0;
+    if(!m->live_character||!m->character_detail||m->detail_phase||m->detail_view||!m->portrait.pixels)direction=0;
+    if(!direction){m->portrait_stick=0;m->portrait_repeat=0;return;}
+    m->portrait_manual=1;
+    if(direction!=m->portrait_stick||now>=m->portrait_repeat){
+        m->portrait_frame=(m->portrait_frame+(direction<0?1:31))%32;
+        m->portrait_repeat=now+20;m->portrait_started=now;
+    }
+    m->portrait_stick=direction;
+}
 static void character_detail_action(SaveMenu *m,KBootstrap *b,int action){
     character_detail_frame(m);character_live_close(m,b);if(!m->character_detail||m->detail_phase)return;
     if(m->detail_view){if(action==0||action==1)character_detail_motion(m,b,4);return;}
@@ -136,6 +156,7 @@ static void character_detail_action(SaveMenu *m,KBootstrap *b,int action){
         m->detail_hover=next>=(int)character_counts[role]?1000:next;return;
     }
     if(m->live_character&&(action==4||action==5)){
+        m->portrait_manual=1;
         m->portrait_frame=(m->portrait_frame+(action==4?31:1))%32;m->portrait_started=SDL_GetTicks64();return;
     }
     if(action)return;
@@ -253,7 +274,7 @@ static int character_live_open(SaveMenu *m,KBootstrap *b,unsigned role){
     kflags_free(m->states[0]);m->states[0]=f;
     m->slot=1;m->active=m->live_character=m->character_detail=1;
     m->detail_index=role;m->detail_hover=-1;m->detail_view=m->param_detail=m->overwrite=m->confirm_load=0;
-    m->portrait_frame=0;m->portrait_started=SDL_GetTicks64();m->draw_key=0;m->status[0]=0;
+    m->portrait_frame=m->portrait_manual=0;m->portrait_stick=0;m->portrait_repeat=0;m->portrait_started=SDL_GetTicks64();m->draw_key=0;m->status[0]=0;
     rmt_free(&m->portrait);m->portrait=portrait;
     rmt_free(&m->detail_artwork);rmt_free(&m->detail_status_artwork);rmt_free(&m->detail_image);
     character_detail_motion(m,b,1);return 0;

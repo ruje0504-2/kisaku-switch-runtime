@@ -414,7 +414,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         panel_text(r,272,108,"VIDEO");unsigned first=p->selected/10*10;
         for(unsigned i=first;i<bootstrap_video_count()&&i<first+10;i++){char line[120];snprintf(line,sizeof(line),"%s %02u  %.60s  %s",i==p->selected?">":" ",i+1,bootstrap_video_preview_name(i),bootstrap_video_unlocked(b,i)?"Available":"Locked");panel_text(r,280,160+(int)(i%10)*36,line);}
         if(p->status[0])panel_text(r,272,560,p->status);
-        panel_text(r,272,604,"D-pad: select   A: play   B: back");return;
+        return;
     }
     if(p->kind==11&&!replay_panel_draw(p,b,r,SDL_GetTicks64()))return;
     if(p->kind==9&&!music_panel_draw(p,b,r))return;
@@ -423,7 +423,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind==10&&!p->viewing&&!gallery_panel_draw(p,b,r))return;
     if(p->kind==10&&p->viewing==1&&!gallery_variants_draw(p,b,r))return;
     if(p->kind==10&&p->viewing==3){
-        if(b->video_active){SDL_SetRenderDrawColor(r,240,240,240,255);panel_text(r,256,684,"A / B: return to CG gallery");return;}
+        if(b->video_active){SDL_SetRenderDrawColor(r,240,240,240,255);return;}
         bootstrap_gallery_movie_stop(b);p->viewing=p->cg_movie_return;
     }
     SDL_SetRenderDrawColor(r,16,20,28,255);SDL_Rect box={208,64,864,592};SDL_RenderFillRect(r,&box);
@@ -431,7 +431,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind==20){scene_mode_draw(p,b,r);return;}
     if(p->kind==16||p->kind==17){
         panel_text(r,272,108,"NAVIGATION - REPLAY COMPLETED SCENE");
-        if(p->kind==17){panel_text(r,272,240,"Preparing scene... B: cancel");return;}
+        if(p->kind==17){panel_text(r,272,240,"Preparing scene...");return;}
         unsigned slots[600],count=scene_replay_slots(p,b,slots);
         if(!count)panel_text(r,272,240,"No matching completed checkpoint for this scene.");
         for(unsigned i=0;i<count;i++){
@@ -439,7 +439,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             snprintf(line,sizeof(line),"%s Part %u",p->variant==i?">":" ",cp.part);panel_text(r,280,180+(int)i*32,line);
         }
         if(p->status[0])panel_text(r,272,544,p->status);
-        panel_text(r,272,604,"Up/down: part   A: replay   B: map");return;
+        return;
     }
     if(p->kind==14){
         if(ui_canvas(&p->image)||ui_akb_asset(b,"namepart.akb",&p->name_artwork))return;
@@ -508,7 +508,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         ui_text(b,&p->image,"選択した履歴を消去しますか？",136,144,368,24,0xffffff,0);
         const char *labels[]={"既読履歴","選択肢履歴","シーンナビゲーション履歴","全履歴とセーブデータ"};unsigned row=0;
         for(unsigned i=0;i<4;i++)if(b->flag_dialog.checked[i]==1)ui_text(b,&p->image,labels[i],144,186+(int)row++*28,352,24,0xffdf78,0);
-        ui_text(b,&p->image,"A: 消去       B: キャンセル",144,342,352,24,0xffffff,0);ui_present(r,&p->image,&p->texture);return;
+        ui_present(r,&p->image,&p->texture);return;
     }
     if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){
         if(!p->viewing){p->selected=2;p->viewing=1;}
@@ -527,7 +527,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             else snprintf(value,sizeof(value),"%d / %d",current,limit);
             snprintf(line,sizeof(line),"%s %s: %s",p->selected==i?">":" ",bootstrap_setting_label(i),value);panel_text(r,280,166+(int)(i-first)*48,line);
         }
-        panel_text(r,272,528,"Up/down: select  Left/right: adjust  Y: page  B: back");
+
         panel_text(r,272,566,p->status[0]?p->status:"Applies to the next message, sound or visual effect.");return;
     }
     if(p->kind==13){
@@ -538,7 +538,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             panel_text(r,280,160+(int)(i%10)*36,line);
         }
         if(p->status[0])panel_text(r,272,560,p->status);
-        panel_text(r,272,604,"D-pad: select / page   A: play   B: back");return;
+        return;
     }
     if(p->kind==11){
         const char *names[]={"Anna","Maki","Suzune","Mika","Natsuko"};char line[100];
@@ -550,13 +550,13 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             panel_text(r,x,y+24,bootstrap_replay_unlocked(b,p->back,i)?"Available":"Locked");
         }
         if(p->status[0])panel_text(r,272,554,p->status);
-        panel_text(r,272,604,"D-pad: grid  X/Y: character  A: play  B: back");return;
+        return;
     }
     if(p->kind==12){
         panel_text(r,272,160,"SELECT SCENE PLAYBACK");
         panel_text(r,280,260,p->selected==0?"> Animation":"  Animation");
         panel_text(r,280,320,p->selected==1?"> Still images":"  Still images");
-        panel_text(r,272,528,"D-pad: select   A: confirm   B: cancel");return;
+        return;
     }
     if(p->kind==10){
         if(p->viewing==2){
@@ -570,7 +570,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
                 }else SDL_RenderCopy(r,p->texture,NULL,&dst);
             }
             SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,210);SDL_Rect footer={160,684,960,36};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
-            SDL_SetRenderDrawColor(r,245,245,245,255);panel_text(r,208,696,bootstrap_gallery_scroll_extent(b,p->back,p->selected,p->variant)?"D-pad: pan   A/Y: zoom   X: scroll/skip   B: back":p->cg_zoom?"D-pad: pan   A/Y: fit   B: variants":"D-pad: variant   A/Y: full-size view   B: variants");return;
+            SDL_SetRenderDrawColor(r,245,245,245,255);return;
         }else{
             char title[100];snprintf(title,sizeof(title),"CG CATEGORY %u / 7%s",p->back+1,p->viewing?" - VARIANTS":"");panel_text(r,272,108,title);
             unsigned selected=p->viewing?p->variant:p->selected;
@@ -589,18 +589,18 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             }
         }
         if(p->status[0])panel_text(r,272,560,p->status);
-        panel_text(r,256,604,p->viewing?"D-pad: grid  L/R: page  A: view  B: back":"D-pad: grid  L/R: page  X/Y: category  A: open  B: back");return;
+        return;
     }
     if(p->kind==9){
         panel_text(r,272,108,"MUSIC");unsigned first=p->selected/10*10;
         for(unsigned i=first;i<bootstrap_music_count()&&i<first+10;i++){char line[100];snprintf(line,sizeof(line),"%s %02u  %.55s",i==p->selected?">":" ",i+1,bootstrap_music_name(i));panel_text(r,280,160+(int)(i%10)*36,line);}
-        panel_text(r,272,604,"D-pad: select   A / Enter: play   B / Backspace: back");return;
+        return;
     }
     if(p->kind==4){
         if(!navigation_map_draw(p,b)){
             ui_fill(&p->image,0,0,640,24,0x1e1910);ui_fill(&p->image,0,452,640,28,0x1e1910);
             char label[80];snprintf(label,sizeof(label),"ナビマップ  SCENE %03u",b->scene->nodes[p->selected].id);ui_text(b,&p->image,label,12,3,616,20,0xffdf78,0);
-            ui_text(b,&p->image,"上下左右: 移動  A: 場面選択  Y: 全体/拡大  B: 戻る",12,456,616,20,0xffffff,0);ui_present(r,&p->image,&p->texture);
+            ui_present(r,&p->image,&p->texture);
         }return;
     }
     if(p->image.pixels&&(p->image.width!=640||p->image.height!=480)){rmt_free(&p->image);SDL_DestroyTexture(p->texture);p->texture=NULL;}
@@ -615,6 +615,6 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     }
     char line[100];snprintf(line,sizeof(line),"HISTORY %u / %u",b->history_count?p->back+1:0,b->history_count);panel_text(r,272,108,line);
     if(p->status[0])panel_text(r,272,552,p->status);
-    else panel_text(r,272,552,bootstrap_history_voice(b,p->back)?"A / Enter: replay voice":"No voice for this entry");
-    panel_text(r,272,604,"Left: older   Right: newer   B / Backspace: back");
+    else if(!bootstrap_history_voice(b,p->back))panel_text(r,272,552,"No voice for this entry");
+
 }

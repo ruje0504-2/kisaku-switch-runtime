@@ -999,3 +999,22 @@ NRO SHA256（三份一致）：`c853368a80662e50fccb92ddea3b1021dcc8b6950cba7bbf
 - 最终`./build-switch.sh`通过（local/weekend-final2-switch.log，运行时-Werror）。NRO SHA256：`d9344f300a40e3dce05de5ba00c227ee8f239b59732a5dadccdcb3653dbfde99`。
 
 最终源码的`./build-host.sh && ./test-host.sh 鬼作`全部通过（local/weekend-final2-build.log / weekend-final2-host.log），包含新增真实日记保存/新运行时读取、角色入口、八角色前端和原有完整回归。`python3 tools/package_sd.py 鬼作`与`git diff --check`通过；build-switch、交付主入口和兼容NRO一致。Switch照片对应场景的实机复测、原版完整角色进退动画时序及全路线仍未验证。
+
+## 2026-09-23：统一操作说明、鉴赏手柄切换与关闭解码文件日志
+
+- `controls_overlay.inc` 将移植端按键说明统一到1280×720呈现坐标 `(8,420)`、宽144的左黑边，沿用姓名输入位置和HOS/UI字体；依照当前模态显示按键，文字和纹理按内容缓存。移除菜单内部重复说明，保留原版图片文字及状态信息。
+- 标题、普通选项、设置、存档槽、确认对话、CG、场景、音乐、视频选中项增加呈现层黑/黄/黑边框，不写回游戏内部表面、缩略图或存档。
+- 原生31/310 CG与31/320场景鉴赏接通X前人物、Y后人物；L/R接通场景翻页。分类首尾循环，特殊分类仍受byte4006限制；秃作单分类及变体/播放期间不切人物。原有鉴赏继续沿用6=下一人物、7=上一人物，键盘X/Y同向。
+- 关闭运行时`video-decoder.log`创建、截断及追加，保留硬解AUTO、回退、统计和stderr诊断。旧文件不自动删除。仅有日志标题不能证明硬解工作。
+- 静态Startup.mes中的开头ELF标志为`elf.ax`、`elf_an.akb`和`logo.wav`演出，不是VSD视频；未启动PC程序。
+- 验证：`./build-host.sh`及最终相关三个目标重新编译；`build/kisaku-bootstrap-test 鬼作 <临时目录> --native-cg`、完整`build/message-panel-test`、`build/video-hw-test`通过。新增CG分类往返/环绕、场景X/Y及左黑边像素边界和纹理复用断言。offscreen GLES启动650帧截图检查左侧说明，独立空存档目录确认没有生成`video-decoder.log`。日志见`local/controls-tests/`。
+- Switch交叉编译及打包结果见下方最终产物记录；Switch实机选中效果、手柄与NVTEGRA真实硬件帧仍未验证。
+
+### 同轮：角色档案旋转原版核对与手动接管
+
+- 静态汇编`4b2630`设置自动标记`+0xa0=1`和帧号0；`4b1590`仅在实时档案且自动标记为1时每40ms将帧号减1、0回绕31。原版进入时确实自动旋转。
+- `4b2820`的1001/1002箭头操作将自动标记清0，按住时正/反向递进，`4b2740(20)`等待20ms。旧移植漏了清除自动标记，手动后仍持续转动。
+- 补上自动/手动状态；左摇杆X轴映射原版左右箭头，死区10000，20ms持续输入节拍，松手立即停止且不恢复自动；十字/鼠标箭头同样接管，重新打开档案恢复原版自动。详情图及过渡期间屏蔽摇杆旋转。左黑边增加说明。
+- 前端夹具新增自动40ms、32帧双向回绕、摇杆死区、连续输入、反向、松手后不再自转、详情隔离及鼠标接管断言。
+
+最终结果：相关主机目标`-Werror`重建、完整前端（含旋转新增断言）、CG专项、硬解适配夹具、`git diff --check`及`./build-switch.sh`通过；`python3 tools/package_sd.py 鬼作`已同步。最终日志`local/controls-tests/frontend-final.log`、`local/controls-switch-final.log`、`local/controls-tests/package-final.log`。主入口及兼容名SHA-256一致：`801375b12b0f9d298aff0cf0c7a61c96b6896627d9fba5da9d912721c56c3b72`。没有Switch实机回归结果。

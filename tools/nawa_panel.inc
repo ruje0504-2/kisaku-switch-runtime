@@ -155,6 +155,6 @@ static int nawa_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint64_
     else snprintf(line,sizeof(line),"Bonus game %u",p->selected-39);
     char footer_text[128];
     if(p->status[0])snprintf(footer_text,sizeof(footer_text),"%.78s",p->status);
-    else snprintf(footer_text,sizeof(footer_text),"%.40s | Arrows: select  A: play  B: back",line);
+    else snprintf(footer_text,sizeof(footer_text),"%.40s",line);
     panel_text(r,176,701,footer_text);return 0;
 }

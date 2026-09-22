@@ -7,7 +7,7 @@ typedef struct {
     int page_key,focus,button,request;unsigned valid[10];int64_t dates[10];
     uint64_t draw_key;KImage artwork,load_artwork,common,canvas,previews[10];SDL_Texture *texture;
     KFlags *states[10];KSlotInfo info[10];int last_slot,hover,areas[31][5];unsigned area_count;
-    unsigned live_character,portrait_frame;uint64_t portrait_started;KImage portrait;
+    unsigned live_character,portrait_frame,portrait_manual;int portrait_stick;uint64_t portrait_started,portrait_repeat;KImage portrait;
     KImage detail_image;int detail_hover;unsigned detail_view,detail_phase,detail_step,detail_steps;uint64_t detail_started;
     KImage dialog_artwork,note_artwork,detail_artwork,detail_status_artwork;unsigned param_detail,param_steps,character_detail,detail_index;uint64_t param_started;
 } SaveMenu;

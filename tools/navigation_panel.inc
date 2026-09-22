@@ -75,6 +75,11 @@ static void scene_mode_action(MessagePanel *p,KBootstrap *b,int action){
     unsigned page=item/9,n=scene_mode_visible(p,b),pages=(scene_mode_items(b,cat)+8)/9;int f=p->direct_focus,hage=scene_mode_hage(b);
     if(action==1){if(p->direct_sub>=0){if(scene_mode_motion(p,b,2))return;p->direct_sub=-1;p->direct_focus=(int)(item%9);p->status[0]=0;}else scene_mode_finish(p,b,-1);return;}
     if((action==8||action==9)&&p->direct_sub<0){unsigned next=action==8?(page? page-1:page):(page+1<pages?page+1:page);scene_mode_page(p,b,cat,next);p->direct_focus=0;return;}
+    if((action==6||action==7)&&p->direct_sub<0&&!hage){
+        unsigned categories=b->vm->bytes[4006]?11:10;
+        scene_mode_page(p,b,(cat+categories+(action==7?-1:1))%categories,0);
+        p->direct_focus=0;return;
+    }
     if(action>=2&&action<=5){
         if(f<0)f=0;
         else if(f<0x100){
@@ -267,7 +272,7 @@ static void navigation_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r)
         if(p->nav_mode&&p->nav_dates[i]){time_t stamp=(time_t)p->nav_dates[i];struct tm *tm=localtime(&stamp);if(tm){strftime(label,sizeof(label),"%m/%d %H:%M",tm);ui_text(b,&p->image,label,x,330,124,20,0xffffff,0);}}
     }
     if(!count)ui_text(b,&p->image,p->nav_mode?"この場面のセーブはありません":"再生できる場面がありません",24,222,480,32,0xffffff,0);
-    ui_text(b,&p->image,"左右: 選択  L/R: ページ  Y: SCENE/LOAD  A: 決定  B: 戻る",24,408,604,44,0xffffff,0);
+
     if(p->status[0])ui_text(b,&p->image,p->status,24,368,604,32,0xffdf74,0);
     ui_present(r,&p->image,&p->texture);
 }

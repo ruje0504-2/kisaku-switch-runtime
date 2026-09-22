@@ -74,5 +74,5 @@ static int style_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,0,0,0,128);SDL_Rect dim={160,0,960,720};SDL_RenderFillRect(r,&dim);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
     gallery_panel_copy(r,p->cg_textures[0],0,0,288,68,180,208);
     for(unsigned i=0;i<2;i++)gallery_panel_copy(r,p->cg_textures[0],288+(p->selected==i?72:0),i*28,72,28,236+i*104,236);
-    SDL_SetRenderDrawColor(r,245,245,245,255);panel_text(r,272,684,"Left/right: style  A: confirm  B: cancel");return 0;
+    SDL_SetRenderDrawColor(r,245,245,245,255);return 0;
 }

@@ -1620,6 +1620,13 @@ static void test_native_cg(const char *root,const char *saves){
     for(unsigned i=0;!b->native_cg;i++){assert(i<10000);int rc=bootstrap_run(b,100000);if(rc<0)fprintf(stderr,"CG entry: %s\n",b->error);assert(rc>=0);bootstrap_frame(b);}
     assert(b->message_request==22);b->message_request=0;
     const KImage *im=bootstrap_native_cg_image(b);assert(im&&im->width==640&&im->height==480);
+    int focus[4];assert(bootstrap_native_cg_focus(b,focus));
+    uint8_t *initial=malloc(640*480*4);assert(initial);memcpy(initial,im->pixels,640*480*4);
+    assert(!bootstrap_native_cg_action(b,6));assert(memcmp(initial,im->pixels,640*480*4));
+    assert(!bootstrap_native_cg_action(b,7));assert(!memcmp(initial,im->pixels,640*480*4));
+    for(unsigned cycle=0;cycle<9;cycle++)assert(!bootstrap_native_cg_action(b,7));
+    assert(!memcmp(initial,im->pixels,640*480*4));free(initial);
+
     uint8_t *locked=malloc(640*480*4);assert(locked);memcpy(locked,im->pixels,640*480*4);
     assert(!bootstrap_native_cg_pointer(b,170,70,1));assert(!memcmp(locked,im->pixels,640*480*4));
     b->vm->bytes[5000]=1;assert(!bootstrap_native_cg_pointer(b,170,70,1));

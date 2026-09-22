@@ -299,6 +299,8 @@ int bootstrap_music_unlocked(const KBootstrap *b,unsigned index);
 void bootstrap_music_stop(KBootstrap *b);
 int bootstrap_music_select(KBootstrap *b,unsigned index);
 const KImage *bootstrap_native_cg_image(const KBootstrap *b);
+int bootstrap_native_cg_focus(const KBootstrap *b,int rect[4]);
+unsigned bootstrap_native_cg_categories(const KBootstrap *b);
 int bootstrap_native_cg_action(KBootstrap *b,int action);
 int bootstrap_native_cg_pointer(KBootstrap *b,int x,int y,int click);
 int bootstrap_gallery_movie_unlocked(const KBootstrap *b,unsigned item);

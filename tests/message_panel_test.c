@@ -78,6 +78,21 @@ static void test_name_editor(const char *root,const char *saves,SDL_Renderer *re
     assert(!kfont_draw(font,&expected,0x4f5c,28,4,16,16,0xffffff));
     for(unsigned y=0;y<24;y++)assert(!memcmp(p.image.pixels+(408+y)*p.image.stride+260*4,expected.pixels+y*480,480));
     rmt_free(&expected);
+    {
+        ControlsOverlay overlay={0};MessagePanel hint={0};SaveMenu menu={0};hint.kind=12;
+        SDL_SetRenderDrawColor(renderer,17,51,87,255);assert(!SDL_RenderClear(renderer));
+        controls_overlay_draw(&overlay,&hint,&menu,b,renderer);assert(overlay.texture);
+        SDL_Texture *cached=overlay.texture;controls_overlay_draw(&overlay,&hint,&menu,b,renderer);assert(cached==overlay.texture);
+        uint8_t *pixels=malloc(1280u*720u*4u);assert(pixels);
+        assert(!SDL_RenderReadPixels(renderer,NULL,SDL_PIXELFORMAT_BGRA32,pixels,1280*4));
+        unsigned ink=0;for(unsigned y=0;y<720;y++)for(unsigned x=0;x<1280;x++){
+            const uint8_t *q=pixels+(y*1280+x)*4;
+            int changed=q[0]!=87||q[1]!=51||q[2]!=17;
+            if(x>=8&&x<152&&y>=420&&y<584)ink+=changed;else assert(!changed);
+        }
+        assert(ink>50);free(pixels);SDL_DestroyTexture(overlay.texture);rmt_free(&overlay.image);
+    }
+
     /* The user-requested HOS-font help stays entirely in the left margin. */
     uint8_t *screen=malloc(1280u*720u*4u);assert(screen);
     SDL_SetRenderDrawColor(renderer,17,51,87,255);assert(!SDL_RenderClear(renderer));name_help_draw(&p,b,renderer);
@@ -786,6 +801,13 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
         assert(p.direct_artwork.pixels&&p.direct_artwork.width==496&&p.direct_parts.pixels);
         assert(p.direct_count==(mode?30:kscene_mode_total())&&p.direct_thumb.pixels);
         test_scene_clock();test_scene_motion(&p,b,r);test_scene_assets(b,r);
+        scene_mode_tick(&p,b,p.direct_clock+(uint64_t)p.direct_steps*15);
+        unsigned original_category,original_item;scene_mode_at(b,p.direct_selected,&original_category,&original_item);
+        scene_test_action(&p,b,6);
+        unsigned next_category,next_item;scene_mode_at(b,p.direct_selected,&next_category,&next_item);
+        assert(mode?next_category==original_category:next_category==(original_category+1)%(b->vm->bytes[4006]?11:10));
+        scene_test_action(&p,b,7);scene_mode_at(b,p.direct_selected,&next_category,&next_item);assert(next_category==original_category);
+
         if(getenv("KISAKU_SCENE_SHOTS")){
             char path[128];snprintf(path,sizeof(path),"local/scene-selector-%u.bmp",mode);
             assert(!capture(r,path));
@@ -840,6 +862,19 @@ static void test_live_character(KBootstrap *b,SDL_Renderer *renderer,const char 
     { SaveMenu live={0};b->file_modal=2;b->vm->bytes[202]=1;
       assert(!character_live_open(&live,b,0));live.detail_started-=10000;
       save_menu_draw(&live,b,renderer);assert(live.live_character&&live.portrait.pixels&&live.canvas.pixels);
+      live.portrait_frame=0;live.portrait_started=1000;
+      character_portrait_auto(&live,1039);assert(live.portrait_frame==0);
+      character_portrait_auto(&live,1040);assert(live.portrait_frame==31);
+      character_portrait_stick(&live,9000,1041);assert(!live.portrait_manual&&live.portrait_frame==31);
+      character_portrait_stick(&live,-20000,1042);assert(live.portrait_manual&&live.portrait_frame==0);
+      character_portrait_stick(&live,-20000,1061);assert(live.portrait_frame==0);
+      character_portrait_stick(&live,-20000,1062);assert(live.portrait_frame==1);
+      character_portrait_stick(&live,20000,1063);assert(live.portrait_frame==0);
+      character_portrait_stick(&live,0,1064);character_portrait_auto(&live,999999);assert(live.portrait_frame==0);
+      character_portrait_stick(&live,20000,1065);assert(live.portrait_frame==31);
+      live.detail_view=1;character_portrait_stick(&live,-20000,1100);assert(live.portrait_frame==31);live.detail_view=0;
+      live.portrait_manual=0;character_detail_pointer(&live,b,50,390,1);assert(live.portrait_manual&&live.portrait_frame==0);
+
       if(shot){char path[4096];snprintf(path,sizeof(path),"%s.character-live.bmp",shot);assert(!capture(renderer,path));}
       character_detail_action(&live,b,3);assert(live.detail_hover==0);
       character_detail_action(&live,b,0);assert(live.detail_view&&live.detail_image.pixels);

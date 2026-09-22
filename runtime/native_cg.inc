@@ -130,6 +130,13 @@ int bootstrap_native_cg_action(KBootstrap *b,int action){
         if(!action||action==5){const KCGRecord *r=cg_record(c,c->item);for(unsigned v=c->variant+1;v<cg_variant_count(r);v++)if(cg_unlocked(b,r->variants[v]))return cg_play(b,v);return bootstrap_native_cg_action(b,1);}
         if(action==4){const KCGRecord *r=cg_record(c,c->item);for(int v=(int)c->variant-1;v>=0;v--)if(cg_unlocked(b,r->variants[v]))return cg_play(b,(unsigned)v);}return 0;
     }
+    if((action==6||action==7)&&!c->view&&!c->alternate){
+        unsigned groups=b->vm->bytes[4006]?10:9;
+        unsigned group=(c->group+groups+(action==7?-1:1))%groups;
+        KImage next={0};if(cg_read(b,cg_atlases[group],&next))return -1;
+        rmt_free(&c->atlas);c->atlas=next;c->group=group;c->page=0;c->focus=0;
+        return cg_draw(b);
+    }
     if(!action){
         if(c->view)return cg_play(b,(unsigned)c->focus);
         if(c->focus==0x200)return bootstrap_native_cg_action(b,1);
@@ -165,4 +172,23 @@ int bootstrap_native_cg_pointer(KBootstrap *b,int x,int y,int click){
         for(unsigned i=0;i<cg_pages(c);i++){int rx=(10-(int)cg_pages(c))*38+232+(int)i*38;if(y>=0&&y<20&&x>=rx&&x<rx+48)hit=0x100+(int)i;}
     }
     if(hit>=0){c->focus=hit;if(click)return bootstrap_native_cg_action(b,0);return cg_draw(b);}return 0;
+}
+
+/* Presentation-only focus bounds; never paint accessibility markers into the
+   VM's image surfaces or saved thumbnails. Returns 0 while viewing a CG. */
+int bootstrap_native_cg_focus(const KBootstrap *b,int rect[4]){
+    const KNativeCG *c=b?b->native_cg:NULL;
+    if(!c||c->view==2||c->focus<0)return 0;
+    int x,y,w,h,f=c->focus;
+    if(c->view){if((unsigned)f>=cg_variant_count(cg_record(c,c->item)))return 0;cg_variant_rect(cg_record(c,c->item),(unsigned)f,&x,&y);w=108;h=84;}
+    else if(f>=0x300){x=0;y=200+(f-0x300)*28;w=112;h=20;}
+    else if(f==0x200){x=528;y=448;w=112;h=32;}
+    else if(f>=0x100){x=(10-(int)cg_pages(c))*38+232+(f-0x100)*38;y=0;w=48;h=20;}
+    else{x=(c->alternate?34:150)+(f%(int)cg_columns(c))*116;y=48+(f/(int)cg_columns(c))*96;w=108;h=84;}
+    rect[0]=x;rect[1]=y;rect[2]=w;rect[3]=h;return 1;
+}
+
+unsigned bootstrap_native_cg_categories(const KBootstrap *b){
+    const KNativeCG *c=b?b->native_cg:NULL;
+    return c&&!c->view&&!c->alternate?(b->vm->bytes[4006]?10:9):0;
 }

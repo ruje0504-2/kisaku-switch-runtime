@@ -52,10 +52,7 @@ static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
         character_detail_frame(m);character_live_close(m,b);if(!m->active)return;
         if(ui_canvas(&m->canvas))return;
         uint64_t now=SDL_GetTicks64();
-        if(!m->detail_phase&&!m->detail_view&&now-m->portrait_started>=40){
-            unsigned steps=(unsigned)((now-m->portrait_started)/40);
-            m->portrait_frame=(m->portrait_frame+32-steps%32)%32;m->portrait_started+=steps*40;
-        }
+        character_portrait_auto(m,now);
         memcpy(m->canvas.pixels,b->layers[0].pixels,640*480*4);
         character_detail_draw(m,b);
         if(m->detail_phase==1||m->detail_phase==2){
@@ -152,7 +149,6 @@ static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
     if(m->loading){
         ui_fill(d,170,200,300,158,0xa08948);ui_fill(d,173,203,294,152,0x241a12);
         ui_text(b,d,"ロード中…",188,224,260,24,0xffffff,0);
-        ui_text(b,d,"B: 戻る",198,312,260,40,0xffde7a,0);
     }
     ui_present(r,d,&m->texture);
 }

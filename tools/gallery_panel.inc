@@ -57,7 +57,7 @@ static int gallery_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     gallery_panel_copy(r,p->cg_textures[2],144+(int)(percent%10)*12,148,12,12,100,62);
     SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,225);SDL_Rect footer={160,674,960,46};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(r,245,245,245,255);char line[100];snprintf(line,sizeof(line),"Page %u/%u  %s %03u  %s",current.page+1,current.pages,p->selected<images?"CG":"Movie",p->selected<images?p->selected+1:p->selected-images+1,current.tile>=0?"Available":"Locked");panel_text(r,200,678,line);
-    panel_text(r,200,701,"D-pad: grid  L/R: page  X/Y: category  A: open  B: back");return 0;
+    return 0;
 }
 
 /* 419da0: 15 film thumbnails per page; h04/04 has four additional MOV entries. */
@@ -111,7 +111,7 @@ static int gallery_variants_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     gallery_panel_copy(r,p->cg_textures[2],48,page+1<(total+14)/15?436:520,48,28,256,424);
     gallery_panel_copy(r,p->cg_textures[2],96,520,96,28,328,424);
     SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,225);SDL_Rect footer={160,684,960,36};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(r,240,240,240,255);char line[100];snprintf(line,sizeof(line),"%s %u/%u  D-pad: grid  L/R: page  A: open  B: back",special&&p->variant>=4?"MOV":"CG",p->variant+1,total);panel_text(r,192,696,p->status[0]?p->status:line);
+    SDL_SetRenderDrawColor(r,240,240,240,255);char line[100];snprintf(line,sizeof(line),"%s %u/%u",special&&p->variant>=4?"MOV":"CG",p->variant+1,total);panel_text(r,192,696,p->status[0]?p->status:line);
     return 0;
 }
 
