@@ -36,12 +36,14 @@ static void test_native_wait(const char *root,const char *saves){
     b->effect_fast=1;b->vm->globals[0][50].number=0x8000;
     bootstrap_frame(b);assert(!b->native_wait_clock); /* byte4012 only blocks script skip */
     assert(!native_wait_call(b,0,2147483647,0)&&b->native_wait_clock==UINT64_C(128849018820));
-    uint64_t clock=b->native_wait_clock;
-    assert(native_wait_call(b,0,-1,0)<0&&b->vm->sp==4&&b->native_wait_clock==clock);
-    assert(native_wait_call(b,1,20,1)<0&&b->vm->sp==4&&b->native_wait_clock==clock);
+    assert(native_wait_call(b,0,-1,0)<0&&b->vm->sp==4&&b->native_wait_clock);
+    b->vm->globals[0][50].number=0;b->effect_fast=0;
+    assert(!native_wait_call(b,1,20,1)&&b->vm->sp==1&&b->native_wait_clock==1200&&b->native_wait_pump);
+    bootstrap_frame(b);assert(b->native_wait_clock==200&&b->native_wait_pump);
+    bootstrap_frame(b);assert(!b->native_wait_clock&&!b->native_wait_pump);
     assert(!native_wait_call(b,1,0,1)&&!b->native_wait_clock&&b->vm->sp==1);
     bootstrap_destroy(b);
-    puts("Kisaku native waits: duration, input isolation, skip flags, wide clock, preserved unsupported pump: PASS");
+    puts("Kisaku native waits: duration, input isolation, skip flags, wide clock and portable event pump: PASS");
 }
 static int backlog_call(KBootstrap *b,int action,int has_value,KValue value){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=23;b->vm->sp=0;
@@ -65,6 +67,9 @@ static void test_backlog_records(const char *root,const char *saves){
     assert(!backlog_call(b,6,1,(KValue){1,NULL})&&b->vm->sp==2&&b->vm->stack[1].number==1);
     assert(!backlog_call(b,6,1,(KValue){-1,NULL})&&b->vm->stack[1].number==0);
     assert(!backlog_call(b,6,1,(KValue){5,NULL})&&b->vm->stack[1].number==0);
+    assert(!backlog_call(b,7,1,(KValue){1,NULL})&&b->vm->sp==2&&b->vm->stack[1].string&&!strcmp(b->vm->stack[1].string,"xyz"));
+    assert(backlog_call(b,7,1,(KValue){99,NULL})<0&&b->vm->sp==3&&strstr(b->error,"23/7"));
+    assert(backlog_call(b,5,1,(KValue){1,NULL})<0&&b->vm->sp==3&&strstr(b->error,"23/5"));
     assert(backlog_call(b,0,1,(KValue){-1,NULL})<0&&b->vm->sp==3&&b->message_count==5);
     assert(backlog_call(b,0,1,(KValue){4092,NULL})<0&&b->vm->sp==3&&b->message_count==5);
     assert(backlog_call(b,6,1,(KValue){0,"bad"})<0&&b->vm->sp==3&&b->messages[1].flag);
@@ -83,9 +88,8 @@ static void test_backlog_records(const char *root,const char *saves){
     b->vm->status=KVM_SYSCALL;b->vm->sp=0;
     assert(!kvm_push(b->vm,(KValue){789,NULL})&&!kvm_push(b->vm,(KValue){1,NULL}));
     assert(!kvm_push(b->vm,(KValue){20,NULL})&&!kvm_push(b->vm,(KValue){0,NULL}));
-    assert(bootstrap_dispatch(b)<0&&b->vm->sp==4&&b->message_count==5);
-    b->error[0]=0;b->vm->stack[2].number=0;b->vm->status=KVM_SYSCALL;
-    assert(!bootstrap_dispatch(b)&&b->vm->sp==1&&b->vm->stack[0].number==789);
+    assert(!bootstrap_dispatch(b)&&b->vm->sp==1&&b->vm->stack[0].number==789&&b->native_wait_pump);
+    bootstrap_frame(b);bootstrap_frame(b);assert(!b->native_wait_clock&&!b->native_wait_pump);
     bootstrap_destroy(b);
     puts("Kisaku backlog records: append, nonempty count, voice query, clear and preserved invalid operands: PASS");
 }

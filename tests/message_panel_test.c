@@ -73,6 +73,7 @@ static void test_saved_parameters(SaveMenu *m,KBootstrap *b,SDL_Renderer *r,cons
     unsigned old_detail=saved->bytes[108];saved->bytes[108]=1;m->draw_key=0;
     save_menu_pointer(m,b,30,80,1);assert(m->character_detail&&m->detail_index==0);
     m->detail_steps=0;save_menu_draw(m,b,r);assert(m->detail_artwork.pixels&&m->detail_status_artwork.pixels&&m->character_detail);
+    assert(!capture(r,"/tmp/detail-current.bmp"));
     uint64_t detail_pixels=ui_hash(1,m->canvas.pixels,m->canvas.stride*m->canvas.height);
     m->draw_key=0;save_menu_draw(m,b,r);assert(ui_hash(1,m->canvas.pixels,m->canvas.stride*m->canvas.height)==detail_pixels);
     uint8_t *original=malloc(saved->byte_count);assert(original);memcpy(original,saved->bytes,saved->byte_count);
@@ -107,6 +108,24 @@ static void test_saved_parameters(SaveMenu *m,KBootstrap *b,SDL_Renderer *r,cons
     }
     memset(saved->bytes,0,saved->byte_count);saved->bytes[635]=1;assert(character_enabled(saved,1,8));
     assert(!bootstrap_character_image(8,0)&&!bootstrap_character_image(0,9));
+    /* CGirlStatus's current-state strip keeps several route-specific
+       branches which are easy to lose when only the row unlock flags are
+       ported.  Check the exact source page selected for the ordinary,
+       special and final states, including Madoka/Hiro's extra flags. */
+    memset(saved->bytes,0,saved->byte_count);
+    assert(character_dynamic_source_y(saved,0)==560);
+    saved->bytes[147]=1;assert(character_dynamic_source_y(saved,0)==560);
+    saved->bytes[147]=0;saved->bytes[120]=1;assert(character_dynamic_source_y(saved,0)==592);
+    saved->bytes[171]=1;assert(character_dynamic_source_y(saved,0)==624);
+    saved->bytes[179]=1;assert(character_dynamic_source_y(saved,0)==592);
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[172]=1;assert(character_dynamic_source_y(saved,1)==656);
+    saved->bytes[180]=1;assert(character_dynamic_source_y(saved,1)==592);
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[177]=1;assert(character_dynamic_source_y(saved,6)==624);
+    saved->bytes[618]=1;assert(character_dynamic_source_y(saved,6)==592);
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[149]=1;saved->bytes[181]=1;
+    assert(character_dynamic_source_y(saved,2)==560);
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[152]=1;saved->bytes[184]=1;
+    assert(character_dynamic_source_y(saved,5)==560);
     memcpy(saved->bytes,original,saved->byte_count);free(original);
     m->detail_index=0;save_menu_action(m,b,1);m->detail_steps=0;character_detail_frame(m);
     assert(!m->character_detail&&m->active);

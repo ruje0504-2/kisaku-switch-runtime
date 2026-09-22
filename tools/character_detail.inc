@@ -20,6 +20,55 @@ static unsigned character_enabled(const KFlags *f,unsigned role,unsigned item){
 static unsigned character_source_y(unsigned role,unsigned item){
     return 36+28*(item+(role==3&&item>=4));
 }
+/* 4ac3b0 also composes the small current-state strip below the status
+   rows.  The strip is part of statfr.akb (the h_*.akb files are only loaded
+   by the other CGirlStatus mode); leaving it out made every completed save
+   look as if it had no current route state.  Keep the branch order from the
+   native code: these flags are byte values, so the ==1 tests are deliberate
+   and must not be widened to "non-zero". */
+static unsigned character_byte(const KFlags *f,unsigned offset){
+    return f&&offset<f->byte_count?f->bytes[offset]:0;
+}
+static unsigned character_dynamic_source_y(const KFlags *f,unsigned role){
+    static const unsigned primary[8]={147,148,149,150,151,152,153,154};
+    static const unsigned progress[8]={120,121,122,123,124,125,126,127};
+    static const unsigned special[8]={171,172,173,174,175,176,177,178};
+    static const unsigned final_state[8]={179,180,181,182,183,184,185,186};
+    if(!f||role>=8)return 560;
+    unsigned p=character_byte(f,primary[role]),q=character_byte(f,progress[role]);
+    unsigned s=character_byte(f,special[role]),z=character_byte(f,final_state[role]);
+    if(role==1){
+        unsigned extra=character_byte(f,632);
+        if(p==1&&q==0&&z==0)return 560;
+        if(q==0||s!=0||z!=0){
+            if((s==1||extra==1)&&z==0)return 656;
+            if(z==1)return 592;
+            return 560;
+        }
+        return 592;
+    }
+    if(role==6){
+        unsigned extra=character_byte(f,618);
+        if(p==1&&q==0&&z==0&&extra==0)return 560;
+        if(q==0||s!=0||z!=0||extra!=0){
+            if(s==1&&z==0&&extra==0)return 624;
+            if(z==1&&extra==0)return 624;
+            if(extra==1)return 592;
+            return 560;
+        }
+        return 592;
+    }
+    /* Aya and Shou keep the native "opening" strip even when their final
+       completion byte is already set; their 004ac3b0 branch tests only the
+       primary and progress bytes. */
+    if(p==1&&q==0&&(role==2||role==5||z==0))return 560;
+    if(q==0||s!=0||z!=0){
+        if(s==1&&z==0)return 624;
+        if(z==1)return 592;
+        return 560;
+    }
+    return 592;
+}
 static void character_detail_motion(SaveMenu *m,KBootstrap *b,unsigned phase){
     unsigned base=phase<=2?16:24;
     int speed=bootstrap_message_setting(b,8,0);
@@ -102,6 +151,9 @@ static void character_detail_draw(SaveMenu *m,KBootstrap *b){
         ui_blit(d,status,0,sy,272,28,352+shift,64+row*32,1);row++;
     }
     for(;row<character_slots[role];row++)ui_blit(d,a,540,480,16,28,352+shift,68+row*32,1);
+    /* Current route-state strip at (48,424), from 4ac3b0's 216x32
+       statfr source rows 0x230/0x250/0x270/0x290. */
+    ui_blit(d,a,216,character_dynamic_source_y(f,role),216,32,48+shift,424,1);
     unsigned number=f->bytes[120+role];
     if(number/10)ui_blit(d,a,(number/10)*24,480,24,40,436+shift,400,1);
     ui_blit(d,a,(number%10)*24,480,24,40,460+shift,400,1);

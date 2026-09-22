@@ -1256,6 +1256,27 @@ int bootstrap_dispatch(KBootstrap *b){
         }
         v->sp--;b->handled++;return kvm_resume(v);
     }
+    if(main==23&&(sub==5||sub==7)){
+        /* 4fe310/4fe1d0 query one raw CBackLog slot.  23/7 returns the
+           record's text (41ccc0); VM strings are borrowed, so the record must
+           stay alive until the next native backlog mutation.  23/5 instead
+           returns 41e7a0's binary command-vector address.  KValue has no
+           length-carrying byte-vector type, and treating that pointer as a C
+           string would truncate at embedded NULs or read past the vector.
+           Keep both operands intact on every failure, as required by the
+           native-unknown-call boundary.
+        */
+        if(v->sp<2||v->stack[v->sp-2].string)
+            return error(b,"backlog numeric operand required (arguments preserved)");
+        int index=v->stack[v->sp-2].number;
+        if(sub==5)
+            return error(b,"23/5 raw backlog command pointer has no safe VM value (arguments preserved)");
+        if(index<0||(unsigned)index>=b->message_count)
+            return error(b,"23/7 backlog slot out of range (arguments preserved)");
+        const char *text=b->messages[index].text?b->messages[index].text:"";
+        v->sp-=2;v->stack[v->sp++]=(KValue){0,text};
+        b->handled++;return kvm_resume(v);
+    }
     if(main==23&&(sub==0||sub==1||sub==4||sub==6)){
         /* Kisaku 5061c0 case 0x17 -> 4fe5f0 (CFuncBackLog).
            Validate before consuming operands; queries replace their operands
@@ -1391,17 +1412,17 @@ int bootstrap_dispatch(KBootstrap *b){
     if(main==29&&(sub==0||sub==1)){
         /* 5061c0 case 0x1d -> CFuncWait 4f2970 -> 4f2900, NOT
            CFuncBackLog. Two operands: milliseconds, then update flag.
-           4f2890 uses 4e2ee0 for Shift/Ctrl/script-skippable waits.
-           The optional 4e3a20 application-menu pump is not yet portable. */
+           4f2890 uses 4e2ee0 for Shift/Ctrl/script-skippable waits. The
+           Windows 4e3a20 loop is represented by the frontend's SDL event
+           pump while native_wait_pump is set. */
         if(v->sp<3||v->stack[v->sp-2].string||v->stack[v->sp-3].string)
             return error(b,"29 wait requires two numeric operands (arguments preserved)");
         int32_t duration=v->stack[v->sp-2].number;
         if(duration<0)
             return error(b,"29 negative native wait unsupported (arguments preserved)");
-        if(duration&&v->stack[v->sp-3].number)
-            return error(b,"29 application-menu pump unsupported (arguments preserved)");
         b->native_wait_clock=(uint64_t)duration*60;
         b->native_wait_skippable=(unsigned)sub;
+        b->native_wait_pump=duration&&v->stack[v->sp-3].number?1:0;
         v->sp-=3;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==810){
@@ -2897,6 +2918,7 @@ void bootstrap_frame(KBootstrap *b){
         int key_skip=b->effect_fast&&!(flags&0x4000);
         if(b->native_wait_skippable&&(script_skip||key_skip))b->native_wait_clock=0;
         else b->native_wait_clock=b->native_wait_clock>1000?b->native_wait_clock-1000:0;
+        if(!b->native_wait_clock)b->native_wait_pump=0;
     }
     if(b->wait_clock)b->wait_clock=b->wait_clock>1000?b->wait_clock-1000:0;
     /* 60 Hz host clock, 20 ms AX ticks. Headless diagnostics advance this
