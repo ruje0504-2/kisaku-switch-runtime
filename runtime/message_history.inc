@@ -112,11 +112,19 @@ int bootstrap_settings_apply(KBootstrap *b,const int *values,unsigned count){
 static void history_restore_apply(KBootstrap *b){
     const KControlRecord *record=b->history_restore;
     if(!record||!b->message_active||b->restore_pending)return;
-    unsigned count=(record->count-1)/2;
+    unsigned first=record->values[0].number==2?4:1;
+    unsigned count=first==4?(unsigned)record->values[1].number:(record->count-1)/2;
     memset(b->history,0,sizeof(b->history));memset(b->history_voice,0,sizeof(b->history_voice));
     for(unsigned i=0;i<count;i++){
-        strcpy(b->history[i],record->values[1+i*2].string);
-        strcpy(b->history_voice[i],record->values[2+i*2].string);
+        strcpy(b->history[i],record->values[first+i*2].string);
+        strcpy(b->history_voice[i],record->values[first+1+i*2].string);
+    }
+    if(b->backlog_restore){
+        KBacklogSnapshot *s=b->backlog_restore;
+        for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}
+        free(b->messages);b->messages=s->records;b->message_count=s->count;b->message_index=s->index;
+        b->vm->globals[0][50].number=(b->vm->globals[0][50].number&~0x100)|(s->recording?0x100:0);
+        s->records=NULL;s->count=0;kbacklog_snapshot_free(s);b->backlog_restore=NULL;
     }
     b->history_count=count;b->history_next=count%64;b->history_restore=NULL;b->message_voice_name[0]=0;
 }

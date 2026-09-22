@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "backlog_store.h"
 
 static void title(KBootstrap *b){
     for(unsigned i=0;i<3000;i++){
@@ -23,6 +24,61 @@ static void dialogue(KBootstrap *b){
         bootstrap_frame(b);
     }
     assert(!"dialogue timeout");
+}
+static void same_backlog(const KBootstrap *a,const KBootstrap *b){
+    assert(a->message_count==b->message_count&&a->message_index==b->message_index);
+    assert((a->vm->globals[0][50].number&0x100)==(b->vm->globals[0][50].number&0x100));
+    for(unsigned i=0;i<a->message_count;i++){
+        const KMessageRecord *x=&a->messages[i],*y=&b->messages[i];
+        assert(x->size==y->size&&x->flag==y->flag);
+        if(x->size)assert(!memcmp(x->data,y->data,x->size));
+        assert(!strcmp(x->text?x->text:"",y->text?y->text:""));
+    }
+}
+static void put_number(uint8_t *p,size_t *n,int v){p[(*n)++]=0x32;for(int i=3;i>=0;i--)p[(*n)++]=(uint8_t)((unsigned)v>>(i*8));}
+static void backlog_save_fixture(KBootstrap *b,const char *game,const char *root){
+    KMessageRecord *old=b->messages;unsigned old_count=b->message_count;int old_index=b->message_index,flags=b->vm->globals[0][50].number;
+    b->messages=calloc(72,sizeof(*b->messages));assert(b->messages);b->message_count=72;b->message_index=69;
+    b->vm->globals[0][50].number|=0x100;
+    uint8_t code[1024];size_t n=0;
+    for(unsigned i=0;i<2;i++){
+        put_number(code,&n,0);code[n++]=0x33;
+        const char *name=b->voice.entries[i].name;size_t len=strlen(name)+1;memcpy(code+n,name,len);n+=len;
+        put_number(code,&n,5);put_number(code,&n,17);code[n++]=0x18;
+    }
+    code[n++]=0x0a;code[n++]='A';code[n++]=0;code[n++]=0;
+    for(unsigned i=0;i<70;i++){
+        KMessageRecord *m=&b->messages[i];m->data=malloc(n);assert(m->data);memcpy(m->data,code,n);m->size=m->capacity=n;m->flag=1;
+    }
+    KControlRecord packed={0};KBacklogSnapshot *snapshot=NULL;
+    assert(!kbacklog_store_pack(b,&packed)&&!kbacklog_store_unpack(&packed,&snapshot));kbacklog_snapshot_free(snapshot);snapshot=NULL;
+    unsigned at=4+2*b->history_count;char *hex=(char *)packed.values[at].string;char keep=hex[0];hex[0]='z';
+    assert(kbacklog_store_unpack(&packed,&snapshot)<0&&!snapshot);hex[0]=keep;
+    packed.values[2].number=72;assert(kbacklog_store_unpack(&packed,&snapshot)<0&&!snapshot);packed.values[2].number=69;
+    assert(!bootstrap_save_slot(b,12));
+    KBootstrap *loaded=bootstrap_create_split(game,root);assert(loaded);title(loaded);
+    assert(!bootstrap_load_slot(loaded,0,12));dialogue(loaded);same_backlog(b,loaded);
+    assert(bootstrap_backlog_native(loaded)&&bootstrap_backlog_count(loaded)==70);
+    KBacklogVoices voices={0};char why[256];assert(!bootstrap_backlog_replay(loaded,69,NULL,&voices,why));
+    assert(voices.count==2&&!strcmp(voices.names[0],b->voice.entries[0].name)&&!strcmp(voices.names[1],b->voice.entries[1].name));kbacklog_voices_free(&voices);
+    bootstrap_destroy(loaded);
+    /* A valid outer save with a malformed v2 record must leave title/VM intact. */
+    KFlags *f=NULL;KControlStore *controls=NULL;assert(!kslot_read(root,0,12,&f,&controls));
+    KControlRecord *history=NULL;for(unsigned i=0;i<controls->count;i++)if(controls->records[i].type==0xfffd)history=&controls->records[i];assert(history);
+    ((char *)history->values[at].string)[0]='z';assert(!kslot_write_state(root,0,13,f,controls->records,controls->count,&b->layers[0],&b->layers[4]));
+    loaded=bootstrap_create_split(game,root);assert(loaded);title(loaded);uint8_t *raw=loaded->raw_variables;KMessageRecord *before=loaded->messages;
+    assert(bootstrap_load_slot(loaded,0,13)<0&&loaded->title.active&&loaded->raw_variables==raw&&loaded->messages==before&&!loaded->backlog_restore);bootstrap_destroy(loaded);
+    /* Version 1 retains its flattened text compatibility path. */
+    for(unsigned i=0;i<history->count;i++)free((void *)history->values[i].string);free(history->values);
+    history->count=3;history->values=calloc(3,sizeof(KValue));assert(history->values);history->values[0].number=1;
+    char *text=malloc(4),*voice=malloc(1);assert(text&&voice);memcpy(text,"old",4);voice[0]=0;history->values[1].string=text;history->values[2].string=voice;
+    assert(!kslot_write_state(root,0,14,f,controls->records,controls->count,&b->layers[0],&b->layers[4]));
+    loaded=bootstrap_create_split(game,root);assert(loaded);title(loaded);assert(!bootstrap_load_slot(loaded,0,14));dialogue(loaded);
+    assert(loaded->history_count==1&&!strcmp(loaded->history[0],"old"));bootstrap_destroy(loaded);
+    kflags_free(f);kcontrol_free(controls);kbacklog_store_free(&packed);
+    for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);
+    b->messages=old;b->message_count=old_count;b->message_index=old_index;b->vm->globals[0][50].number=flags;
+    puts("Native backlog save: 70 records, ordered voices, empty slots, recording state, corrupt data and v1 compatibility: PASS");
 }
 int main(int argc,char **argv){
     assert(argc==3);
@@ -45,6 +101,7 @@ int main(int argc,char **argv){
         assert(loaded->title.native_ids[1]==1&&loaded->title.native_ids[3]==3);
         assert(!bootstrap_load_slot(loaded,0,slot));dialogue(loaded);
         fprintf(stderr,"loaded checkpoint=%d read=%d (expected %d)\n",loaded->vm->globals[0][48].number,loaded->message_read_id,read);
+        same_backlog(b,loaded);
         assert(loaded->vm->globals[0][48].number==checkpoint&&loaded->message_read_id==read);
         assert(loaded->layers[0].width==b->layers[0].width&&loaded->layers[0].height==b->layers[0].height);
         unsigned diffs=0,minx=640,miny=480,maxx=0,maxy=0;
@@ -53,9 +110,10 @@ int main(int argc,char **argv){
         assert(!diffs);
         bootstrap_confirm(loaded);dialogue(loaded);
         bootstrap_confirm(b);dialogue(b);
-        assert(loaded->message_read_id==b->message_read_id);
+        assert(loaded->message_read_id==b->message_read_id);same_backlog(b,loaded);
         bootstrap_destroy(loaded);
     }
+    backlog_save_fixture(b,argv[1],argv[2]);
     /* Reach a real checkpoint after the first parameter animation. This
        catches private-window state that opening-only snapshots never touch. */
     for(unsigned i=0;b->param_values[0]!=805||!bootstrap_can_save(b)||b->message_revealing||b->param_animation_active;i++){

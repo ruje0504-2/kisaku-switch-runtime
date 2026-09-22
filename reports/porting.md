@@ -666,3 +666,12 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 验证通过：`./build-host.sh`、`./test-host.sh 鬼作`、`build/kisaku-bootstrap-test 鬼作 <临时目录> --title-paths`、标题专项及完整前端ASan/UBSan（detect_leaks=0）、`./build-switch.sh`。日志local/title-load-{build,tests,focused,sanitized,panel-sanitized,switch}.log。全回归后仅扩充标题测试的秃作首句和坏FLAG断言，重新编译并通过普通/消毒器专项；运行时代码未再改动。
 - NRO SHA-256：`0efe2f0bd82572257da6b521e0525ec8330cd05ff65a56c624f16be63c666f97`。Switch实机、秃作完整路线、全部后期存档未验证；未运行PC原版。
 - `python3 tools/package_sd.py 鬼作`、`git diff --check`通过；交付/switch/kisaku主入口与兼容名SHA均与上述构建一致，日志local/title-load-package.log。
+
+## 2026-09-22 回看原生命令与多语音存档恢复
+
+- 新增backlog_store.h与0xfffd扩展v2，保存全部原生命令槽、文本/语音标记、槽索引和录制状态，保留v1扁平历史兼容。二进制命令以十六进制编码；沿用4096槽与262144内容上限，编码总量16MiB/单字符串1MiB，超限拒绝而非截断。
+- 先完整校验并分配恢复记录，原始MES重建到目标对话后才替换回看。加载失败不替换现态，提前销毁加载运行时也释放暂存记录；防止重建清空或重复追加保存历史。
+- 真实前三个检查点按槽逐字节对照，下一句继续录制也一致；70条记录、两条语音顺序、空槽与活动索引、坏编码/越界索引、坏存档现态保留、旧v1恢复通过。参数805检查点原有RGB零差异回归仍通过。
+- `./build-host.sh`、保存专项ASan/UBSan（ASAN_OPTIONS=detect_leaks=0、UBSAN_OPTIONS=halt_on_error=1）、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`通过。日志local/backlog-save-{build,focused,sanitized,switch,package}.log。
+- 构建与SD交付主入口/兼容名SHA-256均为`aedeea431e28ce9d49374e93342aef1de553707041f673a316592abbebbe265b`。Switch实机、全路线与全部回看命令未验证；跨记录文字状态、23/5/7引用及其他未知重放调用仍未实现，文字阴影按用户要求不实现。
+- 最终`./test-host.sh 鬼作`完整回归及`git diff --check`通过，日志local/backlog-save-tests.log。

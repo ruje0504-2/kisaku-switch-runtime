@@ -120,6 +120,7 @@ typedef struct {
     char history[64][4097];unsigned history_next,history_count;
     unsigned message_user_hidden,force_skip,effect_fast;
     const KControlRecord *history_restore;
+    struct KBacklogSnapshot *backlog_restore;
     int message_read_id,message_reveal_x,message_reveal_y,message_end_x,message_end_y;
     uint32_t message_color;
     KImage message_text,fade_surface,helper_surfaces[3];

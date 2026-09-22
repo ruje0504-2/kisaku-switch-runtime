@@ -30,12 +30,8 @@ static int save_runtime_to(KBootstrap *b,unsigned slot,const char *utf8,const ch
     unsigned outer_record=count;
     if(base){if(count>=29)return -1;records[count++]=(KControlRecord){0,0xfffc,NULL,0};}
     if(count>=29||b->history_count>64)return -1;
-    KValue history[129]={{1,NULL}};
-    for(unsigned i=0;i<b->history_count;i++){
-        unsigned index=(b->history_next+64-b->history_count+i)%64;
-        history[1+i*2]=(KValue){0,b->history[index]};history[2+i*2]=(KValue){0,b->history_voice[index]};
-    }
-    records[count++]=(KControlRecord){0,0xfffd,history,1+b->history_count*2};
+    unsigned history_at=count++;
+    records[history_at]=(KControlRecord){0,0xfffd,NULL,0};
     KValue resume[3]={{1,NULL},{b->message_read_id,NULL},{b->letter_mode?2:1,NULL}};
     if(b->novel_mode||b->letter_mode){
         if(b->message_read_id<0||count>=28)return -1;
@@ -71,7 +67,8 @@ static int save_runtime_to(KBootstrap *b,unsigned slot,const char *utf8,const ch
     if(utf8){memset(record+17,0,28);memcpy(record+17,note,note_size);}
     flags.raw=raw;flags.raw_count=(unsigned)raw_size;
     KValue bank1[8192];memcpy(bank1,v->globals[1],v->global_count[1]*sizeof(KValue));bank1[60]=(KValue){1,NULL};flags.globals[1]=bank1;
-    int result=kslot_write_state(destination,selector,slot,&flags,records,count,&b->layers[0],&b->layers[4]);free(outer);
+    if(kbacklog_store_pack(b,&records[history_at])){free(raw);free(outer);return -1;}
+    int result=kslot_write_state(destination,selector,slot,&flags,records,count,&b->layers[0],&b->layers[4]);free(outer);kbacklog_store_free(&records[history_at]);
     if(!result){free(b->raw_variables);b->raw_variables=raw;b->raw_size=raw_size;v->raw=raw;v->raw_size=raw_size;v->globals[1][60]=(KValue){1,NULL};}else free(raw);
     return result;
 }
@@ -108,7 +105,7 @@ static int load_runtime_from(KBootstrap *b,const char *root,unsigned selector,un
     if(selector>1)return -1;
     KFlags *f=NULL,*catalog=NULL;KControlStore *s=NULL;KBootstrap *restored=NULL;
     uint8_t *context_ax=NULL;size_t context_ax_size=0;KImage context_atlas={0},resident_scene={0};
-    const KControlRecord *context=NULL;
+    const KControlRecord *context=NULL;KBacklogSnapshot *backlog=NULL;
     if(kslot_read(root,selector,slot,&f,&s))return -1;
     if(kslot_scene(root,selector,slot,&resident_scene)<0)goto bad;
     /* Reject empty native slots and inconsistent module/checkpoint metadata. */
@@ -135,11 +132,19 @@ static int load_runtime_from(KBootstrap *b,const char *root,unsigned selector,un
     const KControlRecord *history=NULL;
     for(unsigned i=0;i<s->count;i++)if(s->records[i].type==0xfffd){
         const KControlRecord *r=&s->records[i];
-        if(history||r->id||!r->count||r->count>129||!(r->count&1)||r->values[0].string||r->values[0].number!=1)goto bad;
-        for(unsigned j=1;j<r->count;j++){
-            const char *text=r->values[j].string;
-            if(!text||r->values[j].number||strlen(text)>(j&1?4096u:260u)||(j&1&&!text[0]))goto bad;
-            if(!(j&1)&&text[0]){unsigned k=0;for(;k<b->voice.count;k++)if(equal(text,b->voice.entries[k].name))break;if(k==b->voice.count)goto bad;}
+        if(history||r->id||!r->count||r->values[0].string)goto bad;
+        unsigned first=1,flat=0;
+        if(r->values[0].number==1){
+            if(r->count>129||!(r->count&1))goto bad;
+            flat=(r->count-1)/2;
+        }else{
+            if(kbacklog_store_unpack(r,&backlog))goto bad;
+            first=4;flat=(unsigned)r->values[1].number;
+        }
+        for(unsigned j=0;j<flat*2;j++){
+            const KValue *value=&r->values[first+j];const char *text=value->string;
+            if(!text||value->number||strlen(text)>(j&1?260u:4096u)||(!(j&1)&&!text[0]))goto bad;
+            if((j&1)&&text[0]){unsigned k=0;for(;k<b->voice.count;k++)if(equal(text,b->voice.entries[k].name))break;if(k==b->voice.count)goto bad;}
         }
         history=r;
     }
@@ -206,7 +211,7 @@ static int load_runtime_from(KBootstrap *b,const char *root,unsigned selector,un
     f->next=b->flag_files;b->flag_files=f;b->flag_file_count++;
     s->next=b->control_files;b->control_files=s;b->control_file_count++;
     b->title.active=0;b->title_load_requested=0;
-    b->history_restore=history;
+    b->history_restore=history;kbacklog_snapshot_free(b->backlog_restore);b->backlog_restore=backlog;backlog=NULL;
     b->restore_mode=resume_mode;b->restore_read_id=resume_read;b->restore_pending=resume_read>=0;b->restore_remaining=4096;
     if(b->read_flags&&kread_flags_load(bootstrap_save_dir(b),selector,b->read_flags,b->read_size)<0)return -1;
     b->read_selector=selector;b->read_loaded=1;b->read_dirty=0;
@@ -214,7 +219,7 @@ static int load_runtime_from(KBootstrap *b,const char *root,unsigned selector,un
     v->sp=0;v->syscall=28;v->status=KVM_SYSCALL;
     if(kvm_push(v,(KValue){9,NULL})||bootstrap_dispatch(b))return -1;
     return 0;
-bad:rmt_free(&resident_scene);free(context_ax);rmt_free(&context_atlas);restored_windows_free(restored);kflags_free(catalog);kflags_free(f);kcontrol_free(s);return -1;
+bad:kbacklog_snapshot_free(backlog);rmt_free(&resident_scene);free(context_ax);rmt_free(&context_atlas);restored_windows_free(restored);kflags_free(catalog);kflags_free(f);kcontrol_free(s);return -1;
 }
 
 int bootstrap_load_slot(KBootstrap *b,unsigned selector,unsigned slot){return b?load_runtime_from(b,bootstrap_save_dir(b),selector,slot):-1;}
