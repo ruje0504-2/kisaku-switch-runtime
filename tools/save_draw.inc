@@ -48,6 +48,25 @@ static void save_menu_book(SaveMenu *m){
     }
 }
 static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
+    if(m->live_character){
+        character_detail_frame(m);character_live_close(m,b);if(!m->active)return;
+        if(ui_canvas(&m->canvas))return;
+        uint64_t now=SDL_GetTicks64();
+        if(!m->detail_phase&&!m->detail_view&&now-m->portrait_started>=40){
+            unsigned steps=(unsigned)((now-m->portrait_started)/40);
+            m->portrait_frame=(m->portrait_frame+32-steps%32)%32;m->portrait_started+=steps*40;
+        }
+        memcpy(m->canvas.pixels,b->layers[0].pixels,640*480*4);
+        character_detail_draw(m,b);
+        if(m->detail_phase==1||m->detail_phase==2){
+            unsigned a=m->detail_steps?255*m->detail_step/m->detail_steps:255;
+            if(m->detail_phase==2)a=255-a;
+            for(unsigned i=0;i<640*480;i++)for(unsigned c=0;c<3;c++)
+                m->canvas.pixels[i*4+c]=(uint8_t)(m->canvas.pixels[i*4+c]*a/255+b->layers[0].pixels[i*4+c]*(255-a)/255);
+        }
+        ui_present(r,&m->canvas,&m->texture);return;
+    }
+
     if(save_menu_assets(m,b)){snprintf(m->status,sizeof(m->status),"画面データを読み込めませんでした");return;}
     if(m->character_detail)character_detail_frame(m);
     int state[]={m->save,m->slot,m->selector,m->overwrite,m->loading,m->confirm_load,m->button,m->focus,m->hover,m->last_slot,(int)m->param_detail,(int)m->character_detail,(int)m->detail_index,m->detail_hover,(int)m->detail_step,(int)m->detail_view,(int)m->detail_phase};

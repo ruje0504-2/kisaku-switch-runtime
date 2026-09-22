@@ -1538,6 +1538,13 @@ int bootstrap_dispatch(KBootstrap *b){
         }
         v->sp-=2;b->handled++;return kvm_resume(v);
     }
+    if(main==31&&sub==910){
+        /* 4fb2f0 -> CGirlStatus::4b2370, live flags, modal result in sys18. */
+        if(v->sp<2||v->stack[v->sp-2].string||v->stack[v->sp-2].number<0||v->stack[v->sp-2].number>7||b->file_modal||b->message_request)
+            return error(b,"31/910 invalid character or pending menu (arguments preserved)");
+        b->character_request=(unsigned)v->stack[v->sp-2].number+1;
+        b->file_modal=2;v->sp-=2;b->handled++;return kvm_resume(v);
+    }
     if(main==31&&sub==320){
         /* 4fae70 constructs CScMode/CHageScMode with no script arguments.
            The native modal returns its selected scene value through the VM
@@ -1943,7 +1950,7 @@ int bootstrap_dispatch(KBootstrap *b){
             if(v->global_count[1]<=60)return error(b,"31/527 flag bank missing (arguments preserved)");
             v->sp-=2;if(kvm_push(v,v->globals[1][60]))return error(b,"31/527 return allocation failed");
         }else{
-            b->exec_status|=action?8:16;b->file_modal=1;b->message_request=action?3:2;v->sp-=2;
+            b->exec_status|=action?8:16;b->file_modal=action?1:3;b->message_request=action?3:2;v->sp-=2;
         }
         b->handled++;return kvm_resume(v);
     }
@@ -3042,7 +3049,7 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
 
 int bootstrap_run(KBootstrap *b,unsigned budget){
     if(!b)return -1;
-    exec526_restore(b);animation522_restore(b);overlay524_restore(b);message_fade_restore(b);param_animation_restore(b);
+    exec526_restore(b);param_animation_restore(b);animation522_restore(b);overlay524_restore(b);message_fade_restore(b);
     int result=bootstrap_run_inner(b,budget);
     animation522_restore(b);message_fade_present(b);overlay524_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
     return result;
@@ -3051,7 +3058,7 @@ void bootstrap_frame(KBootstrap *b){
     if(b&&b->native_cg)native_cg_frame(b);
     if(b->quit_modal||b->quit_requested)return;
     b->frames++;if(b->frames>b->input_event_until)b->input_events=0;
-    exec526_restore(b);animation522_begin_frame(b);overlay524_restore(b);message_fade_restore(b);param_animation_restore(b);
+    exec526_restore(b);param_animation_restore(b);animation522_begin_frame(b);overlay524_restore(b);message_fade_restore(b);
     if(b->image_loading){
         KImage im={0};int ready=kimage_worker_poll(b->image_worker,&im);
         if(ready){

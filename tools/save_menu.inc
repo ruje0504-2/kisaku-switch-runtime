@@ -7,6 +7,7 @@ typedef struct {
     int page_key,focus,button,request;unsigned valid[10];int64_t dates[10];
     uint64_t draw_key;KImage artwork,load_artwork,common,canvas,previews[10];SDL_Texture *texture;
     KFlags *states[10];KSlotInfo info[10];int last_slot,hover,areas[31][5];unsigned area_count;
+    unsigned live_character,portrait_frame;uint64_t portrait_started;KImage portrait;
     KImage detail_image;int detail_hover;unsigned detail_view,detail_phase,detail_step,detail_steps;uint64_t detail_started;
     KImage dialog_artwork,note_artwork,detail_artwork,detail_status_artwork;unsigned param_detail,param_steps,character_detail,detail_index;uint64_t param_started;
 } SaveMenu;
@@ -28,7 +29,7 @@ static void save_menu_refresh(SaveMenu *m,const char *root){
 }
 static void save_menu_open(SaveMenu *m,KBootstrap *b,int load){
     if(m->active||b->scene_replay)return;
-    m->active=1;m->save=!load&&bootstrap_can_save(b);m->slot=1;
+    m->active=1;m->save=!load;m->slot=1;
     if(b->raw_size>=1002){unsigned last=b->raw_variables[1000]|(unsigned)b->raw_variables[1001]<<8;if(last<100)m->slot=(int)last+1;}
     m->last_slot=m->slot;m->hover=0x100+(m->slot-1)%10;
     m->selector=b->vm->globals[1][61].number==1;m->overwrite=m->confirm_load=0;m->param_detail=m->character_detail=0;m->detail_index=0;rmt_free(&m->detail_artwork);rmt_free(&m->detail_status_artwork);m->button=2;m->status[0]=0;m->focus=0;m->page_key=0;
@@ -68,7 +69,7 @@ static void save_menu_action(SaveMenu *m,KBootstrap *b,int action){
     if(m->focus==2&&!action){save_menu_action(m,b,1);return;}
     if(m->focus==2&&(action==2||action==3)){m->focus=0;return;}
     if(action==2||action==3||action==8||action==9){int delta=action==2?-1:action==3?1:action==8?-10:10;m->focus=0;m->slot=(m->slot-1+delta+100)%100+1;m->overwrite=0;m->status[0]=0;save_menu_refresh(m,bootstrap_save_dir(b));return;}
-    if(action==6){m->focus=0;m->save=!m->save&&bootstrap_can_save(b);m->selector=b->vm->globals[1][61].number==1;m->overwrite=0;m->status[0]=0;save_menu_refresh(m,bootstrap_save_dir(b));return;}
+    if(action==6){m->focus=0;m->save=!m->save;m->selector=b->vm->globals[1][61].number==1;m->overwrite=0;m->status[0]=0;save_menu_refresh(m,bootstrap_save_dir(b));return;}
     if(action==7){
         unsigned row=(unsigned)(m->slot-1)%10;
         if(m->selector||m->focus||!m->states[row])return;
@@ -126,7 +127,7 @@ static int save_menu_step(SaveMenu *m,KBootstrap **live){
     if(ready){bootstrap_destroy(*live);*live=m->next;m->next=NULL;m->loading=m->active=0;m->page_key=0;return 1;}return 0;
 }
 static void save_menu_clear(SaveMenu *m){
-    rmt_free(&m->detail_image);
+    rmt_free(&m->portrait);rmt_free(&m->detail_image);
     rmt_free(&m->dialog_artwork);rmt_free(&m->note_artwork);rmt_free(&m->detail_artwork);rmt_free(&m->detail_status_artwork);
     rmt_free(&m->artwork);rmt_free(&m->load_artwork);rmt_free(&m->common);rmt_free(&m->canvas);for(unsigned i=0;i<10;i++){rmt_free(&m->previews[i]);kflags_free(m->states[i]);m->states[i]=NULL;}SDL_DestroyTexture(m->texture);m->texture=NULL;
 }

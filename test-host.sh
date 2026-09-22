@@ -37,6 +37,7 @@ if [ -f local/fonts/arshanghaisonggbpro_lt.otf ]; then
 fi
 build/flags-test "$test_save/flags-test.dat"
 build/kisaku-bootstrap-test "$game" "$test_save"
+build/kisaku-bootstrap-test "$game" "$menu_save" --weekend-reports
 build/kisaku-bootstrap-test "$game" "$menu_save" --title-paths
 build/kisaku-bootstrap-test "$game" "$menu_save" --hires
 build/save-runtime-test "$game" "$roundtrip_save"

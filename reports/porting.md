@@ -978,3 +978,24 @@ NRO SHA256（三份一致）：`c853368a80662e50fccb92ddea3b1021dcc8b6950cba7bbf
 未验证：Switch实际硬件帧产出、与软件解码色彩对比、音画同步/长时稳定性、CPU负载与帧时变化；没有把设备创建、链接或交叉编译作为实机成功证据。VIC转色与GPU零拷贝未实现，本轮不包含Mesa迁移。
 
 完整`./test-host.sh 鬼作`通过（`local/nvtegra-host-test.log`）；`python3 tools/package_sd.py 鬼作`与`git diff --check`通过。交付主入口、兼容入口和build-switch的NRO哈希一致。未额外重复GLES像素测试，本次没有更改渲染路径。
+
+## 2026-09-23：日记存档、剧情角色档案及周面板残留
+
+对应用户三张实机照片，沿用静态分析，不运行PC程序：
+
+- `SAVE.mes`“管理人日誌をつけるぞ”在`+0x360..0x375`调用`31/527/0`，是存档而非读档。前端此前使用`!load && bootstrap_can_save()`决定模式；脚本已隐藏消息窗，导致保存门限返回false并错误打开读档。现在保存/读取模式只按调用者选择；原生脚本存档模态独立标记为file_modal=3，允许隐藏消息窗口的合法MES检查点保存，其余容量、栈帧、读ID、异步任务等校验保留。不能保存时显示保存失败原因，不把操作改成读档。
+- 剧情角色档案缺少`31/910`：`4fd950 -> 4fb2f0 -> 4b2370`建立CGirlStatus，参数为0..7角色，使用当前FLAG，结束后写sys18=0。现接通独立文件模态，复用已核对的角色详情行/解锁判断、原版statfr与八套stat图集；使用全宽坐标而非存档预览的-320偏移。角色32视角图按`4ac3b0`分支选择，240×360/7列，40ms轮播及左右调整；详情图可打开/关闭，返回恢复脚本。状态只读快照，不写存档或解锁。当前全页进退复用便携淡化，未声称与原版两个私有表面分阶段淡化逐帧完全一致。
+- `31/522`移动参数按`46d350/46cee0`复核：首张16→172（6×26），后续每张间隔108（9×12，末步等待），20ms原生时钟，保留现有60Hz量化。周面板原生调用中原先立即合成并保存底图；同一VM批次随后更新背景时，批次末尾又恢复旧底图，覆盖新的背景而留下残片。现将合成推迟到VM批次/帧末尾，同时让重复present先恢复上一轮覆盖。帧/VM入口的叠层恢复调整为绘制的逆序，参数窗先于周面板撤销。
+
+新增回归使用真实SAVE.mes进入存档、写槽98、从新标题运行时读取并恢复30977消息，以及hiromi_d.mes进入31/910并返回。周面板测试以非均匀底图验证完整移动/隐藏后所有像素恢复；前端覆盖八角色打开/关闭、详情图、方向键和指针返回。只作为主机证据，三张照片的Switch实机复测未验证。
+
+残留专项已做修复前后对照：在隔离的local源码副本中换回HEAD的animation522.inc，同一“周标签更新→同批写入新底图→隐藏”测试于kisaku_bootstrap_test.c:302像素断言失败（local/weekend-before-test.log）；当前版本通过（local/weekend-calendar-test.log），不是仅依赖静止画面推断。角色档案实际SDL软件呈现截图见local/weekend.character-live.png。
+
+验证补充：
+
+- `./build-host.sh`与`./test-host.sh 鬼作`第一轮通过（local/weekend-final-build.log / weekend-final-host.log）。随后因增加“同批换背景”修复，另以最终源码执行完整构建/回归，结果记录在local/weekend-final2-*。
+- `sh local/weekend-asan-build.sh`以ASan/UBSan编译核心与前端；`--weekend-reports`通过，最后修改后的`--calendar`重新编译并通过。前端八角色、存读档、回看、姓名等专项通过，日志local/weekend-frontend-asan.log。第一次前端运行因复用测试目录中已有letter子目录触发mkdir断言，改用新的临时目录后通过；不是运行时内存错误。ASAN_OPTIONS=detect_leaks=0:halt_on_error=1，UBSAN_OPTIONS=halt_on_error=1，未启用泄漏检查。
+- `tools/test_present_gles.sh`通过（local/weekend-gles.log）：既有菜单/高清文字、增量上传、信件与淡化实际SDL/GLES像素对照未回归。
+- 最终`./build-switch.sh`通过（local/weekend-final2-switch.log，运行时-Werror）。NRO SHA256：`d9344f300a40e3dce05de5ba00c227ee8f239b59732a5dadccdcb3653dbfde99`。
+
+最终源码的`./build-host.sh && ./test-host.sh 鬼作`全部通过（local/weekend-final2-build.log / weekend-final2-host.log），包含新增真实日记保存/新运行时读取、角色入口、八角色前端和原有完整回归。`python3 tools/package_sd.py 鬼作`与`git diff --check`通过；build-switch、交付主入口和兼容NRO一致。Switch照片对应场景的实机复测、原版完整角色进退动画时序及全路线仍未验证。

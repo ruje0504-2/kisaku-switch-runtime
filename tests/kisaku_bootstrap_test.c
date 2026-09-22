@@ -262,6 +262,10 @@ static void test_week(const char *root,const char *saves){
     for(unsigned y=0;y<400;y++)for(unsigned x=0;x<640;x++){
         uint8_t *p=b->layers[7].pixels+y*2560+x*4;p[0]=y;p[1]=x;p[3]=255;
     }
+    KImage *screen=&b->layers[0];assert(screen->pixels);
+    size_t screen_bytes=(size_t)screen->stride*screen->height;
+    for(size_t n=0;n<screen_bytes;n++)screen->pixels[n]=(uint8_t)(n*13+7);
+    uint8_t *clean=malloc(screen_bytes);assert(clean);memcpy(clean,screen->pixels,screen_bytes);
     week_call(b,0,0);week_call(b,1,0);assert(b->exec522_motion);
     for(unsigned n=0;n<8;n++)bootstrap_frame(b);
     assert(!b->error[0]&&!b->exec522_motion&&b->exec522_x[0]==172);
@@ -286,6 +290,16 @@ static void test_week(const char *root,const char *saves){
     week_call(b,5,0);assert(b->exec522_visible[0]);
     for(unsigned n=0;n<12;n++)bootstrap_frame(b);
     assert(!b->exec522_motion&&!b->exec522_visible[0]&&!b->exec522_visible[1]);
+    assert(!memcmp(clean,screen->pixels,screen_bytes));
+    /* A VM batch may update the background after a native week-label call.
+       Private windows must not restore a pre-update snapshot over that write. */
+    week_call(b,1,0);for(unsigned n=0;n<8;n++)bootstrap_frame(b);
+    week_call(b,3,1);
+    for(size_t n=0;n<screen_bytes;n++)screen->pixels[n]=(uint8_t)(n*17+41);
+    memcpy(clean,screen->pixels,screen_bytes);
+    bootstrap_frame(b);week_call(b,5,0);
+    for(unsigned n=0;n<12;n++)bootstrap_frame(b);
+    assert(!memcmp(clean,screen->pixels,screen_bytes));free(clean);
     b->param_animation_active=1;b->param_animation_step=7;b->input_events=0;
     bootstrap_confirm(b);bootstrap_cancel(b);bootstrap_pointer(b,50,400,1);
     assert(b->param_animation_active&&b->param_animation_step==7&&!b->input_events);
@@ -1873,7 +1887,43 @@ static void test_weekend_books(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("Weekend original MES: locked/unlocked book lists, HD labels, cancel=0, parent return, book playback and parameter completion: PASS");
 }
+static void test_weekend_reports(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);b->title.active=0;
+    uint8_t *data=NULL;size_t size=0;
+    assert(!ai6_read_named(&b->scripts,"SAVE.mes",&data,&size));
+    int id=kvm_add_module(b->vm,"SAVE.mes",data,size);assert(id>=0);b->module_data[id]=data;assert(!kvm_start(b->vm,id));
+    weekend_wait_choice(b);b->choice_selected=0;bootstrap_confirm(b);
+    for(unsigned i=0;i<10000&&!b->file_modal;i++){
+        int rc=bootstrap_run(b,100000);if(rc<0)fprintf(stderr,"diary: %s\n",b->error);assert(rc>=0);
+        if(b->message_active||b->wait_input)bootstrap_confirm(b);
+        bootstrap_frame(b);
+    }
+    fprintf(stderr,"diary modal=%u request=%u can_save=%d read=%d message=%u\n",b->file_modal,b->message_request,bootstrap_can_save(b),b->vm->globals[0][48].number,b->message_active);
+    assert(b->file_modal==3&&b->message_request==2&&bootstrap_can_save(b));
+    assert(!bootstrap_save_slot(b,98));
+    KBootstrap *loaded=bootstrap_create_split(root,saves);assert(loaded);title_test_wait(loaded);
+    assert(!bootstrap_load_slot(loaded,0,98));
+    for(unsigned i=0;i<10000;i++){
+        int rc=bootstrap_run(loaded,100000);if(rc<0)fprintf(stderr,"diary reload: %s\n",loaded->error);assert(rc>=0);
+        if(!loaded->restore_pending&&loaded->message_active)break;
+        bootstrap_frame(loaded);
+    }
+    assert(!loaded->restore_pending&&loaded->message_active&&loaded->message_read_id==30977);
+    bootstrap_destroy(loaded);bootstrap_destroy(b);
+    b=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);b->title.active=0;
+    assert(!ai6_read_named(&b->scripts,"hiromi_d.mes",&data,&size));
+    id=kvm_add_module(b->vm,"hiromi_d.mes",data,size);assert(id>=0);b->module_data[id]=data;assert(!kvm_start(b->vm,id));
+    for(unsigned i=0;i<10000&&!b->character_request;i++){
+        int rc=bootstrap_run(b,100000);if(rc<0)fprintf(stderr,"character: %s\n",b->error);assert(rc>=0);bootstrap_frame(b);
+    }
+    assert(b->character_request==1&&b->file_modal==2);b->character_request=b->file_modal=0;b->vm->globals[0][18]=(KValue){0,NULL};
+    for(unsigned i=0;i<1000;i++){int rc=bootstrap_run(b,100000);assert(rc>=0);if(!rc)break;bootstrap_frame(b);}
+    assert(!b->error[0]);bootstrap_destroy(b);
+    puts("Real SAVE.mes diary save and hiromi_d.mes character modal/return: PASS");
+}
+
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--weekend-reports")){test_weekend_reports(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--page-hires")){test_page_hires(argv[1],argv[2]);test_fade_hires(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--weekend")){test_weekend_books(argv[1],argv[2]);return 0;}
 

@@ -79,6 +79,7 @@ static void animation522_restore(KBootstrap *b){
 static void animation522_begin_frame(KBootstrap *b){animation522_restore(b);}
 
 static void animation522_present(KBootstrap *b){
+    animation522_restore(b); /* Repeated presentation must not save its own pixels. */
     KImage *screen=&b->layers[0];
     if(!screen||!screen->pixels)return;
     for(unsigned i=0;i<4;i++)if(b->exec522_visible[i]&&b->overlays.visible[i]){
@@ -113,7 +114,7 @@ static int animation522_mode0(KBootstrap *b,int selector){
     if(animation522_copy_atlas(b,0x208,0x7c,0x6c,0x7c,0x198,0xd4,1))return -1;
     for(unsigned i=0;i<4;i++)if(animation522_sprite_copy(b,i,0xc,0x18,0x54,0x20,0x5c,0xa0+i*0x20,-1,1))return -1;
     b->exec522_current=-1;
-    animation522_present(b);return b->error[0]?-1:0;
+    return 0;
 }
 
 static int animation522_mode1(KBootstrap *b,int target){
@@ -137,7 +138,7 @@ static int animation522_mode1(KBootstrap *b,int target){
     b->exec522_visible[target]=1;b->overlays.visible[target]=1;
     b->exec522_current=target;b->exec522_state=1;
     b->exec522_pulse=b->exec522_pulse_phase=b->exec522_pulse_clock=0;
-    animation522_present(b);return b->error[0]?-1:0;
+    return 0;
 }
 
 static int animation522_mode3(KBootstrap *b,int item){
@@ -150,7 +151,7 @@ static int animation522_mode3(KBootstrap *b,int item){
     if(animation522_sprite_copy(b,(unsigned)b->exec522_current,8,0x3c,0x5c,0x18,0,sy,-1,1))return -1;
     if(animation522_copy_atlas(b,0x210,0x54,0x5c,0x18,0,0x118,1))return -1;
     if(animation522_sprite_copy(b,(unsigned)b->exec522_current,8,0x54,0x5c,0x18,0,0x118,-1,1))return -1;
-    b->exec522_state=0;animation522_restore(b);animation522_present(b);return b->error[0]?-1:0;
+    b->exec522_state=0;animation522_restore(b);return 0;
 }
 
 static int animation522_mode4(KBootstrap *b,int item,int group){
@@ -162,7 +163,7 @@ static int animation522_mode4(KBootstrap *b,int item,int group){
     static const int second_y[]={0x178,0x148,0x130};
     int sy=item==1?0x160:second_y[group];
     if(animation522_sprite_copy(b,(unsigned)b->exec522_current,8,0x54,0x5c,0x18,0,sy,0xff00,0))return -1;
-    b->exec522_state=0;animation522_restore(b);animation522_present(b);return b->error[0]?-1:0;
+    b->exec522_state=0;animation522_restore(b);return 0;
 }
 
 static int animation522_mode5(KBootstrap *b,int packed,int variant){
@@ -177,7 +178,7 @@ static int animation522_mode5(KBootstrap *b,int packed,int variant){
         b->exec522_delta[i]=(b->exec522_x[i]-16)/10;
     }
     b->exec522_state=0;
-    animation522_present(b);return 0;
+    return 0;
 }
 
 /* Native movement waits 20 ms at each position. Keep the syscall blocked

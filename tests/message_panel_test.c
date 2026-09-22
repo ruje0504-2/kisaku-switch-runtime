@@ -836,6 +836,28 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
     puts("Kisaku letter replay exit and 31/320 selector: native mode7 atlas, scene catalog lock state, AKB selector layers, cancel/result and both selector script targets: PASS");
 }
 
+static void test_live_character(KBootstrap *b,SDL_Renderer *renderer,const char *shot){
+    { SaveMenu live={0};b->file_modal=2;b->vm->bytes[202]=1;
+      assert(!character_live_open(&live,b,0));live.detail_started-=10000;
+      save_menu_draw(&live,b,renderer);assert(live.live_character&&live.portrait.pixels&&live.canvas.pixels);
+      if(shot){char path[4096];snprintf(path,sizeof(path),"%s.character-live.bmp",shot);assert(!capture(renderer,path));}
+      character_detail_action(&live,b,3);assert(live.detail_hover==0);
+      character_detail_action(&live,b,0);assert(live.detail_view&&live.detail_image.pixels);
+      live.detail_started-=10000;character_detail_action(&live,b,1);live.detail_started-=10000;
+      character_detail_action(&live,b,1);assert(!live.detail_view);live.detail_started-=10000;
+      save_menu_draw(&live,b,renderer);assert(!live.active&&!b->file_modal&&!b->vm->globals[0][18].number);
+      save_menu_clear(&live);
+    }
+
+    for(unsigned role=0;role<8;role++){
+        SaveMenu live={0};b->file_modal=2;
+        assert(!character_live_open(&live,b,role));live.detail_started-=10000;
+        save_menu_draw(&live,b,renderer);assert(live.character_detail&&!live.status[0]);
+        character_detail_pointer(&live,b,550,420,1);live.detail_started-=10000;
+        save_menu_draw(&live,b,renderer);assert(!live.active&&!b->file_modal);save_menu_clear(&live);
+    }
+    puts("Live CGirlStatus: eight roles, original atlas, detail view, pointer/controller and modal return: PASS");
+}
 int main(int argc,char **argv){
     assert(argc==3||argc==4);
     assert(!SDL_Init(SDL_INIT_VIDEO));
@@ -887,6 +909,8 @@ int main(int argc,char **argv){
     test_backlog(&p,b,renderer,argc==4?argv[3]:NULL);
     test_native_backlog(argv[1],argv[2],renderer);
     test_save_menu(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
+    test_live_character(b,renderer,argc==4?argv[3]:NULL);
+
     test_letter_exit(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_name_editor(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_appendix_media(argv[1],argv[2],renderer);

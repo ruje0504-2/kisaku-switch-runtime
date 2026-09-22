@@ -367,6 +367,10 @@ int main(int argc,char **argv){
 #endif
             }}
         if(panel.dismiss_menus){menu.active=0;b->load_modal=b->file_modal=0;panel.dismiss_menus=0;bootstrap_message_hide(b,0);}
+        if(b->character_request){
+            if(character_live_open(&menu,b,b->character_request-1)){snprintf(b->error,sizeof(b->error),"31/910 character assets unavailable");state=-1;}
+            b->character_request=0;
+        }
         if(b->message_request){
             unsigned action=b->message_request;b->message_request=0;
             if(action==2||action==3)save_menu_open(&menu,b,action==3);

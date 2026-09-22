@@ -100,7 +100,7 @@ typedef struct {
     KVoiceWorker *voice_worker;unsigned voice_loading;
     KImageWorker *image_worker;unsigned image_loading;int image_layer,image_offset_x,image_offset_y;
     int restore_read_id;unsigned restore_pending,restore_remaining,restore_mode;
-    unsigned read_loaded,read_dirty,read_selector,quit_requested,quit_modal,title_load_requested,file_modal,native_menu_enabled,title_reset_modal;
+    unsigned read_loaded,read_dirty,read_selector,quit_requested,quit_modal,title_load_requested,file_modal,character_request,native_menu_enabled,title_reset_modal;
     Ai6Archive scripts,images,data,effects,movies,music,voice;
     uint8_t *module_data[KVM_MODULES];
     KImage layers[64]; unsigned layer_count;
