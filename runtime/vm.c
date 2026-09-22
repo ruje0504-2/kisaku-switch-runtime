@@ -119,8 +119,12 @@ KStatus kvm_run(KVM *v,unsigned budget) {
             v->ip+=v->text_size+1;v->status=KVM_TEXT;break;
         case 0x1b:
             if(m->code[v->ip++]){fail(v,"unsupported newline operand");break;}
+            if(v->record_newline&&v->record_newline(v->record_owner,0)){fail(v,"newline recording failed");break;}
+            /* 505890: measurement records the command but never moves the
+               cursor, nor requires numeric drawing coordinates. */
+            if((uint32_t)v->globals[0][50].number&UINT32_C(0x80000000))break;
             if(v->globals[0][42].string||v->globals[0][47].string||v->globals[0][31].string){fail(v,"newline requires numeric coordinates");break;}
-            /* 41daa0: reset horizontal cursor and advance one line. */
+            /* 505890: reset horizontal cursor and advance one line. */
             v->globals[0][46]=v->globals[0][42];
             v->globals[0][47].number=(int32_t)((uint32_t)v->globals[0][47].number+(uint32_t)v->globals[0][31].number);
             break;

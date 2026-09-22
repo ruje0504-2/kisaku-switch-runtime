@@ -18,6 +18,9 @@ typedef struct {
     struct {int module;size_t ip;unsigned depth;} scripts[64];unsigned script_depth;
     KValue *stack; unsigned sp,stack_capacity; /* Native growable variant vector. */
     const char *text;size_t text_size;
+    /* Optional native text-command recorder; failure stops execution before
+       newline cursor changes. The owner and callback outlive the VM. */
+    int (*record_newline)(void *owner,unsigned operand);void *record_owner;
     KValue globals[2][8192]; uint8_t bytes[16384]; uint16_t words[8192];
     unsigned byte_count, word_count, global_count[2];
     /* Borrowed byte storage; 07..09 and 11..13 share little-endian views. */

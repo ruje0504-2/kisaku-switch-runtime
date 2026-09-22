@@ -125,6 +125,37 @@ static void test_backlog_lifecycle(const char *root,const char *saves){
     puts("Kisaku backlog lifecycle: first slot, idempotent begin/end, text commands, rollover, preserved failures: PASS");
 }
 static void test_setting(KBootstrap *b,const char *section,const char *key,const char *value);
+static void test_backlog_newline(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    assert(!backlog_call(b,0,1,(KValue){2,NULL}));
+    static const uint8_t script[]={0,0,0,0,0x1b,0,0x0b,'A',0,0x1b,0,0};
+    static const uint8_t expected[]={0x1b,0,0x0b,'A',0,0x1b,0,0};
+    int id=kvm_add_module(b->vm,"newline-measure",script,sizeof(script));assert(id>=0);
+    b->vm->globals[0][50].number=(int32_t)0x80000080u;
+    b->vm->globals[0][42]=(KValue){32,"unused"};
+    b->vm->globals[0][46].number=123;b->vm->globals[0][47].number=456;
+    assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,100));
+    assert(b->message_index==0&&b->messages[0].size==sizeof(expected));
+    assert(!memcmp(b->messages[0].data,expected,sizeof(expected))&&b->text_measure_bytes==1);
+    assert(b->vm->globals[0][46].number==123&&b->vm->globals[0][47].number==456);
+    static const uint8_t newline[]={0,0,0,0,0x1b,0,0};
+    id=kvm_add_module(b->vm,"newline-draw",newline,sizeof(newline));assert(id>=0);
+    b->vm->globals[0][50].number=0x80;b->vm->globals[0][42]=(KValue){32,NULL};
+    b->vm->globals[0][31].number=18;
+    assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,100));
+    assert(b->message_index==1&&b->messages[1].size==3);
+    assert(b->vm->globals[0][46].number==32&&b->vm->globals[0][47].number==474);
+    b->vm->globals[0][50].number=0;
+    assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,100)&&b->messages[1].size==3);
+    assert(b->vm->globals[0][47].number==492);
+    bootstrap_destroy(b);
+    b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    id=kvm_add_module(b->vm,"newline-no-slots",newline,sizeof(newline));assert(id>=0);
+    b->vm->globals[0][50].number=0x80;b->vm->globals[0][47].number=123;
+    assert(!kvm_start(b->vm,id)&&bootstrap_run(b,100)<0&&b->vm->globals[0][47].number==123);
+    bootstrap_destroy(b);
+    puts("Kisaku backlog newline: automatic begin, opcode/operand retention, measurement isolation, disabled recording and failure: PASS");
+}
 static void bowling_free(void *p){bowling_released++;free(p);}
 static int call(KBootstrap *b,int sub,int action){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
@@ -1173,7 +1204,7 @@ static void test_ui_and_logo(const char *root,const char *saves){
 }
 int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--backlog")){
-        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);return 0;
+        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);return 0;
     }
     if(argc!=3)return 2;
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);
@@ -1655,6 +1686,7 @@ int main(int argc,char **argv){
     test_backlog_records(argv[1],argv[2]);
     test_native_wait(argv[1],argv[2]);
     test_backlog_lifecycle(argv[1],argv[2]);
+    test_backlog_newline(argv[1],argv[2]);
     test_native_tint(argv[1],argv[2]);
     assert(!call(b,1011,0));
     b->vm->bytes[3600]=b->vm->bytes[5038]=b->vm->bytes[4001]=b->vm->bytes[4004]=0;

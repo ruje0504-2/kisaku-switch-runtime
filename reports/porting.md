@@ -612,3 +612,12 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 验证全部exit 0：`./build-host.sh`、`./test-host.sh 鬼作`、回看/等待专项及ASan/UBSan（detect_leaks=0）、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`。日志为local/native-wait-{build,test-build,focused,test-host,asan-build,asan,switch,package}.log。主入口NRO SHA256：`e2427fa1611ece1d87bdaa34c40864a096c7a54936d0d462f75dbffc56831b08`。
 
 ①完整回看仍缺通用命令流、多语音、文字状态及前端/存档统一。Switch实机、真实场景完整回放、PC逐帧对照未验证；仍为开发预览。图标变更未纳入本次提交。
+
+
+### 2026-09-22 回看换行记录与测量隔离
+
+按46f880/505890接入0x1b的记录回调，保存opcode、零操作数和独立哨兵；换行可自动开始第0槽。测量模式仍记录但不修改sys46/sys47、不要求绘制坐标，也不增加文本计数字节。普通换行行为保留，记录分配/槽位失败停止执行。汇编与实现边界见reports/backlog-native.md。
+
+验证全部exit 0：`./build-host.sh`、`./test-host.sh 鬼作`、`build/kisaku-bootstrap-test 鬼作 local/backlog-lifecycle-test-saves --backlog`、同专项ASan/UBSan（detect_leaks=0）、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`。日志local/backlog-newline-{build,focused,test-host,asan-build,asan,switch,package}.log。构建与交付主入口NRO SHA256一致：`d8807c889fb574e9c78752b252d96c87bba4470cdc1e6809af42ad683b99893a`。
+
+①尚缺通用字节捕获、多语音、文字状态、23/5/7/8及前端/存档统一；29非零更新标志菜单泵仍未实现。实机、真实场景完整回放和PC逐帧对照仍未验证。继续①，不提前进入参数总审计或⑤。icon.png留作后续NRO/NSP打包，不混入本提交。

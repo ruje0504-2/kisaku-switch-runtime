@@ -14,6 +14,7 @@
 #include <math.h>
 #include <time.h>
 #include <sys/stat.h>
+static int record_newline(void *owner,unsigned operand);
 static int error(KBootstrap *b,const char *s){
     const char *name=b->vm->module>=0?b->vm->modules[b->vm->module].name:"<none>";
     if(b->vm->status==KVM_TEXT)snprintf(b->error,sizeof(b->error),"%s @0x%zx text: %s",name,b->vm->instruction_ip,s);
@@ -148,6 +149,7 @@ KBootstrap *bootstrap_create(const char *root){
 KBootstrap *bootstrap_create_split(const char *root,const char *save_root){
     if(!root||!save_root||strlen(root)>1800||strlen(save_root)>1800)return NULL;
     KBootstrap *b=calloc(1,sizeof(*b));if(!b)return NULL;b->vm=kvm_create();if(!b->vm){free(b);return NULL;}
+    b->vm->record_newline=record_newline;b->vm->record_owner=b;
     ax_reset(&b->ax);
     ax_reset(&b->ax_extra);
     for(unsigned i=0;i<320;i++)b->animation_status[i]=255;
@@ -314,6 +316,15 @@ static int record_text(KBootstrap *b){
     uint8_t command[4098];command[0]=(uint8_t)b->vm->opcode;
     memcpy(command+1,b->vm->text,b->vm->text_size+1);
     return record_append(b,command,b->vm->text_size+2);
+}
+static int record_newline(void *owner,unsigned operand){
+    KBootstrap *b=owner;
+    if(!(b->vm->globals[0][50].number&0x80))return 0;
+    if(record_begin(b))return -1;
+    /* 46f880 starts a text record for 1b as well as 0a/0b. Preserve the
+       zero operand separately from the record's trailing sentinel. */
+    uint8_t command[2]={0x1b,(uint8_t)operand};
+    return record_append(b,command,sizeof(command));
 }
 static unsigned le16(const uint8_t *p){return (unsigned)p[0]|((unsigned)p[1]<<8);}
 static int mam_prepare(KBootstrap *b,const char *voice);
