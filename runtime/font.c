@@ -79,33 +79,68 @@ KFont *kfont_open(const char *path,int simplified){
     }
     if(!f->count){kfont_close(f);return NULL;}return f;
 }
-int kfont_draw(KFont *f,KImage *dst,uint32_t cp,int x,int y,unsigned width,unsigned height,uint32_t rgb){
-    if(!f||!dst||!dst->pixels||dst->stride<(size_t)dst->width*4||width<1||height<1||width>256||height>256)return -1;
+static int font_load_glyph(KFont *f,uint32_t cp,unsigned width,unsigned height,
+                           FT_Bitmap **bitmap_out,
+                           int64_t *left_out,int64_t *top_out){
+    if(!f||width<1||height<1||width>256||height>256)return -1;
     FT_Face face=NULL;FT_UInt index=0;
     for(unsigned i=0;i<f->count;i++)if((index=glyph_index(f->faces[i],cp))){face=f->faces[i];break;}
     if(!face||FT_Set_Pixel_Sizes(face,width,height)||FT_Load_Glyph(face,index,FT_LOAD_RENDER|FT_LOAD_TARGET_NORMAL))return -1;
     FT_GlyphSlot g=face->glyph;FT_Bitmap *bitmap=&g->bitmap;
     if(bitmap->pixel_mode!=FT_PIXEL_MODE_GRAY&&bitmap->pixel_mode!=FT_PIXEL_MODE_MONO)return -1;
-    int64_t left=(int64_t)x+g->bitmap_left,top=(int64_t)y+(face->size->metrics.ascender>>6)-g->bitmap_top;
+    *bitmap_out=bitmap;*left_out=g->bitmap_left;*top_out=(face->size->metrics.ascender>>6)-g->bitmap_top;return 0;
+}
+static void font_blend_pixel(KImage *dst,int64_t xx,int64_t yy,unsigned alpha,unsigned rgb){
+    if(!alpha||xx<0||yy<0||xx>=dst->width||yy>=dst->height)return;
+    uint8_t *p=dst->pixels+(size_t)yy*dst->stride+(size_t)xx*4;
+    /* Straight alpha source-over, preserving transparent text layers. */
+    unsigned out_alpha=alpha+p[3]*(255-alpha)/255;
+    for(unsigned c=0;c<3;c++)p[c]=(uint8_t)((((rgb>>(8*c))&255)*alpha+p[c]*p[3]*(255-alpha)/255)/out_alpha);
+    p[3]=(uint8_t)out_alpha;
+}
+static unsigned font_bitmap_alpha(const FT_Bitmap *bitmap,const uint8_t *source,unsigned col){
+    return bitmap->pixel_mode==FT_PIXEL_MODE_MONO?((source[col/8]&(0x80>>(col%8)))?255:0):source[col];
+}
+int kfont_draw(KFont *f,KImage *dst,uint32_t cp,int x,int y,unsigned width,unsigned height,unsigned rgb){
+    if(!f||!dst||!dst->pixels||dst->stride<(size_t)dst->width*4||width<1||height<1||width>256||height>256)return -1;
+    FT_Bitmap *bitmap=NULL;int64_t left=0,top=0;
+    if(font_load_glyph(f,cp,width,height,&bitmap,&left,&top))return -1;
+    left+=x;top+=y;
     for(unsigned row=0;row<bitmap->rows;row++){
         int64_t yy=top+row;if(yy<0||yy>=dst->height)continue;
         const uint8_t *source=bitmap->buffer+(bitmap->pitch>=0?row:bitmap->rows-row-1)*(size_t)abs(bitmap->pitch);
         for(unsigned col=0;col<bitmap->width;col++){
             int64_t xx=left+col;if(xx<0||xx>=dst->width)continue;
-            unsigned alpha=bitmap->pixel_mode==FT_PIXEL_MODE_MONO?((source[col/8]&(0x80>>(col%8)))?255:0):source[col];
-            if(!alpha)continue;
-            uint8_t *p=dst->pixels+(size_t)yy*dst->stride+(size_t)xx*4;
-            /* Straight alpha source-over, preserving transparent text layers. */
-            unsigned out_alpha=alpha+p[3]*(255-alpha)/255;
-            for(unsigned c=0;c<3;c++)p[c]=(uint8_t)((((rgb>>(8*c))&255)*alpha+p[c]*p[3]*(255-alpha)/255)/out_alpha);
-            p[3]=(uint8_t)out_alpha;
+            font_blend_pixel(dst,xx,yy,font_bitmap_alpha(bitmap,source,col),rgb);
         }
     }
     return 0;
 }
 int kfont_draw_outline(KFont *f,KImage *dst,uint32_t cp,int x,int y,unsigned width,unsigned height,uint32_t rgb){
-    static const int offsets[][2]={{-1,-1},{0,-1},{1,-1},{-1,0},{1,0},{-1,1},{0,1},{1,1}};
-    for(unsigned i=0;i<sizeof(offsets)/sizeof(*offsets);i++)
-        if(kfont_draw(f,dst,cp,x+offsets[i][0],y+offsets[i][1],width,height,0x000000))return -1;
-    return kfont_draw(f,dst,cp,x,y,width,height,rgb);
+    if(!f||!dst||!dst->pixels||dst->stride<(size_t)dst->width*4)return -1;
+    FT_Bitmap *bitmap=NULL;int64_t left=0,top=0;
+    if(font_load_glyph(f,cp,width,height,&bitmap,&left,&top))return -1;
+    left+=x;top+=y;
+    /* One glyph rasterization, a half-alpha one-pixel core, and a faint
+       second outward pixel: the edge reads on bright artwork without making
+       the glyph heavy.  This avoids the old nine full FreeType renders per
+       glyph that made Switch story text stutter. */
+    for(unsigned row=0;row<bitmap->rows;row++){
+        const uint8_t *source=bitmap->buffer+(bitmap->pitch>=0?row:bitmap->rows-row-1)*(size_t)abs(bitmap->pitch);
+        for(unsigned col=0;col<bitmap->width;col++){
+            unsigned alpha=font_bitmap_alpha(bitmap,source,col);if(!alpha)continue;
+            int64_t xx=left+(int64_t)col,yy=top+(int64_t)row;
+            unsigned edge=alpha/2u;
+            font_blend_pixel(dst,xx-1,yy,edge,0x000000);font_blend_pixel(dst,xx+1,yy,edge,0x000000);
+            font_blend_pixel(dst,xx,yy-1,edge,0x000000);font_blend_pixel(dst,xx,yy+1,edge,0x000000);
+            unsigned outer=alpha/4u;
+            font_blend_pixel(dst,xx-2,yy,outer,0x000000);font_blend_pixel(dst,xx+2,yy,outer,0x000000);
+            font_blend_pixel(dst,xx,yy-2,outer,0x000000);font_blend_pixel(dst,xx,yy+2,outer,0x000000);
+        }
+    }
+    for(unsigned row=0;row<bitmap->rows;row++){
+        const uint8_t *source=bitmap->buffer+(bitmap->pitch>=0?row:bitmap->rows-row-1)*(size_t)abs(bitmap->pitch);
+        for(unsigned col=0;col<bitmap->width;col++)font_blend_pixel(dst,left+(int64_t)col,top+(int64_t)row,font_bitmap_alpha(bitmap,source,col),rgb);
+    }
+    return 0;
 }

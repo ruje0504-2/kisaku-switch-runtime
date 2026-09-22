@@ -785,3 +785,10 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - 提供的剧情字体现在统一使用一像素黑色外轮廓后再绘制原色，覆盖对白、剧情选择、翻页箭头和页码；HOS 系统字体的历史、设置和姓名面板保持原有绘制方式。
 - `./build-host.sh`、`./test-host.sh 鬼作`、SDL dummy CName 专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过；构建与 SD 交付入口 SHA-256 均为 `f68f3bfd714414f6745d4a063ec762700a091966a5d6445acda7647ccae59849`。
 - Switch 实机输入和字体显示仍未验证。
+
+## 2026-09-22 字体描边减薄与 Switch 性能优化
+
+- 剧情字体黑边改为半透明一像素核心边，并向外增加一圈更淡的像素，避免描边压住字形。
+- `kfont_draw_outline` 改为每个字只栅格化一次，再直接写入外轮廓和正文；删除原先每个字重复 9 次 FreeType 渲染，降低 Switch 文本绘制开销。
+- `./build-host.sh`、`./test-host.sh 鬼作`、字体专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过；构建与 SD 交付入口 SHA-256 均为 `ae0998e071be765611a49917b1bb99eed3226cfc109d0f2ac9f6ddb9a2da8468`。
+- Switch 实机帧率和字体观感仍未验证。
