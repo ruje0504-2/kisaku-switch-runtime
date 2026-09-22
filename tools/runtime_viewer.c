@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include "image_sdl.h"
+#include "present_filter.h"
 #include "save_slot.h"
 #include <SDL_test_font.h>
 #include <stdio.h>
@@ -14,6 +15,7 @@
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
+#include "present_gles.inc"
 /* Keep portable panel text legible inside the 960x720 game viewport. */
 static void panel_text(SDL_Renderer *r,int x,int y,const char *text){
     float sx,sy;SDL_RenderGetScale(r,&sx,&sy);
@@ -50,7 +52,7 @@ int main(int argc,char **argv){
     CursorPanel cursor={0};
     SceneReplayMenu navigation={0};unsigned restore_navigation_audio=0;
     MenuTouch touch={0};SaveMenu menu={0};MessagePanel panel={0};KHistoryAudio history_audio={0};unsigned history_serial=0;
-    const char *root,*save_root,*shot=NULL;unsigned limit=0,new_game=0,start_story=0,advance_texts=0;
+    const char *root,*save_root,*shot=NULL;unsigned limit=0,new_game=0,start_story=0,advance_texts=0,raw_present=0;
 #ifdef __SWITCH__
     (void)argc;(void)argv;
     /* An installed NSP keeps the read-only game data in its RomFS and writable
@@ -62,11 +64,13 @@ int main(int argc,char **argv){
     switch_hos_init(switch_data,sizeof(switch_data),switch_save,sizeof(switch_save));
     root=switch_data;save_root=switch_save;
 #else
-    if(argc<2){fprintf(stderr,"Usage: %s ELFIMAGE [--frames N] [--screenshot file.bmp]\n",argv[0]);return 2;}
+    if(argc<2){fprintf(stderr,"Usage: %s ELFIMAGE [--frames N] [--screenshot file.bmp] [--raw]\n",argv[0]);return 2;}
     root=argv[1];save_root="local/saves";
     for(int i=2;i<argc;i++){
         if(!strcmp(argv[i],"--start-story")){new_game=start_story=1;continue;}
         if(!strcmp(argv[i],"--new-game")){new_game=1;continue;}
+        if(!strcmp(argv[i],"--raw-present")){raw_present=1;continue;}
+        if(!strcmp(argv[i],"--raw")){raw_present=1;continue;}
         if(i+1>=argc)return 2;
         if(!strcmp(argv[i],"--frames")){char *end;long n=strtol(argv[++i],&end,10);if(*end||n<1||n>100000)return 2;limit=(unsigned)n;}
         else if(!strcmp(argv[i],"--advance-texts")){char *end;long n=strtol(argv[++i],&end,10);if(*end||n<1||n>100000)return 2;advance_texts=(unsigned)n;new_game=start_story=1;}
@@ -77,7 +81,7 @@ int main(int argc,char **argv){
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS,"0");
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_GAMECONTROLLER))return 1;
     SDL_AudioDeviceID audio=0;unsigned serial=0,audio_rate=0,audio_channels=0;size_t audio_queued=0;
-    int rc=1;KBootstrap *b=NULL;SDL_Texture *texture=NULL,*fade=NULL,*status_texture=NULL;
+    int rc=1;KBootstrap *b=NULL;SDL_Texture *texture=NULL,*fade=NULL,*status_texture=NULL,*present_texture=NULL;uint8_t *present_pixels=NULL;int present_disabled=0;KPresentGles present_gles={0};
     SDL_Window *w=SDL_CreateWindow("KISAKU runtime preview",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1280,720,0);
     SDL_Renderer *r=w?SDL_CreateRenderer(w,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC):NULL;
     if(!r&&w)r=SDL_CreateRenderer(w,-1,SDL_RENDERER_SOFTWARE);
@@ -413,7 +417,35 @@ int main(int argc,char **argv){
         SDL_Rect dst={160,0,960,720};
         if(b->layers[0].pixels){
             if(SDL_UpdateTexture(texture,NULL,b->layers[0].pixels,(int)b->layers[0].stride))goto done;
-            SDL_RenderCopy(r,texture,NULL,&dst);
+            unsigned cas_strength=raw_present?0u:(unsigned)bootstrap_cas_strength(b);
+            if(cas_strength&&!raw_present){
+                if(!present_gles_draw(&present_gles,r,texture,&dst,cas_strength)){
+                    /* GLES2 handled the full-screen pass. */
+                }else {
+                /* Filter only a presentation copy.  The authored layer 0
+                   remains untouched for save/replay and raw screenshot tests. */
+                if(!present_texture&&!present_disabled){
+                    present_pixels=malloc(960u*720u*4u);
+                    present_texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,960,720);
+                    if(present_texture)SDL_SetTextureBlendMode(present_texture,SDL_BLENDMODE_NONE);
+                    else{free(present_pixels);present_pixels=NULL;present_disabled=1;}
+                }
+                if(present_texture&&present_pixels&&
+                   !kpresent_resize_cas(b->layers[0].pixels,640,480,b->layers[0].stride,
+                                        present_pixels,960,720,960u*4u,cas_strength)&&
+                   !SDL_UpdateTexture(present_texture,NULL,present_pixels,960*4))
+                    SDL_RenderCopy(r,present_texture,NULL,&dst);
+                else SDL_RenderCopy(r,texture,NULL,&dst);
+                }
+            }else{
+#ifdef __SWITCH__
+                /* SDL's Switch backend historically rejected this call but
+                   still rendered the texture; keep the raw path explicit and
+                   never treat that backend quirk as a fatal error. */
+                (void)SDL_SetTextureScaleMode(texture,SDL_ScaleModeNearest);
+#endif
+                SDL_RenderCopy(r,texture,NULL,&dst);
+            }
         }
         if(b->fade_visible&&b->fade_surface.pixels){
             if(SDL_UpdateTexture(fade,NULL,b->fade_surface.pixels,(int)b->fade_surface.stride))goto done;
@@ -477,7 +509,7 @@ int main(int argc,char **argv){
     rmt_free(&panel.name_artwork);rmt_free(&panel.name_grid_cache);rmt_free(&panel.nav_artwork);rmt_free(&panel.nav_scene);for(unsigned i=0;i<4;i++)rmt_free(&panel.nav_previews[i]);rmt_free(&panel.history_artwork);
     rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);
     rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
-    rmt_free(&panel.image);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
+    rmt_free(&panel.image);SDL_DestroyTexture(panel.name_help_texture);rmt_free(&panel.name_help);present_gles_clear(&present_gles);free(present_pixels);SDL_DestroyTexture(present_texture);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
     if(audio)SDL_CloseAudioDevice(audio);
     bootstrap_destroy(navigation.next);bootstrap_destroy(navigation.owner);bootstrap_destroy(menu.next);bootstrap_destroy(b);SDL_DestroyTexture(fade);SDL_DestroyTexture(texture);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return rc;
 }

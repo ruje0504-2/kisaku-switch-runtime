@@ -16,7 +16,7 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
     SDL_Texture *cg_textures[3];unsigned cg_cached,cg_group,cg_page,cg_count;
     unsigned replay_key,replay_from,replay_to,replay_alpha;uint64_t replay_next;
     KNawaPanel *nawa;
-    KImage name_artwork,name_grid_cache,dialog_artwork,dialog_body;unsigned name_grid_mode,name_grid_page,name_grid_valid;
+    KImage name_artwork,name_grid_cache,name_help,dialog_artwork,dialog_body;SDL_Texture *name_help_texture;unsigned name_grid_mode,name_grid_page,name_grid_valid;
     KImage nav_artwork,nav_scene,nav_previews[4];unsigned nav_catalog_ready,nav_catalog[100];unsigned nav_id,nav_mode,nav_count,nav_slots[100],nav_page_key,nav_load_request;int64_t nav_dates[4];
     KImage history_artwork,settings_artwork,sidebar_artwork;
     /* Native appendix atlases.  Music/video use AKB layers directly; keeping
@@ -111,6 +111,23 @@ static int name_grid_prepare(MessagePanel *p,KBootstrap *b){
         uint16_t raw=name_table_value(p,row,col);if(raw!=0xffff){char label[8];if(!name_cp932_utf8(raw,label)&&ui_text(b,&p->name_grid_cache,label,x+3,y+3,18,18,0xffffff,0))return -1;}
     }
     p->name_grid_mode=p->name_mode;p->name_grid_page=p->name_page;p->name_grid_valid=1;return 0;
+}
+static int name_help_prepare(MessagePanel *p,KBootstrap *b){
+    if(p->name_help.pixels)return 0;
+    p->name_help=(KImage){0,0,144,104,144*4,calloc(144u*104u,4)};
+    if(!p->name_help.pixels)return -1;
+    ui_fill(&p->name_help,0,0,144,104,0x0c0f14);
+    if(ui_text(b,&p->name_help,"十字：文字選択\nA：入力\nX：削除\nY：種類\nZR：決定",0,0,144,104,0xffe9a0,0)){
+        rmt_free(&p->name_help);return -1;
+    }
+    return 0;
+}
+static void name_help_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
+    /* User-requested controls live inside the 160-pixel left margin and use
+       the same HOS/system font as the rest of CName.  Cache this static text. */
+    if(name_help_prepare(p,b))return;
+    if(!p->name_help_texture)p->name_help_texture=kimage_texture(r,&p->name_help);
+    if(p->name_help_texture){SDL_Rect dst={8,420,144,104};SDL_RenderCopy(r,p->name_help_texture,NULL,&dst);}
 }
 #include "history_voice.inc"
 #include "gallery_panel.inc"
@@ -420,10 +437,15 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
            the atlas supplies the same gold frame and the selected cell is
            kept separate so movement never changes the story VM. */
         if(name_grid_prepare(p,b))return;
-        for(unsigned row=0;row<12;row++)memcpy(p->image.pixels+(32+row*24)*p->image.stride+128*4,
+        for(unsigned row=0;row<288;row++)memcpy(p->image.pixels+(32+row)*p->image.stride+128*4,
             p->name_grid_cache.pixels+row*p->name_grid_cache.stride,432*4);
         if(p->name_focus==1){unsigned row=p->name_cursor/18,col=p->name_cursor%18;
-            if(row<(p->name_mode==2?6:12))ui_fill(&p->image,128+(int)col*24,32+(int)row*24,24,24,0x806020);
+            if(row<(p->name_mode==2?6:12)){
+                int x=128+(int)col*24,y=32+(int)row*24;
+                ui_fill(&p->image,x,y,24,24,0x806020);
+                uint16_t raw=name_table_value(p,row,col);char label[8];
+                if(raw!=0xffff&&!name_cp932_utf8(raw,label))ui_text(b,&p->image,label,x+3,y+3,18,18,0xffffff,0);
+            }
         }
         /* CName's kanji page bar is a separate set of hit areas at y=328:
            ten kana-row jumps and one-step previous/next buttons.  The
@@ -437,12 +459,22 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             ui_blit(&p->image,&p->name_artwork,320,p->name_page?48:64,48,16,460,328,1);
             ui_blit(&p->image,&p->name_artwork,368,p->name_page<184?48:64,48,16,512,328,1);
         }
-        /* Native name slots are x=260+24*n, y=414. */
+        /* Native name slots are x=260+24*n, y=414.  Draw one decoded
+           codepoint per slot instead of laying the UTF-8 string as a normal
+           paragraph; the latter lets a wide glyph or an invalid byte shift
+           every following slot to the right. */
         ui_fill(&p->image,256,406,128,30,0x080b12);ui_fill(&p->image,256,406,128,2,0xd0a83c);ui_fill(&p->image,256,434,128,2,0xd0a83c);
         for(unsigned i=1;i<5;i++)ui_fill(&p->image,260+(int)i*24,408,1,24,0x5c4c20);
-        ui_text(b,&p->image,p->name,260,410,120,24,0xffffff,0);
+        size_t name_bytes[6];unsigned name_count=name_offsets(p->name,name_bytes);
+        for(unsigned i=0;i<name_count;i++){
+            char glyph[5]={0};size_t size=name_bytes[i+1]-name_bytes[i];if(size>4)continue;
+            memcpy(glyph,p->name+name_bytes[i],size);
+            /* name is UTF-8 from SDL input/the CP932 table converter, unlike
+               raw MES text. ui_text's encoded=0 path decodes it as UTF-8. */
+            int advance=(unsigned char)glyph[0]<0x80?8:16,x=260+(int)i*24+(24-advance)/2;
+            ui_text(b,&p->image,glyph,x,412,advance,20,0xffffff,0);
+        }
         if(p->name_focus==0)ui_fill(&p->image,259+(int)p->name_text_cursor*24,408,2,24,0xf4d45a);
-        ui_text(b,&p->image,"方向キー:文字選択   A:入力   X:削除   Y:種類",128,452,384,20,0xffe9a0,0);
         if(p->status[0])ui_text(b,&p->image,p->status,128,8,384,20,0xff8a7a,0);
         if(p->name_confirm){
             ui_fill(&p->image,80,188,480,116,0x080b12);ui_fill(&p->image,80,188,480,2,0xd0a83c);ui_fill(&p->image,80,302,480,2,0xd0a83c);
@@ -450,7 +482,9 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             ui_text(b,&p->image,p->selected==0?"> はい":"  はい",210,258,90,20,p->selected==0?0xffe36a:0xffffff,0);
             ui_text(b,&p->image,p->selected==1?"> いいえ":"  いいえ",348,258,110,20,p->selected==1?0xffe36a:0xffffff,0);
         }
-        ui_present(r,&p->image,&p->texture);return;
+        ui_present(r,&p->image,&p->texture);
+        name_help_draw(p,b,r);
+        return;
     }
     if(p->kind==15){
         if(ui_canvas(&p->image))return;

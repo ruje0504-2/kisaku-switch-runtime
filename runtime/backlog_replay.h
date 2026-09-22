@@ -84,8 +84,19 @@ static inline int kbacklog_replay_sequence(const KBacklogReplayRecord *records,u
     const int values[]={16,18,32,0,592,54,32,0,6};
     for(unsigned i=0;i<sizeof(ids)/sizeof(*ids);i++)v->globals[0][ids[i]]=(KValue){values[i],NULL};
     v->globals[0][50].number=(v->globals[0][50].number&~0x80)|0x400;
-    unsigned width=16,height=16;int done=0;KBacklogReplayGate gate={draw,owner,target_ip};
+    unsigned width=16,height=16;int done=0,target_started=0;KBacklogReplayGate gate={draw,owner,target_ip};
     for(unsigned n=0;n<100000;n++){
+        /* CBackLog resets only the selected record's cursor before executing
+           that record.  instruction_ip still names the previous opcode after
+           a TEXT or SYSCALL yield, so use the next instruction pointer and
+           reset before its first opcode.  This leaves an explicit x/y store
+           in the selected record authoritative while colour/font state
+           carries over. */
+        if(!target_started&&v->ip>=target_ip){
+            v->globals[0][46]=(KValue){v->globals[0][42].number,NULL};
+            v->globals[0][47]=(KValue){v->globals[0][43].number,NULL};
+            target_started=1;
+        }
         KStatus status=kvm_run(v,1);
         if(status==KVM_TEXT){if(kbacklog_replay_gate(&gate,v,width,height))goto bad;kvm_resume(v);}
         else if(status==KVM_SYSCALL){

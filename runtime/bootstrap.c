@@ -426,6 +426,25 @@ static int option(KBootstrap *b,const char *section,const char *key,int fallback
     for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,section)&&equal(b->settings[i].key,key))return atoi(b->settings[i].value);
     return fallback;
 }
+int bootstrap_cas_strength(const KBootstrap *b){
+    /* Keep this presentation-only option independent of the 64-entry native
+       CConfig table.  Existing settings files can use either a percentage
+       (0..100) or a normalized decimal (0..1); malformed values disable the
+       post-process pass instead of changing authored game surfaces. */
+    if(!b)return 0;
+    const char *value=NULL;
+    for(unsigned i=0;i<b->setting_count;i++)
+        if(equal(b->settings[i].section,"Display")&&equal(b->settings[i].key,"CASStrength")){value=b->settings[i].value;break;}
+    if(!value||!*value)return 0;
+    char *end=NULL;double parsed=strtod(value,&end);
+    if(end==value||*end||!isfinite(parsed)||parsed<0)return 0;
+    if(strchr(value,'.')||strchr(value,'e')||strchr(value,'E')){
+        if(parsed<=1.0)parsed*=100.0;
+    }
+    if(parsed<=0.0)return 0;
+    if(parsed>=100.0)return 100;
+    return (int)(parsed+0.5);
+}
 /* Music volume is stored by the original engine as an integer slider in the
    range 0..104.  48de20/4646f0 convert that slider to hundredths of a dB;
    keeping the integer division here also matches x86 idiv's truncation. */

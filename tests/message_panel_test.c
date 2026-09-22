@@ -34,7 +34,7 @@ static void test_native_quit(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("Kisaku 31/3 exit dialog: suspended VM, no return value, No/cancel, Yes and flush failure: PASS");
 }
-static void test_name_editor(const char *root,const char *saves,SDL_Renderer *renderer){
+static void test_name_editor(const char *root,const char *saves,SDL_Renderer *renderer,const char *shot){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     /* Exercise the real 31/810 dispatch before driving the frontend.  The
        old test only toggled extra_active by hand and could not catch a VM
@@ -60,6 +60,37 @@ static void test_name_editor(const char *root,const char *saves,SDL_Renderer *re
     name_delete_at(&p);assert(!strcmp(p.name,"鬼作")&&p.name_text_cursor==1);
     assert(name_insert_text(&p,"一二三四")<0&&!strcmp(p.name,"鬼作"));
     message_panel_draw(&p,b,renderer);assert(p.name_artwork.pixels&&p.name_artwork.width==640&&p.name_artwork.height==300);
+    /* Copy every raster row of the 18x12 grid, not one scanline per cell.
+       The old row*24 destination copied just 12 of the 288 cache rows. */
+    assert(p.name_grid_cache.pixels&&p.name_grid_cache.width==432&&p.name_grid_cache.height==288);
+    for(unsigned y=0;y<288;y++)assert(!memcmp(p.image.pixels+(32+y)*p.image.stride+128*4,
+        p.name_grid_cache.pixels+y*p.name_grid_cache.stride,432*4));
+    /* The selected cell keeps its glyph, and UTF-8 names rasterize as the
+       expected Unicode characters in independent centered 24-pixel slots. */
+    p.name_focus=1;p.name_cursor=0;message_panel_draw(&p,b,renderer);
+    unsigned selected_glyph=0;for(unsigned y=35;y<51;y++)for(unsigned x=131;x<147;x++){
+        const uint8_t *q=p.image.pixels+y*p.image.stride+x*4;if(q[0]>180&&q[1]>180&&q[2]>180)selected_glyph++;
+    }
+    assert(selected_glyph>8);p.name_focus=2;message_panel_draw(&p,b,renderer);
+    KImage expected={0,0,120,24,480,calloc(120u*24u,4)};assert(expected.pixels);
+    ui_fill(&expected,0,0,120,24,0x080b12);for(unsigned i=1;i<5;i++)ui_fill(&expected,(int)i*24,0,1,24,0x5c4c20);
+    KFont *font=ui_font(b);assert(font&&!kfont_draw(font,&expected,0x9b3c,4,4,16,16,0xffffff));
+    assert(!kfont_draw(font,&expected,0x4f5c,28,4,16,16,0xffffff));
+    for(unsigned y=0;y<24;y++)assert(!memcmp(p.image.pixels+(408+y)*p.image.stride+260*4,expected.pixels+y*480,480));
+    rmt_free(&expected);
+    /* The user-requested HOS-font help stays entirely in the left margin. */
+    uint8_t *screen=malloc(1280u*720u*4u);assert(screen);
+    SDL_SetRenderDrawColor(renderer,17,51,87,255);assert(!SDL_RenderClear(renderer));name_help_draw(&p,b,renderer);
+    assert(!SDL_RenderReadPixels(renderer,NULL,SDL_PIXELFORMAT_BGRA32,screen,1280*4));
+    unsigned help_ink=0;
+    for(unsigned y=0;y<720;y++)for(unsigned x=0;x<1280;x++){
+        const uint8_t *q=screen+((size_t)y*1280+x)*4;
+        if(x>=8&&x<152&&y>=420&&y<524){if(q[2]>100)help_ink++;}
+        else assert(q[0]==87&&q[1]==51&&q[2]==17);
+    }
+    assert(help_ink>50);free(screen);
+    SDL_SetRenderDrawColor(renderer,12,15,20,255);assert(!SDL_RenderClear(renderer));message_panel_draw(&p,b,renderer);
+    if(shot){char path[4096];snprintf(path,sizeof(path),"%s.name.bmp",shot);assert(!capture(renderer,path));}
     /* The PC kanji bar has ten fixed jump points and one-step arrows.  The
        final jump is 184; the renderer must blank cells past the recovered
        186-row table instead of indexing beyond it. */
@@ -83,8 +114,8 @@ static void test_name_editor(const char *root,const char *saves,SDL_Renderer *re
     b->extra_active=1;b->extra_kind=b->extra_request=14;p.kind=14;p.name_confirm=0;
     message_panel_action(&p,b,1);assert(p.kind==14&&b->extra_active&&!b->error[0]);
     assert(!bootstrap_name_submit(b,NULL));p.kind=0;
-    SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.name_artwork);rmt_free(&p.name_grid_cache);bootstrap_destroy(b);
-    puts("Kisaku CName modal: namepart atlas, 18x12 CP932 grid, five-character limit and confirm flow: PASS");
+    SDL_DestroyTexture(p.texture);SDL_DestroyTexture(p.name_help_texture);rmt_free(&p.name_help);rmt_free(&p.image);rmt_free(&p.name_artwork);rmt_free(&p.name_grid_cache);bootstrap_destroy(b);
+    puts("Kisaku CName modal: complete grid raster, UTF-8 glyph slots, bounded HOS help, five-character limit and confirm flow: PASS");
 }
 static void test_appendix_media(const char *root,const char *saves,SDL_Renderer *renderer){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
@@ -715,7 +746,7 @@ int main(int argc,char **argv){
     test_native_backlog(argv[1],argv[2],renderer);
     test_save_menu(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_letter_exit(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
-    test_name_editor(argv[1],argv[2],renderer);
+    test_name_editor(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_appendix_media(argv[1],argv[2],renderer);
     for(unsigned i=0;i<5;i++)rmt_free(&p.config_art[i]);
     kconfig_audio_clear(&p.config_audio);

@@ -265,6 +265,12 @@ int bootstrap_setting_limit(unsigned item);
 int bootstrap_setting_default(unsigned item);
 int bootstrap_settings_apply(KBootstrap *b,const int *values,unsigned count);
 int bootstrap_message_setting(KBootstrap *b,unsigned item,int change);
+/* Display/CASStrength is an optional presentation setting, deliberately kept
+   outside the native CConfig index table so old save/settings layouts remain
+   byte-for-byte compatible.  The value is returned as a clamped percentage
+   (0..100); integer values are percentages and decimal values in 0..1 are
+   accepted as normalized strength.  Zero preserves the raw nearest path. */
+int bootstrap_cas_strength(const KBootstrap *b);
 unsigned bootstrap_video_count(void);
 const char *bootstrap_video_preview_name(unsigned index);
 int bootstrap_video_unlocked(const KBootstrap *b,unsigned index);

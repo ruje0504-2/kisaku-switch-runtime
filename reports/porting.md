@@ -757,3 +757,17 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - 按 `004814e0`、`004809d0` 重建 `CMusicMode` 图层：每个解锁曲目从 `0xee×0x20` 状态块复制到 `(0x9c+10*i,0x38+0x24*i)`，停止按钮取 `(0xee,0x1fc,0x82,0x20)`，返回按钮取 `(0x170,0x19c,0x70,0x20)`；触摸命中同步使用紧凑列表的原版 AREA，而不是把图集误切成规则 3×4 网格。视频图层仍按 `0045c2f0` 的 39×2、15×115 坐标。
 - `./build-host.sh`、`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/message-panel-test 鬼作 <临时目录>`、`./test-host.sh 鬼作`、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。当前构建与SD交付主入口SHA-256均为 `f3f5c0d0d7d9a07e3b6e8be4f653737eccc5bfed05eadf876cf88bae2593987b`。
 - Switch实机字形/输入、完整路线和其他仍引用不存在原版素材的旧参考面板（`sp_ev*.rmt`、`nawatuna*.rmt`、`sl_data2.rmt`）未验证；未启动PC原版程序。
+
+## 2026-09-22 展示阶段 CAS/RCAS 锐化与姓名/回看修正
+
+- 新增独立展示滤镜：游戏继续只写入原始 `640×480` layer 0；present 阶段将其采样到 `960×720`（按后备缓冲 aspect-fit），先用双线性重建，再按 `3×3` 邻域 min/max 限幅执行 RCAS，负邻域权重按 `CASStrength 0..1 -> 0..0.2` 映射。Switch 的 SDL GLES2 renderer 走一次全屏 fragment pass，非 GLES/主机使用同公式 CPU fallback；两条路径都不回写游戏表面。
+- `[Display] CASStrength` 是展示设置，接受 `0..100` 百分比或 `0..1` 小数，默认缺失/非法为 `0`。`0` 保留最近邻 raw 路径；主机运行器另有 `--raw`/`--raw-present` 选项用于逐像素测试和截图。独立 `present_filter_test` 覆盖双线性、3×3 限幅、平坦区、alpha 保留、源表面不变和 raw 路径。
+- CName 姓名栏改为逐字符写入五个固定槽位，操作提示移到游戏左侧黑边；原生回看重放在选中记录首个文本段落复位行首光标，避免前一条记录的尾部空格状态逐次累积。
+- `./build-host.sh`、完整 `./test-host.sh 鬼作`、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过；SDL dummy 的 CAS/`--raw` 单帧截图也通过。当前构建及SD交付主入口 SHA-256 为 `0c6e1d903e648cbd44f56be3e66abe9ada11b5fb746e00ff433dfeacacbc256e`。Switch 实机 GLES2 shader、完整路线和逐屏截图仍未验证。
+
+## 2026-09-22 展示滤镜与回看/姓名面板最终校验
+
+- 在最终主机构建中，CName 网格复制完整 288 行，选中字形在高亮层上重绘；姓名按 UTF-8 字符逐个居中到五个固定槽位，HOS UI 字体的按键说明绘制在左侧黑边，不再占用游戏画布底部。CName 的返回键仍被屏蔽，确认流程保持原版。
+- 回看重放在目标记录的首条指令前把光标恢复到原生 `42/43` 起点，同时保留该记录自己的显式 `46/47` 定位；颜色、字号等跨记录状态继续继承。新增重复回放像素一致性和长文本起点回归。
+- 最终主机命令 `./build-host.sh`、`./test-host.sh 鬼作`、SDL dummy CName 专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check` 全部通过；`build-switch/kisaku.nro` 与 SD 交付入口 SHA-256 均为 `8492df23fb2c547f9189ea6d8781f7d53b29ede88a07efb6183f2f761260adbc`。
+- Switch 实机 GLES2 着色器、姓名输入实机操作、完整路线和逐屏 PC 对照仍未验证；没有启动 PC 原版程序。

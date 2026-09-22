@@ -32,8 +32,8 @@ export PKG_CONFIG_LIBDIR
 
 "$dkp/devkitA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra -Werror -Iruntime \
   $("$dkp/tools/bin/pkg-config" --cflags sdl2) -fPIE -specs="$dkp/libnx/switch.specs" \
-  runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c runtime/ax.c runtime/mam.c runtime/video.c runtime/flags.c runtime/gallery.c runtime/control_store.c runtime/save_slot.c runtime/scene.c runtime/scene_view.c runtime/title.c runtime/flag_dialog.c runtime/scene_history.c runtime/text_encoding.c runtime/text_layout.c runtime/font.c runtime/read_flags.c runtime/voice_worker.c runtime/image_worker.c runtime/bootstrap.c runtime/switch_hos.c runtime/image_sdl.c tools/runtime_viewer.c \
-  -L"$dkp/portlibs/switch/lib" -lSDL2_test $("$dkp/tools/bin/pkg-config" --libs sdl2) -lm \
+  runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c runtime/ax.c runtime/mam.c runtime/video.c runtime/flags.c runtime/gallery.c runtime/control_store.c runtime/save_slot.c runtime/scene.c runtime/scene_view.c runtime/title.c runtime/flag_dialog.c runtime/scene_history.c runtime/text_encoding.c runtime/text_layout.c runtime/font.c runtime/read_flags.c runtime/voice_worker.c runtime/image_worker.c runtime/present_filter.c runtime/bootstrap.c runtime/switch_hos.c runtime/image_sdl.c tools/runtime_viewer.c \
+  -L"$dkp/portlibs/switch/lib" -lSDL2_test $("$dkp/tools/bin/pkg-config" --libs sdl2) $("$dkp/tools/bin/pkg-config" --cflags --libs glesv2) -lm \
   $("$dkp/tools/bin/pkg-config" --cflags --libs libavformat libavcodec libswscale libswresample freetype2) -lpthread -lnx -o build-switch/kisaku-runtime.elf
 "$dkp/tools/bin/nacptool" --create 'Kisaku Port Preview' 'kisaku-switch contributors' '0.1.0' build-switch/kisaku.nacp
 # Original-game artwork stays local, outside the source repository.

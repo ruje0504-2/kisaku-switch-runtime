@@ -1041,9 +1041,14 @@ static void test_backlog_replay(const char *root,const char *saves){
        command vector in chronological order instead of resetting to the
        current gameplay globals for every row. */
     b->vm->sp=0;assert(!backlog_call(b,0,1,(KValue){1,NULL})&&b->message_count==2);
-    uint8_t prior[64],current[16];size_t prior_size=0,current_size=0;
+    uint8_t prior[64],current[32];size_t prior_size=0,current_size=0;
     replay_number(prior,&prior_size,0xff0000);replay_number(prior,&prior_size,33);prior[prior_size++]=0x0e;
     prior[prior_size++]=0x0a;prior[prior_size++]='R';prior[prior_size++]=0;prior[prior_size++]=0;
+    /* The selected record may explicitly place its first line.  The replay
+       cursor reset must happen before these stores, not in the text callback
+       where it would erase the record's intentional location. */
+    replay_number(current,&current_size,200);replay_number(current,&current_size,46);current[current_size++]=0x0e;
+    replay_number(current,&current_size,36);replay_number(current,&current_size,47);current[current_size++]=0x0e;
     current[current_size++]=0x0a;current[current_size++]='I';current[current_size++]=0;current[current_size++]=0;
     free(b->messages[0].data);b->messages[0].data=malloc(prior_size);assert(b->messages[0].data);
     memcpy(b->messages[0].data,prior,prior_size);b->messages[0].size=b->messages[0].capacity=prior_size;b->messages[0].flag=0;
@@ -1051,10 +1056,30 @@ static void test_backlog_replay(const char *root,const char *saves){
     b->messages[1].size=b->messages[1].capacity=current_size;b->messages[1].flag=0;
     memset(row.pixels,0,640*54*4);memset(why,0,sizeof(why));kbacklog_voices_free(&voices);
     assert(!bootstrap_backlog_replay(b,0,&row,&voices,why)&&!voices.count);
-    unsigned inherited_red=0;for(unsigned y=0;y<54;y++)for(unsigned x=0;x<640;x++){
+    unsigned inherited_red=0,min_x=640;for(unsigned y=0;y<54;y++)for(unsigned x=0;x<640;x++){
         uint8_t *p=row.pixels+y*row.stride+x*4;if(p[2]&&!p[1])inherited_red++;
+        if(p[2]&&!p[1]&&x<min_x)min_x=x;
     }
-    assert(inherited_red);
+    assert(inherited_red&&min_x>=200&&min_x<240);
+    uint8_t *repeat=malloc(640*54*4);assert(repeat);memcpy(repeat,row.pixels,640*54*4);
+    memset(row.pixels,0,640*54*4);
+    memset(why,0,sizeof(why));kbacklog_voices_free(&voices);assert(!bootstrap_backlog_replay(b,0,&row,&voices,why));
+    assert(!memcmp(repeat,row.pixels,640*54*4)&&!voices.count);
+
+    /* A third, long record exercises the chronological boundary repeatedly:
+       its first glyph returns to the configured origin even though the
+       preceding record ended at the explicit x=200 position. */
+    b->vm->sp=0;assert(!backlog_call(b,0,1,(KValue){1,NULL})&&b->message_count==3);
+    uint8_t long_record[256];size_t long_size=0;long_record[long_size++]=0x0a;
+    for(unsigned i=0;i<48;i++)long_record[long_size++]='L';long_record[long_size++]=0;long_record[long_size++]=0;
+    free(b->messages[2].data);b->messages[2].data=malloc(long_size);assert(b->messages[2].data);memcpy(b->messages[2].data,long_record,long_size);b->messages[2].size=b->messages[2].capacity=long_size;b->messages[2].flag=0;
+    memset(row.pixels,0,640*54*4);memset(why,0,sizeof(why));kbacklog_voices_free(&voices);assert(!bootstrap_backlog_replay(b,0,&row,&voices,why));
+    unsigned origin=640;for(unsigned y=0;y<54;y++)for(unsigned x=0;x<640;x++){uint8_t *p=row.pixels+y*row.stride+x*4;if(p[2]&&!p[1]&&x<100&&x<origin)origin=x;}
+    assert(origin>=32&&origin<80);
+    uint8_t *long_pixels=malloc(640*54*4);assert(long_pixels);memcpy(long_pixels,row.pixels,640*54*4);
+    memset(row.pixels,0,640*54*4);
+    memset(why,0,sizeof(why));assert(!bootstrap_backlog_replay(b,0,&row,&voices,why)&&!memcmp(long_pixels,row.pixels,640*54*4));
+    free(long_pixels);free(repeat);
     kbacklog_voices_free(&voices);
     free(pixels);free(globals);rmt_free(&row);kbacklog_voices_free(&voices);bootstrap_destroy(b);
     puts("Native backlog replay: colors, newline, cross-record state, ordered voices, isolation and atomic failure: PASS");
@@ -1594,6 +1619,13 @@ int main(int argc,char **argv){
     int result=bootstrap_run(b,100000);
     for(unsigned frame=0;result==1&&frame<1000&&!(b->title.active&&b->title.age>=64);frame++){bootstrap_frame(b);result=bootstrap_run(b,100000);}
     assert(result==1&&!b->error[0]);assert(b->vm->syscall==31);
+    /* Presentation-only CAS strength accepts normalized and percentage
+       settings without entering the native CConfig index table. */
+    test_setting(b,"Display","CASStrength","0.25");assert(bootstrap_cas_strength(b)==25);
+    test_setting(b,"Display","CASStrength","75");assert(bootstrap_cas_strength(b)==75);
+    test_setting(b,"Display","CASStrength","200");assert(bootstrap_cas_strength(b)==100);
+    test_setting(b,"Display","CASStrength","invalid");assert(bootstrap_cas_strength(b)==0);
+    test_setting(b,"Display","CASStrength","0");assert(bootstrap_cas_strength(b)==0);
     assert(!b->vm->sp&&b->title.active&&b->title.variant==4);
     assert(b->vm->byte_count==9192&&b->vm->word_count==600&&b->raw_size==15000);
     assert(b->vm->raw==b->raw_variables&&b->vm->raw_size==b->raw_size);
