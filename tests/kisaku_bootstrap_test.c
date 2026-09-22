@@ -49,6 +49,45 @@ static void test_backlog_records(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("Kisaku backlog records: append, nonempty count, voice query, clear and preserved invalid operands: PASS");
 }
+static void test_backlog_lifecycle(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    assert(b->message_index==-1);
+    b->vm->globals[0][50].number=0x80;
+    assert(backlog_call(b,2,0,(KValue){0,NULL})<0&&b->vm->sp==2&&b->message_index==-1);
+    assert(!(b->vm->globals[0][50].number&0x100));
+    assert(!backlog_call(b,0,1,(KValue){2,NULL}));
+    assert(!backlog_call(b,2,0,(KValue){0,NULL})&&b->message_index==0);
+    assert(!backlog_call(b,2,0,(KValue){0,NULL})&&b->message_index==0);
+    assert(!backlog_call(b,3,0,(KValue){0,NULL}));
+    assert(b->messages[0].size==2&&!b->messages[0].data[0]&&!b->messages[0].data[1]);
+    assert(!backlog_call(b,3,0,(KValue){0,NULL})&&b->messages[0].size==2);
+    /* Text starts the next record without a script 23/2. Measurement mode
+       exercises the actual VM/recorder path without requiring a font. */
+    static const uint8_t script[]={0,0,0,0,0x0a,'A',0,0x0b,'B',0,0};
+    int id=kvm_add_module(b->vm,"backlog-lifecycle",script,sizeof(script));assert(id>=0);
+    b->vm->globals[0][50].number=(int32_t)0x80000080u;
+    assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,100));
+    static const uint8_t expected[]={0x0a,'A',0,0x0b,'B',0,0};
+    assert(b->message_index==1&&b->messages[1].size==sizeof(expected));
+    assert(!memcmp(b->messages[1].data,expected,sizeof(expected))&&b->text_measure_bytes==2);
+    assert(!backlog_call(b,3,0,(KValue){0,NULL}));
+    assert(b->messages[1].size==sizeof(expected)+1);
+    b->messages[0].flag=1;b->messages[0].text=malloc(4);assert(b->messages[0].text);
+    memcpy(b->messages[0].text,"old",4);b->messages[0].text_capacity=4;
+    uint8_t *retained=b->messages[1].data;
+    assert(!backlog_call(b,2,0,(KValue){0,NULL})&&b->message_index==1);
+    assert(b->messages[0].data==retained&&!b->messages[1].data&&!b->messages[1].text&&!b->messages[1].flag);
+    assert(!backlog_call(b,2,0,(KValue){0,NULL})&&b->messages[0].data==retained);
+    /* Failed end retains selector and recording bit; disabled recording is
+       an intentional no-op, even with an invalid current slot. */
+    b->message_index=-1;
+    assert(backlog_call(b,3,0,(KValue){0,NULL})<0&&b->vm->sp==2&&(b->vm->globals[0][50].number&0x100));
+    b->vm->globals[0][50].number=0x100;
+    assert(!backlog_call(b,2,0,(KValue){0,NULL})&&b->message_index==-1);
+    assert(!backlog_call(b,3,0,(KValue){0,NULL})&&b->vm->globals[0][50].number==0x100);
+    bootstrap_destroy(b);
+    puts("Kisaku backlog lifecycle: first slot, idempotent begin/end, text commands, rollover, preserved failures: PASS");
+}
 static void test_setting(KBootstrap *b,const char *section,const char *key,const char *value);
 static void bowling_free(void *p){bowling_released++;free(p);}
 static int call(KBootstrap *b,int sub,int action){
@@ -1097,6 +1136,9 @@ static void test_ui_and_logo(const char *root,const char *saves){
     puts("Kisaku logo PCM gain/mixing, message margins/buttons and native choice rows/paging/disabled hits: PASS");
 }
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--backlog")){
+        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);return 0;
+    }
     if(argc!=3)return 2;
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);
     int result=bootstrap_run(b,100000);
@@ -1575,6 +1617,7 @@ int main(int argc,char **argv){
     test_bowling_modal(argv[1],argv[2]);
     test_week(argv[1],argv[2]);
     test_backlog_records(argv[1],argv[2]);
+    test_backlog_lifecycle(argv[1],argv[2]);
     test_native_tint(argv[1],argv[2]);
     assert(!call(b,1011,0));
     b->vm->bytes[3600]=b->vm->bytes[5038]=b->vm->bytes[4001]=b->vm->bytes[4004]=0;

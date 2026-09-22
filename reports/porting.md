@@ -588,3 +588,18 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - `./build-host.sh`、最终代码的`./test-host.sh 鬼作`、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`均exit 0；`git diff --check`通过。日志分别为`local/backlog-record-build.log`、`local/backlog-record-final-test-host.log`、`local/backlog-record-switch.log`、`local/backlog-record-package.log`。新增容器专项在完整主机日志第43行PASS；本轮未重跑ASan/UBSan，不沿用上一提交结论。
 - 构建及SD交付主入口SHA-256均为`83231f145a7c196dda6fc69f51564091d207e7194de2cb8cbb5dbf9e3d2b65bf`。图标改动未纳入提交。
 - **①仍未完成**：前端仍是64条扁平文本/单语音，原生命令流、多语音及文字状态保存/恢复尚未接通；29非零等待也待实现。Switch实机和全路线/真实场景回归未验证，未运行PC原版。保持①②③剩余细节④→鬼作参数校验→⑤的顺序。
+
+## 2026-09-22 回看记录生命周期与文字命令
+
+①完整回看继续推进，尚未完成。按鬼作 `500a70/500b30/4fe4a0/4fe430/46f880/505820/4138b0` 修正首槽索引为-1、统一开始记录、重复开始/结束及容量淘汰；23/2、3失败保留操作数。0x0a/0x0b自动开始记录并保留opcode、正文NUL和独立尾部哨兵，测量模式也记录。文字记录附近的参考游戏地址注释已换为鬼作地址；详情和下一步静态入口见 `reports/backlog-native.md`。
+
+验证（均exit 0）：
+- `./build-host.sh`：`local/backlog-lifecycle-build.log`。随后补齐专项测试MES的4字节头并增加 `--backlog` 入口，测试程序重新构建：`local/backlog-lifecycle-test-build.log`。
+- `build/kisaku-bootstrap-test 鬼作 local/backlog-lifecycle-test-saves --backlog`：`local/backlog-lifecycle-focused.log`。
+- ASan/UBSan同一专项：`local/backlog-lifecycle-asan.log`；构建脚本/日志同前缀。macOS不支持LeakSanitizer，设置 `ASAN_OPTIONS=detect_leaks=0`，未宣称泄漏检测通过。
+- `./test-host.sh 鬼作` 完整回归：`local/backlog-lifecycle-test-host-final.log`。之前一次运行因新增测试夹具漏写MES头而失败，保留在 `local/backlog-lifecycle-test-host.log`；已修正夹具并完整重跑。
+- `./build-switch.sh`：`local/backlog-lifecycle-switch.log`；`python3 tools/package_sd.py 鬼作`：`local/backlog-lifecycle-package.log`；`git diff --check`通过。
+
+构建主入口、兼容名与SD交付主入口SHA-256一致：`4196fb8eb6a78a6ff8e436ccbc0a33bf856be0340c0cebe8f58c3851e082275c`。
+
+仍缺通用命令捕获、换行/文字状态、多语音重放、23/5/7/8及前端/存档统一，前端仍用64条旧历史；不能称完整回看已交付。后续按①→②→③剩余细节→④→鬼作PC参数校验→⑤继续。Switch实机、真实场景完整回放与全路线仍未验证。主人说明的 `icon.png` 是后续NRO/NSP打包图标，本轮原样保留，未混入运行时提交。

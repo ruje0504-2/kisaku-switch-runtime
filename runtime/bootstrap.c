@@ -157,6 +157,7 @@ KBootstrap *bootstrap_create_split(const char *root,const char *save_root){
         *initial[i]=(KImage){0,0,640,480,640*4,p};
     }
     strcpy(b->root,root);strcpy(b->save_root,save_root);b->last_loaded_layer=-1;b->animation_id=-1;b->message_hover=-1;b->exec522_current=-1;b->portrait_tracks[0]=b->portrait_tracks[1]=-1;
+    b->message_index=-1; /* 500a70: no current native backlog record yet. */
     b->reset_pending=1;
     if(kreset_recover(save_root)){error(b,"history reset recovery failed");return b;}
     b->reset_pending=0;
@@ -285,6 +286,34 @@ static int record_append(KBootstrap *b,const uint8_t *data,size_t count){
     size_t next=prefix+count+1;
     if(next>r->capacity){uint8_t *p=realloc(r->data,next);if(!p)return error(b,"message recording allocation failed");r->data=p;r->capacity=next;}
     memcpy(r->data+prefix,data,count);r->data[next-1]=0;r->size=next;return 0;
+}
+/* 4fe4a0 -> 500b30. Repeated begin calls belong to the same record. */
+static int record_begin(KBootstrap *b){
+    KValue *flags=&b->vm->globals[0][50];
+    if(!(flags->number&0x80))return 0;
+    if(!(flags->number&0x100)){
+        if(!b->message_count)return error(b,"message recorder has no slots (arguments preserved)");
+        if(b->message_index < -1 || b->message_index >= (int)b->message_count)
+            return error(b,"message recorder index invalid (arguments preserved)");
+        if(b->message_index+1==(int)b->message_count){
+            free(b->messages[0].data);free(b->messages[0].text);
+            memmove(b->messages,b->messages+1,(b->message_count-1)*sizeof(*b->messages));
+            memset(&b->messages[b->message_count-1],0,sizeof(*b->messages));
+        }else b->message_index++;
+    }else if(b->message_index<0||(unsigned)b->message_index>=b->message_count)
+        return error(b,"message recorder has no current slot (arguments preserved)");
+    flags->number|=0x100;return 0;
+}
+/* 46f880 starts records for text; 505820 records the bytes including NUL.
+   Retain the text opcode as well, so adjacent text commands remain distinct.
+   Other native instruction types still require separate recording support. */
+static int record_text(KBootstrap *b){
+    if(!(b->vm->globals[0][50].number&0x80))return 0;
+    if(b->vm->text_size>4096)return error(b,"message recording text limit");
+    if(record_begin(b))return -1;
+    uint8_t command[4098];command[0]=(uint8_t)b->vm->opcode;
+    memcpy(command+1,b->vm->text,b->vm->text_size+1);
+    return record_append(b,command,b->vm->text_size+2);
 }
 static unsigned le16(const uint8_t *p){return (unsigned)p[0]|((unsigned)p[1]<<8);}
 static int mam_prepare(KBootstrap *b,const char *voice);
@@ -1152,6 +1181,15 @@ int bootstrap_dispatch(KBootstrap *b){
     /* Peek first: unsupported handlers preserve their arguments for diagnostics. */
     if(!v->sp||v->stack[v->sp-1].string)return error(b,"missing integer subcall");
     sub=v->stack[v->sp-1].number;
+    if(main==23&&(sub==2||sub==3)){
+        /* Validate and finish any allocation before consuming the selector. */
+        if(sub==2){if(record_begin(b))return -1;}
+        else if(v->globals[0][50].number&0x80){
+            if(v->globals[0][50].number&0x100){uint8_t zero=0;if(record_append(b,&zero,1))return -1;}
+            v->globals[0][50].number&=~0x100;
+        }
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
     if(main==23&&(sub==0||sub==1||sub==4||sub==6)){
         /* Kisaku 5061c0 case 0x17 -> 4fe5f0 (CFuncBackLog).
            Validate before consuming operands; queries replace their operands
@@ -1857,7 +1895,6 @@ int bootstrap_dispatch(KBootstrap *b){
     int helper_present=main==31&&sub==13&&v->sp>=5&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==3&&!v->stack[v->sp-5].string&&v->stack[v->sp-5].number==1;
     int helper_hide=main==31&&sub==13&&v->sp>=3&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==4;
     int voice_register=main==17&&sub==5&&!(v->globals[0][50].number&0x400);
-    int record_idle=main==23&&(sub==2||sub==3);
     int scene_register=main==31&&sub==23&&v->sp>=4&&!v->stack[v->sp-2].string&&(v->stack[v->sp-2].number==0||v->stack[v->sp-2].number==1);
     int bonus54_title=main==31&&sub==64&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==0;
     int bonus54_menu=main==31&&sub==64&&v->sp>=2&&!v->stack[v->sp-2].string&&(v->stack[v->sp-2].number==1||v->stack[v->sp-2].number==2);
@@ -1887,7 +1924,7 @@ int bootstrap_dispatch(KBootstrap *b){
         bonus54_title||bonus54_menu||area_open||name_attach||bonus53_title||
         bonus_credits||bonus_meter||offset_image||bonus_title;
     if(!main31_known)return error(b,"Kisaku game-specific interface not yet mapped (arguments preserved)");
-    if(!((main==31&&(sub<0||sub>67||(sub>=2&&sub<=9)||(sub>=31&&sub<=39)||(sub>=41&&sub<=59)||sub==61))||(main==31&&(sub==20||sub==22||sub==40))||(main==31&&sub==15)||(main==31&&sub==17)||(main==31&&sub==16)||(main==31&&sub==18)||(main==31&&sub==14)||(main==1&&sub==0)||(main==16&&(sub==1||sub==3||sub==5||sub==6||sub==7))||(main==31&&(sub==0||sub==1))||(main==30&&sub==0)||(main==17&&(sub==1||sub==6||sub==7))||voice_register||record_idle||scene_register||(main==31&&sub==29)||(main==31&&(sub==65||sub==66||sub==67))||bonus54_menu||area_open||name_attach||bonus_credits||bonus_meter||offset_image||title_open||(main==31&&sub==19)||scene_ui||scene_export||scene_hide||(main==31&&(sub==25||sub==26||sub==27||sub==28||sub==30))||(main==31&&sub==523)||scene_flags||scene_restore||helper_reset||helper_present||helper_hide||effects_idle||message_hidden||scene_reset||(main==31&&sub==24)||animation_reset||message_timed||message_reset||(main==21&&(sub==0||sub==1||sub==4))||(main==13)||(main==24&&sub>=0&&sub<=6)||(main==28&&sub>=0&&sub<=11)||(main==23&&(sub==0||sub==1))||(main==27&&(sub>=0&&sub<=3))||(main==26&&(sub==0||sub==1))||(main==14&&(sub==0||sub==2||sub==3||sub==6||sub==11||sub==13))||((main>=15&&main<=18)&&sub==0)||((main>=15&&main<=17)&&sub==2)||(main==15&&(sub==1||sub==3||sub==5||sub==6))||((main==10||main==11)&&sub==0)||(main==19&&(sub>=0&&sub<=9))||(main==25&&sub>=0&&sub<=3)||(main==22&&sub>=0&&sub<=2))){
+    if(!((main==31&&(sub<0||sub>67||(sub>=2&&sub<=9)||(sub>=31&&sub<=39)||(sub>=41&&sub<=59)||sub==61))||(main==31&&(sub==20||sub==22||sub==40))||(main==31&&sub==15)||(main==31&&sub==17)||(main==31&&sub==16)||(main==31&&sub==18)||(main==31&&sub==14)||(main==1&&sub==0)||(main==16&&(sub==1||sub==3||sub==5||sub==6||sub==7))||(main==31&&(sub==0||sub==1))||(main==30&&sub==0)||(main==17&&(sub==1||sub==6||sub==7))||voice_register||scene_register||(main==31&&sub==29)||(main==31&&(sub==65||sub==66||sub==67))||bonus54_menu||area_open||name_attach||bonus_credits||bonus_meter||offset_image||title_open||(main==31&&sub==19)||scene_ui||scene_export||scene_hide||(main==31&&(sub==25||sub==26||sub==27||sub==28||sub==30))||(main==31&&sub==523)||scene_flags||scene_restore||helper_reset||helper_present||helper_hide||effects_idle||message_hidden||scene_reset||(main==31&&sub==24)||animation_reset||message_timed||message_reset||(main==21&&(sub==0||sub==1||sub==4))||(main==13)||(main==24&&sub>=0&&sub<=6)||(main==28&&sub>=0&&sub<=11)||(main==23&&(sub==0||sub==1))||(main==27&&(sub>=0&&sub<=3))||(main==26&&(sub==0||sub==1))||(main==14&&(sub==0||sub==2||sub==3||sub==6||sub==11||sub==13))||((main>=15&&main<=18)&&sub==0)||((main>=15&&main<=17)&&sub==2)||(main==15&&(sub==1||sub==3||sub==5||sub==6))||((main==10||main==11)&&sub==0)||(main==19&&(sub>=0&&sub<=9))||(main==25&&sub>=0&&sub<=3)||(main==22&&sub>=0&&sub<=2))){
         char msg[128];snprintf(msg,sizeof(msg),"unsupported subcall %d (arguments preserved)",sub);return error(b,msg);
     }
     if(integer(b,&sub))return -1;
@@ -1936,24 +1973,6 @@ int bootstrap_dispatch(KBootstrap *b){
     }else if(main==31&&sub==40){
         /* CFuncExec case 0x28 consumes one direction flag. */
         if(integer(b,&a)||exec_wipe_begin(b,a))return -1;
-    }else if(record_idle){
-        if(v->globals[0][50].number&0x80){
-            if(sub==2){
-                if(!(v->globals[0][50].number&0x100)){
-                    if(!b->message_count)return error(b,"message recorder has no slots");
-                    b->message_index++;
-                    if((unsigned)b->message_index>=b->message_count){
-                        free(b->messages[0].data);free(b->messages[0].text);
-                        memmove(b->messages,b->messages+1,(b->message_count-1)*sizeof(*b->messages));
-                        memset(&b->messages[b->message_count-1],0,sizeof(*b->messages));b->message_index=(int)b->message_count-1;
-                    }
-                }
-                v->globals[0][50].number|=0x100;
-            }else {
-                if(v->globals[0][50].number&0x100){uint8_t zero=0;if(record_append(b,&zero,1))return -1;}
-                v->globals[0][50].number&=~0x100;
-            }
-        }
     }else if(scene_register){
         if(integer(b,&a)||integer(b,&c)||integer(b,&d))return -1;
         if(!a){if(!b->scene_replay&&khistory_register(&b->scene_history,bootstrap_save_dir(b),c,d,v->modules[v->module].name,v->globals[0][48].number))return error(b,"scene checkpoint registration failed");}
@@ -2644,12 +2663,10 @@ static int draw_text(KBootstrap *b){
         if(equal(b->settings[i].key,"FontFile"))path=b->settings[i].value;
     }
     KTextEncoding encoding=text_encoding(b);
-    /* 41dc80 records bytes only when BOTH system flags 0x80 and 0x100
-       are set. 437390 uses 4886e0 for CP932 punctuation layout. */
-    /* 41cc16..41cc33: measurement counts encoded bytes, skips drawing and
-       cursor writes. 41dc80 still records the input, including its NUL. */
+    /* Kisaku 5059b0: measurement counts encoded bytes without drawing or
+       cursor writes; 505820 still records the input including its NUL. */
     if(v->globals[0][50].number&0x80000000u){
-        if((v->globals[0][50].number&0x180)==0x180&&record_append(b,(const uint8_t *)v->text,v->text_size+1))return -1;
+        if(record_text(b))return -1;
         b->text_measure_bytes+=(uint32_t)v->text_size;return kvm_resume(v);
     }
     KImage *dst=surface(b,v->globals[0][49].number);
@@ -2679,7 +2696,7 @@ static int draw_text(KBootstrap *b){
     for(size_t i=0;i<count;i++){
         if(kfont_draw(active_font,dst,chars[i].codepoint,positions[i].x,positions[i].y,(unsigned)b->font_width,(unsigned)b->font_height,(uint32_t)v->globals[0][33].number))return error(b,"glyph unavailable");
     }
-    if((v->globals[0][50].number&0x180)==0x180&&record_append(b,(const uint8_t *)v->text,v->text_size+1))return -1;
+    if(record_text(b))return -1;
     /* A displayed line may contain several TEXT opcodes, a substituted name,
        or a numeric syscall. Retain the whole message for portable history. */
     if(b->message_initialized&&v->globals[0][49].number==1&&(top==v->globals[0][43].number||b->novel_mode)){
