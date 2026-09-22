@@ -245,6 +245,15 @@ static void test_week(const char *root,const char *saves){
     week_call(b,3,1);
     assert(b->exec522_sprites[0].pixels[60*432+8*4]==208);
     assert(b->exec522_sprites[0].pixels[84*432+8*4]==24);
+    week_call(b,2,0);
+    for(unsigned n=0;n<10;n++)bootstrap_frame(b);
+    /* Native case 4 pops item first, then group: [group,item,4,522]. */
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    const int result_args[]={0,2,4,522};
+    for(unsigned i=0;i<4;i++)assert(!kvm_push(b->vm,(KValue){result_args[i],NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->exec522_state);
+    for(unsigned n=0;n<80;n++)bootstrap_frame(b);
+    assert(b->exec522_sprites[0].pixels[84*432+8*4]==(uint8_t)0x178);
     week_call(b,1,1);
     for(unsigned n=0;n<12;n++)bootstrap_frame(b);
     assert(!b->error[0]&&!b->exec522_motion&&b->exec522_visible[0]&&b->exec522_visible[1]);
@@ -621,7 +630,13 @@ static void test_graphics_windows(const char *root,const char *saves){
         b->param_animation_active=1;b->param_animation_phase=3;b->param_animation_chime=1;
         for(unsigned i=0;i<4;i++)b->param_animation_plan.target[i]=b->param_values[i];
         b->param_animation_plan.total_target=b->param_total;
+        free(b->effect_tracks[0].pcm);memset(&b->effect_tracks[0],0,sizeof(b->effect_tracks[0]));
+        b->effect_tracks[0].pcm=calloc(5880,1);assert(b->effect_tracks[0].pcm);
+        b->effect_tracks[0].size=5880;
+        bootstrap_confirm(b);bootstrap_cancel(b);bootstrap_pointer(b,50,400,1);
+        bootstrap_frame(b);assert(b->param_animation_active&&b->effect_tracks[0].clock_position==2940);
         bootstrap_frame(b);assert(!b->error[0]&&!b->param_animation_active&&!b->param_animation_window);
+        assert(b->effect_tracks[0].pcm&&b->effect_tracks[0].clock_position==5880);
         assert(!memcmp(b->layers[0].pixels+340*2560+18*4,b->param_backing.pixels,602*4));
     }
     bootstrap_destroy(b);
@@ -1387,7 +1402,34 @@ static void test_title_appendix(const char *root,const char *saves){
     assert(title_test_call(b,4,1)<0&&b->vm->sp==3);
     bootstrap_destroy(b);puts("Kisaku main-to-appendix script round trip, four layouts, locks and returns: PASS");
 }
+static void test_calendar_persistence(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);
+    b->title.active=0;b->wait_input=1;
+    uint8_t *data=NULL;size_t size=0;KImage atlas={0};
+    assert(!ai6_read_named(&b->images,"timepart.akb",&data,&size)&&!rmt_decode(data,size,&atlas));free(data);
+    rmt_free(&b->layers[7]);b->layers[7]=atlas;
+    assert(!call_overlay524(b,304,4,0));
+    uint8_t expected[120*128*4];memcpy(expected,b->overlay524_sprite.pixels,sizeof(expected));
+    b->choice_base=(KImage){0,0,640,480,2560,calloc(640*480,4)};assert(b->choice_base.pixels);
+    b->choice_text=(KImage){0,0,640,480,2560,calloc(640*480,4)};assert(b->choice_text.pixels);
+    b->choice_active=1;b->choice_count=0;b->choice_selected=-1;b->choice_rendered_page=0;
+    for(unsigned frame=0;frame<180;frame++){
+        memset(b->choice_base.pixels,(int)(frame%128),640*480*4);
+        bootstrap_frame(b);assert(!b->error[0]);
+        assert(bootstrap_run(b,100000)==1&&b->overlay524_drawn);
+        for(unsigned y=0;y<128;y++)for(unsigned x=0;x<120;x++){
+            const uint8_t *p=expected+(y*120+x)*4,*d=b->layers[0].pixels+(16+y)*2560+(16+x)*4;
+            for(unsigned c=0;c<3;c++)assert(d[c]==(uint8_t)((frame%128)*(255-p[3])/255+p[c]*p[3]/255));
+        }
+    }
+    assert(!call(b,524,29)&&!b->overlay524_drawn&&!b->overlays.badge_visible);
+    bootstrap_frame(b);assert(!b->overlay524_drawn);
+    assert(!call(b,524,30)&&b->overlays.badge_visible);bootstrap_frame(b);assert(b->overlay524_drawn);
+    assert(!call_overlay524(b,0,0,1));bootstrap_frame(b);assert(!b->overlay524_drawn);
+    bootstrap_destroy(b);puts("Date badge: real image text, choice redraw persistence, suspend/resume and explicit hide: PASS");
+}
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--calendar")){test_week(argv[1],argv[2]);test_calendar_persistence(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--backlog")){
         test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
@@ -1645,14 +1687,16 @@ int main(int argc,char **argv){
     third_src[0]=83;third_src[1]=89;third_src[2]=97;third_src[3]=101;
     assert(!call_overlay524(b,304,4,0)&&!b->vm->sp&&b->overlay524_visible);
     assert(b->layers[0].pixels[0]==7&&b->layers[0].pixels[1]==11&&b->layers[0].pixels[2]==13);
-    uint8_t *part=b->layers[0].pixels+24*b->layers[0].stride+25*4;
+    uint8_t *part=b->overlay524_sprite.pixels+24*b->overlay524_sprite.stride+25*4;
     assert(part[0]==51&&part[1]==53&&part[2]==59&&part[3]==61);
-    part=b->layers[0].pixels+56*b->layers[0].stride+29*4;
+    part=b->overlay524_sprite.pixels+56*b->overlay524_sprite.stride+29*4;
     assert(part[0]==67&&part[1]==71&&part[2]==73&&part[3]==79);
-    part=b->layers[0].pixels+84*b->layers[0].stride+29*4;
+    part=b->overlay524_sprite.pixels+84*b->overlay524_sprite.stride+29*4;
     assert(part[0]==83&&part[1]==89&&part[2]==97&&part[3]==101);
     assert(call_overlay524(b,304,4,2)<0&&b->vm->sp==2);
+    b->layers[0].pixels[300*2560+300*4]=199;
     assert(!call_overlay524(b,0,0,1)&&!b->vm->sp&&!b->overlay524_visible);
+    assert(b->layers[0].pixels[300*2560+300*4]==199);
     assert(b->layers[0].pixels[0]==7&&b->layers[0].pixels[1]==11&&b->layers[0].pixels[2]==13&&b->layers[0].pixels[3]==17);
     puts("Kisaku 31/524 sprite draw, keyed copy and cleanup: PASS");
     /* CFuncExec 31/40 uses the 640x960 two-page layer and performs a final
@@ -1869,7 +1913,7 @@ int main(int argc,char **argv){
     puts("Kisaku choice initialization and independent animation state: PASS");
     test_bowling_scripts(argv[1],argv[2]);
     test_bowling_modal(argv[1],argv[2]);
-    test_week(argv[1],argv[2]);
+    test_week(argv[1],argv[2]);test_calendar_persistence(argv[1],argv[2]);
     test_backlog_records(argv[1],argv[2]);
     test_native_wait(argv[1],argv[2]);
     test_backlog_lifecycle(argv[1],argv[2]);

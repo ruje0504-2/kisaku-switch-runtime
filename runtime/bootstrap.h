@@ -130,7 +130,7 @@ typedef struct {
     unsigned exec526_width,exec526_height; int exec526_x,exec526_y;
     /* CFuncExec 31/524 owns a small sprite object. Keep a backing copy so
        action 1 can remove the object without disturbing the scene below it. */
-    KImage overlay524_base; unsigned overlay524_visible;
+    KImage overlay524_base,overlay524_sprite; unsigned overlay524_visible,overlay524_drawn;
     unsigned transition_steps,transition_frame;
     /* CFuncExec 31/40 vertical page wipe. The Japanese engine uses layer 2
        as a 640x960 two-page source and copies one 640x480 window to page 0. */

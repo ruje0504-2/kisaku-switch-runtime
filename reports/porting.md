@@ -646,3 +646,12 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 进一步逐项探针明确暴露旧缺口：CG 31/300、音乐31/330、视频31/60、秃作切换14/12（参数201）仍报错；回想可进入场景选择模态。本轮不声称附录内容全部完成。详情见 remaining-work.md；本地诊断 local/title-children-probe.log。
 - 验证：`./build-host.sh`、`./test-host.sh 鬼作`、`build/kisaku-bootstrap-test 鬼作 <临时存档目录> --title`、对应 ASan/UBSan 专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。日志 local/title-appendix-{build,tests,sanitized,switch,package}.log。
 - NRO SHA-256：`5b40b3b17efe0f7f35b1a2f0fccd06ba609b50b6af3775208d3b9efdd9610abc`。Switch实机、附录各内容完整回放、全部路线未验证；未运行PC程序。
+
+## 2026-09-22 日期持久显示、周任务结果图片与参数演出自动收尾
+
+- `31/524` 按 `4f9eb0 -> 45c940` 改为独立120×128私有日期表面，原版坐标为(16,16)。原实现一次性写场景底图，选择/剧情重绘覆盖后就消失；现在在VM运行与帧重绘后统一合成，并在重绘前只恢复覆盖矩形。显式隐藏与29/30暂停/恢复跟随独立badge可见状态，不再恢复整张旧场景。日期文字取自原版timepart.akb。
+- `31/522/4` 按4fcef0与46c760纠正弹出顺序：`[group,item,4,522]`，先弹item再group。旧实现把group0当成item0无操作，因而问号不停、结果图片文字未绘制。mode5同样先弹packed date再variant，保留既有清理动作。模式3/4的文字继续从图集取图，不使用替代字体。
+- 参数演出卡死定位到phase3：音效完成后PCM仍保留供混音读取，旧结束条件却等待PCM指针为空。改为用clock_position到达size判定非循环结束音完成；保留禁止点击跳过，动画自然完成后解除VM阻塞。零插值步数从等待轨道阶段开始，不停在无法增加的插值阶段。
+- 新增`--calendar`专项：真实timepart图片的日期逐像素合成、选择底图连续180帧变化仍保持日期、暂停/恢复/隐藏；周任务group0/item2参数与停止问号后80帧稳定；结束音非空PCM保留时两帧自动收尾、确认/取消/点击不能抢先跳过。旧日期测试改为检查私有表面，并验证隐藏不回滚覆盖区域外的新画面。
+- `./build-host.sh`、`build/kisaku-bootstrap-test 鬼作 <临时存档目录> --calendar`、`./test-host.sh 鬼作`、该专项ASan/UBSan、`./build-switch.sh`、`git diff --check`通过。日志local/calendar-{build,focused,tests,sanitized,switch}.log；首次专项的缺失choice_text夹具已修正，最终专项及完整回归均通过。
+- NRO SHA-256：`aa025f0c6f9dea89b39d66ce18587430d5ce7bec2f6fc70d492e17b0415e8fdb`。Switch实机及全部周任务真实剧情组合仍未验证；本轮已修具体生命周期/参数/结束条件，不代表整个移植完成。未运行PC原版。

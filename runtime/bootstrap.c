@@ -258,7 +258,7 @@ static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     if(layer==8)snprintf(b->normal_atlas_name,sizeof(b->normal_atlas_name),"%s",name);
     return 0;
 }
-void bootstrap_destroy(KBootstrap *b){if(!b)return;kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
+void bootstrap_destroy(KBootstrap *b){if(!b)return;kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
 static int message_init(KBootstrap *b){
     /* 481be0: the layout rectangle is (32,8,560,54), but 481d68/481dca
        clear both complete 640x84 text surfaces. 481a50 copies that surface
@@ -749,10 +749,31 @@ static int layer_alpha(KBootstrap *b){
         dst->pixels[(size_t)y*dst->stride+(size_t)x*4+3]=alpha;
     return 0;
 }
-/* 4f9eb0 -> 45c940 draws the Japanese three-part status sprite from the
-   private layer-7 sheet. The native routine uses fixed coordinate tables;
-   keep those tables here instead of treating the arguments as arbitrary
-   surface copies. */
+/* 4f9eb0 -> 45c940: independent 120x128 date badge at (16,16).
+   Keep its private DIB separate from scene and choice redraws. */
+static void overlay524_restore(KBootstrap *b){
+    if(!b->overlay524_drawn)return;
+    KImage *dst=&b->layers[0];
+    if(dst->pixels&&dst->width>=136&&dst->height>=144)
+        for(unsigned y=0;y<128;y++)memcpy(dst->pixels+(16+y)*dst->stride+16*4,
+            b->overlay524_base.pixels+y*b->overlay524_base.stride,120*4);
+    b->overlay524_drawn=0;
+}
+static void overlay524_present(KBootstrap *b){
+    if(!b->overlay524_visible||!b->overlays.badge_visible||b->overlay524_drawn)return;
+    KImage *dst=&b->layers[0],*src=&b->overlay524_sprite;
+    if(!dst->pixels||dst->width<136||dst->height<144||!src->pixels)return;
+    for(unsigned y=0;y<128;y++){
+        memcpy(b->overlay524_base.pixels+y*b->overlay524_base.stride,
+            dst->pixels+(16+y)*dst->stride+16*4,120*4);
+        for(unsigned x=0;x<120;x++){
+            const uint8_t *p=src->pixels+y*src->stride+x*4;
+            uint8_t *d=dst->pixels+(16+y)*dst->stride+(16+x)*4;
+            for(unsigned c=0;c<3;c++)d[c]=(uint8_t)(d[c]*(255-p[3])/255+p[c]*p[3]/255);
+        }
+    }
+    b->overlay524_drawn=1;
+}
 static int overlay524_draw(KBootstrap *b,int first,int second,int third){
     static const unsigned first_xy[][2]={
         {0,0},{0,32},{0,64},{0,96},{0,128},
@@ -760,37 +781,35 @@ static int overlay524_draw(KBootstrap *b,int first,int second,int third){
     };
     static const unsigned second_xy[][2]={{240,0},{240,28},{240,56},{240,84}};
     static const unsigned third_xy[][2]={{160,120},{0,0},{0,0},{0,0},{160,64},{0,0},{160,92}};
-    KImage *src=&b->layers[7],*dst=scene_surface(b);
-    if(first<0||first>=(int)(sizeof(first_xy)/sizeof(*first_xy))||
-       second<0||second>=(int)(sizeof(second_xy)/sizeof(*second_xy))||
-       third<0||third>=(int)(sizeof(third_xy)/sizeof(*third_xy)))
+    KImage *src=&b->layers[7];
+    if(first<0||first>=12||second<0||second>=4||third<0||third>=7)
         return error(b,"31/524 sprite index out of range");
-    if(!src->pixels||src->width<640||src->height<400||!dst->pixels||dst->width<640||dst->height<480)
-        return error(b,"31/524 overlay layer 7 or destination surface missing");
-    if(!b->overlay524_visible){
-        if(!b->overlay524_base.pixels){
-            uint8_t *p=malloc(640*480*4);if(!p)return error(b,"31/524 overlay backing allocation failed");
-            b->overlay524_base=(KImage){0,0,640,480,640*4,p};
-        }
-        memcpy(b->overlay524_base.pixels,dst->pixels,640*480*4);
+    if(!src->pixels||src->width<640||src->height<400)
+        return error(b,"31/524 overlay layer 7 missing");
+    if(!b->overlay524_sprite.pixels){
+        uint8_t *p=calloc(120*128,4),*q=calloc(120*128,4);
+        if(!p||!q){free(p);free(q);return error(b,"31/524 private surface allocation failed");}
+        b->overlay524_sprite=(KImage){0,0,120,128,480,p};
+        b->overlay524_base=(KImage){0,0,120,128,480,q};
     }
-    int32_t q[9]={0,0,120,128,0,520,272,7,0xff00};
-    if(blit_args(b,3,q))return -1;
-    q[0]=25;q[1]=24;q[2]=80;q[3]=32;q[5]=(int32_t)first_xy[first][0];q[6]=(int32_t)first_xy[first][1];q[8]=1;
-    if(blit_args(b,0,q))return -1;
-    q[0]=29;q[1]=56;q[2]=72;q[3]=28;q[5]=(int32_t)second_xy[second][0];q[6]=(int32_t)second_xy[second][1];
-    if(blit_args(b,0,q))return -1;
-    q[0]=29;q[1]=84;q[2]=72;q[3]=28;q[5]=(int32_t)third_xy[third][0];q[6]=(int32_t)third_xy[third][1];
-    if(blit_args(b,0,q))return -1;
-    b->overlay524_visible=1;return 0;
+    overlay524_restore(b);
+    KImage *dst=&b->overlay524_sprite;memset(dst->pixels,0,128*480);
+    for(unsigned y=0;y<128;y++)for(unsigned x=0;x<120;x++){
+        const uint8_t *p=src->pixels+(272+y)*src->stride+(520+x)*4;
+        if(p[0]==0&&p[1]==255&&p[2]==0)continue;
+        memcpy(dst->pixels+y*dst->stride+x*4,p,4);
+    }
+    unsigned rects[3][6]={
+        {25,24,80,32,first_xy[first][0],first_xy[first][1]},
+        {29,56,72,28,second_xy[second][0],second_xy[second][1]},
+        {29,84,72,28,third_xy[third][0],third_xy[third][1]}};
+    for(unsigned i=0;i<3;i++)for(unsigned y=0;y<rects[i][3];y++)
+        memcpy(dst->pixels+(rects[i][1]+y)*dst->stride+rects[i][0]*4,
+            src->pixels+(rects[i][5]+y)*src->stride+rects[i][4]*4,rects[i][2]*4);
+    b->overlay524_visible=b->overlays.badge_visible=b->overlays.badge_saved=1;return 0;
 }
 static int overlay524_clear(KBootstrap *b){
-    if(b->overlay524_visible&&b->overlay524_base.pixels){
-        KImage *dst=scene_surface(b);
-        if(!dst->pixels||dst->width<640||dst->height<480)return error(b,"31/524 overlay destination surface missing");
-        memcpy(dst->pixels,b->overlay524_base.pixels,640*480*4);
-    }
-    b->overlay524_visible=0;return 0;
+    overlay524_restore(b);b->overlay524_visible=b->overlays.badge_visible=b->overlays.badge_saved=0;return 0;
 }
 static uint32_t le32(const uint8_t *p){return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
 
@@ -1148,7 +1167,7 @@ static int param_animation_begin(KBootstrap *b,const int32_t encoded[4],int32_t 
     b->param_animation_window=b->vm->globals[1][61].number==0;b->param_animation_temporary=b->param_animation_window;
     b->param_animation_chime=chime!=0;b->param_animation_track2=start2!=0;
     b->param_animation_sungeki=option(b,"CONFIG","IsSungekiSE",1)!=0;b->param_animation_step=0;b->param_animation_count=0;
-    b->param_animation_phase=1;b->param_animation_active=1;b->param_animation_clock=0;b->param_animation_last_event=0;
+    b->param_animation_phase=b->param_animation_plan.steps?1:2;b->param_animation_active=1;b->param_animation_clock=0;b->param_animation_last_event=0;
     for(unsigned i=0;i<4;i++)b->param_animation_accum[i]=0;
     return param_animation_present(b);
 }
@@ -1181,7 +1200,10 @@ static int param_animation_frame(KBootstrap *b){
            (b->param_animation_sungeki||!b->param_animation_track2||b->ax.cells[2].state==AX_STOPPED))
             return param_animation_finish(b,0);
     }else if(b->param_animation_phase==3){
-        if(!b->effect_tracks[0].pcm)return param_animation_finish(b,0);
+        const KEffectTrack *chime=&b->effect_tracks[0];
+        /* PCM remains resident after playback for the output mixer. */
+        if(!chime->pcm||(!chime->loop_end&&chime->clock_position>=chime->size))
+            return param_animation_finish(b,0);
     }
     return param_animation_present(b);
 }
@@ -1538,9 +1560,10 @@ int bootstrap_dispatch(KBootstrap *b){
             unsigned pos=v->sp-3-i;
             if(v->stack[pos].string)return error(b,"31/522 selector must be numeric (arguments preserved)");
         }
-        /* Stack order is the script order: [item,group,mode,522]. */
+        /* 4fcef0: mode 4 pops item first, then group; mode 5
+           pops packed date first, then variant. */
         if(count==1)args[0]=v->stack[v->sp-3].number;
-        else if(count==2){args[0]=v->stack[v->sp-4].number;args[1]=v->stack[v->sp-3].number;}
+        else if(count==2){args[0]=v->stack[v->sp-3].number;args[1]=v->stack[v->sp-4].number;}
         if(animation522_draw(b,mode,args,(unsigned)count))return -1;
         v->sp-=2+(unsigned)count;b->handled++;return kvm_resume(v);
     }
@@ -1576,10 +1599,10 @@ int bootstrap_dispatch(KBootstrap *b){
     if(main==31&&sub==524&&v->sp>=2&&!v->stack[v->sp-2].string){
         int action=v->stack[v->sp-2].number;
         if(action==29||action==30){
-            /* 4f9eb0 -> 46c170/45c800 and 46c080/45c7d0.
-               Initial sprites are hidden. Resource creation and badge drawing
-               actions remain gated until their renderers are implemented. */
-            if(action==29){animation522_restore(b);koverlay_suspend(&b->overlays);}else koverlay_restore(&b->overlays);
+            /* 4f9eb0 -> 46c170/45c800 and 46c080/45c7d0:
+               suspend/restore the independent week windows and date badge. */
+            if(action==29){animation522_restore(b);overlay524_restore(b);koverlay_suspend(&b->overlays);}
+            else koverlay_restore(&b->overlays);
             v->sp-=2;b->handled++;return kvm_resume(v);
         }
     }
@@ -2787,15 +2810,15 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
 
 int bootstrap_run(KBootstrap *b,unsigned budget){
     if(!b)return -1;
-    exec526_restore(b);animation522_restore(b);message_fade_restore(b);param_animation_restore(b);
+    exec526_restore(b);animation522_restore(b);overlay524_restore(b);message_fade_restore(b);param_animation_restore(b);
     int result=bootstrap_run_inner(b,budget);
-    animation522_restore(b);message_fade_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
+    animation522_restore(b);message_fade_present(b);overlay524_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
     return result;
 }
 void bootstrap_frame(KBootstrap *b){
     if(b->quit_modal||b->quit_requested)return;
     b->frames++;if(b->frames>b->input_event_until)b->input_events=0;
-    exec526_restore(b);animation522_begin_frame(b);message_fade_restore(b);param_animation_restore(b);
+    exec526_restore(b);animation522_begin_frame(b);overlay524_restore(b);message_fade_restore(b);param_animation_restore(b);
     if(b->image_loading){
         KImage im={0};int ready=kimage_worker_poll(b->image_worker,&im);
         if(ready){
@@ -3001,7 +3024,7 @@ void bootstrap_frame(KBootstrap *b){
     if(b->bonus52_active)bonus52_frame(b);
     if(b->credits_active)credits_frame(b);
     if(b->montage_active)montage_frame(b);
-    message_fade_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
+    message_fade_present(b);overlay524_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
     if(!b->fade_steps)return;
     b->fade_frame++;
     int delta=(int)b->fade_to-(int)b->fade_from;
@@ -3021,8 +3044,8 @@ void bootstrap_confirm(KBootstrap *b){
     if(b->message_active&&b->message_user_hidden){bootstrap_message_hide(b,0);return;}
     b->input_events|=1;b->input_event_until=b->frames+3;
     if(b->mes_fade_transition&&!(b->vm->globals[0][50].number&0x4000)){
-        exec526_restore(b);animation522_restore(b);message_fade_restore(b);message_fade_finish(b);
-        message_fade_present(b);animation522_present(b);exec526_present(b);return;
+        exec526_restore(b);animation522_restore(b);overlay524_restore(b);message_fade_restore(b);message_fade_finish(b);
+        message_fade_present(b);overlay524_present(b);animation522_present(b);exec526_present(b);return;
     }
     if(message_slide_skip(b)||ax_modal_skip(b,0))return;
     if(b->credits_active){credits_finish(b,1);return;}
