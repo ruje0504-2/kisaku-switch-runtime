@@ -189,12 +189,14 @@ typedef struct {
     KAudioSlot *audio_objects[3];void *records;
     unsigned audio_counts[3],record_count;
     int font_width,font_height,last_loaded_layer;
-    KFont *font;unsigned text_count;char number_text[257];
+    KFont *font;KFont *ui_font;unsigned text_count;char number_text[257];
     /* Script text encoding: 0 = CP932 (original Japanese), 1 = GBK (translated
      * scripts). text_gbk is the sticky auto-detected mode used when
      * [Runtime] TextEncoding is not configured; font_simplified records which
-     * shared font the cached b->font was opened with. */
-    int text_gbk,font_simplified;
+     * shared font the cached b->font was opened with.  ui_font is deliberately
+     * separate: panels/history/name input use the HOS shared font, while
+     * story text and choices may use the supplied Runtime FontFile. */
+    int text_gbk,font_simplified,ui_font_simplified;
     unsigned handled,missing_read_flags;
     /* Game data is read from root; every save, flag, history and settings file
        is written under save_root.  An installed NSP passes romfs: and save:,

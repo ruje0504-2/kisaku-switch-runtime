@@ -17,13 +17,14 @@ int bootstrap_backlog_has_voice(const KBootstrap *b,unsigned back){
 typedef struct {KBootstrap *b;KImage *row;} KBacklogRender;
 static int backlog_replay_text(void *owner,KVM *v,unsigned width,unsigned height){
     KBacklogRender *r=owner;KTextChar chars[4096];KTextPosition positions[4096];size_t count=0;
+    KFont *font=bootstrap_ui_font(r->b);if(!font)return -1;
     if(v->text_size>4096||bootstrap_decode_ui_text(r->b,v->text,v->text_size,chars,4096,&count))return -1;
     int x=v->globals[0][46].number,y=v->globals[0][47].number;
     int left=v->globals[0][42].number,top=v->globals[0][43].number,right=v->globals[0][44].number,bottom=v->globals[0][45].number;
     int advance=v->globals[0][30].number/2,line=v->globals[0][31].number;
     if(left<0||top<0||right>640||bottom>54||advance<1||advance>128||line<1||line>256)return -1;
     if(ktext_layout_native(chars,count,left,top,right,bottom,advance,line,&x,&y,positions))return -1;
-    if(r->row)for(size_t i=0;i<count;i++)if(kfont_draw(r->b->font,r->row,chars[i].codepoint,positions[i].x,positions[i].y,width,height,(uint32_t)v->globals[0][33].number))return -1;
+    if(r->row)for(size_t i=0;i<count;i++)if(kfont_draw(font,r->row,chars[i].codepoint,positions[i].x,positions[i].y,width,height,(uint32_t)v->globals[0][33].number))return -1;
     v->globals[0][46]=(KValue){x,NULL};v->globals[0][47]=(KValue){y,NULL};return 0;
 }
 typedef struct {KBacklogRender render;size_t target_ip;} KBacklogSequenceRender;

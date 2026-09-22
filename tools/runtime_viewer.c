@@ -135,7 +135,9 @@ int main(int argc,char **argv){
                user to move the character cursor back to the name field. */
             if((buttons&HidNpadButton_ZR)&&panel.kind==14){panel.name_focus=0;message_panel_action(&panel,b,0);}
             if((buttons&HidNpadButton_Y)&&(panel.kind==5||panel.kind==16||panel.kind==14||panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==9||panel.kind==11||panel.kind==23))message_panel_action(&panel,b,6);
-            if(buttons&HidNpadButton_B)message_panel_action(&panel,b,1);
+            /* The original CName has no B/back command; only its own
+               confirmation path can finish the name modal. */
+            if((buttons&HidNpadButton_B)&&panel.kind!=14)message_panel_action(&panel,b,1);
             if(buttons&HidNpadButton_Up)message_panel_action(&panel,b,2);
             if(buttons&HidNpadButton_Down)message_panel_action(&panel,b,3);
             if(buttons&HidNpadButton_Left)message_panel_action(&panel,b,4);
@@ -222,8 +224,7 @@ int main(int argc,char **argv){
                 /* CName owns the pointer while its modal is open.  The game
                    mouse path must not leak through to story hit testing. */
                 if(e.type==SDL_MOUSEBUTTONDOWN){
-                    if(e.button.button==SDL_BUTTON_RIGHT)message_panel_action(&panel,b,1);
-                    else if(e.button.button==SDL_BUTTON_LEFT)panel_touch(&panel,b,&touch,cursor.x,cursor.y);
+                    if(e.button.button==SDL_BUTTON_LEFT)panel_touch(&panel,b,&touch,cursor.x,cursor.y);
                     continue;
                 }
             if(e.type==SDL_MOUSEBUTTONUP||e.type==SDL_MOUSEMOTION||e.type==SDL_MOUSEWHEEL)continue;
@@ -235,7 +236,7 @@ int main(int argc,char **argv){
                 if(e.type==SDL_KEYDOWN){
                     SDL_Keycode key=e.key.keysym.sym;
                     if(key==SDLK_RETURN)message_panel_action(&panel,b,0);
-                    else if(e.key.keysym.sym==SDLK_ESCAPE){running=1;message_panel_action(&panel,b,1);}
+                    else if(e.key.keysym.sym==SDLK_ESCAPE){running=1;}
                     else if(key==SDLK_BACKSPACE||key==SDLK_DELETE)message_panel_action(&panel,b,7);
                     else if(key==SDLK_UP)message_panel_action(&panel,b,2);
                     else if(key==SDLK_DOWN)message_panel_action(&panel,b,3);

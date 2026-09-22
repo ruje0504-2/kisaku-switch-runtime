@@ -42,17 +42,16 @@ static void test_name_editor(const char *root,const char *saves,SDL_Renderer *re
     b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     assert(!kvm_push(b->vm,(KValue){810,NULL}));
     assert(!bootstrap_dispatch(b)&&b->extra_active&&b->extra_kind==14&&b->vm->status==KVM_READY);
-    /* Cancel from the editor must release the native modal and let the
-       suspended script resume without turning a missing name into a VM
-       error.  This is the path used by B/Escape and is distinct from a
-       confirmed five-character submission below. */
+    /* CName has no B/Escape return path.  A leaked action 1 must leave the
+       modal and suspended native request untouched. */
     {
         KBootstrap *cancel=bootstrap_create_split(root,saves);assert(cancel&&!cancel->error[0]);
         cancel->vm->status=KVM_SYSCALL;cancel->vm->syscall=31;cancel->vm->sp=0;
         assert(!kvm_push(cancel->vm,(KValue){810,NULL}));
         assert(!bootstrap_dispatch(cancel)&&cancel->extra_active&&cancel->extra_kind==14);
         MessagePanel q={.kind=14};message_panel_action(&q,cancel,1);
-        assert(!q.kind&&!cancel->extra_active&&!cancel->error[0]);
+        assert(q.kind==14&&cancel->extra_active&&cancel->extra_kind==14&&!cancel->error[0]);
+        assert(!bootstrap_name_submit(cancel,NULL));
         assert(bootstrap_run(cancel,100000)>=0&&!cancel->error[0]);
         bootstrap_destroy(cancel);
     }
@@ -79,10 +78,11 @@ static void test_name_editor(const char *root,const char *saves,SDL_Renderer *re
     p.name_focus=0;message_panel_action(&p,b,0);assert(p.name_confirm&&p.selected==0);
     message_panel_action(&p,b,0);assert(!p.kind&&!b->extra_active&&b->vm->bytes[1950]!=0);
     assert(!b->error[0]&&b->vm->status==KVM_READY);
-    /* Cancel follows the native 31/811 teardown path and leaves no stale
-       modal state or runtime error. */
+    /* Action 1 is ignored while CName is active; cleanup here is direct so
+       this unit test does not invent a user-visible back command. */
     b->extra_active=1;b->extra_kind=b->extra_request=14;p.kind=14;p.name_confirm=0;
-    message_panel_action(&p,b,1);assert(!p.kind&&!b->extra_active&&!b->error[0]);
+    message_panel_action(&p,b,1);assert(p.kind==14&&b->extra_active&&!b->error[0]);
+    assert(!bootstrap_name_submit(b,NULL));p.kind=0;
     SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.name_artwork);rmt_free(&p.name_grid_cache);bootstrap_destroy(b);
     puts("Kisaku CName modal: namepart atlas, 18x12 CP932 grid, five-character limit and confirm flow: PASS");
 }

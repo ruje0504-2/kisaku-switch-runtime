@@ -205,7 +205,7 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
     if(p->kind==14){
         if(p->name_confirm){
             if(action==2||action==3)p->selected=action==2?0:1;
-            if(action==1){p->name_confirm=0;p->name_focus=0;return;}
+            if(action==1)return;
             if(!action){
                 if(p->selected==0){
                     if(!bootstrap_name_submit(b,p->name)){SDL_StopTextInput();p->kind=0;return;}
@@ -215,7 +215,9 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
             return;
         }
         if(action==7){name_delete_at(p);return;}
-        if(action==1){bootstrap_name_submit(b,NULL);SDL_StopTextInput();p->kind=0;return;}
+        /* CName has no native B/back action.  Keep action 1 inert so a
+           leaked controller or platform event cannot tear down the editor. */
+        if(action==1)return;
         /* Y cycles the three native CName tables.  It replaces the old
            Switch OS keyboard call: the original always stays in this modal. */
         if(action==6){p->name_mode=(p->name_mode+1)%3;p->name_page=0;p->name_cursor=0;p->name_focus=1;p->status[0]=0;return;}
@@ -433,7 +435,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         for(unsigned i=1;i<5;i++)ui_fill(&p->image,260+(int)i*24,408,1,24,0x5c4c20);
         ui_text(b,&p->image,p->name,260,410,120,24,0xffffff,0);
         if(p->name_focus==0)ui_fill(&p->image,259+(int)p->name_text_cursor*24,408,2,24,0xf4d45a);
-        ui_text(b,&p->image,"方向キー:文字選択   A:入力   X:削除   Y:種類   B:戻る",128,452,384,20,0xffe9a0,0);
+        ui_text(b,&p->image,"方向キー:文字選択   A:入力   X:削除   Y:種類",128,452,384,20,0xffe9a0,0);
         if(p->status[0])ui_text(b,&p->image,p->status,128,8,384,20,0xff8a7a,0);
         if(p->name_confirm){
             ui_fill(&p->image,80,188,480,116,0x080b12);ui_fill(&p->image,80,188,480,2,0xd0a83c);ui_fill(&p->image,80,302,480,2,0xd0a83c);

@@ -78,8 +78,15 @@ static KFont *text_font(KBootstrap *b,const char *path,const char *mincho,KTextE
     return b->font;
 }
 
-/* Shared font path settings, used by both the story text and the panels. */
+/* Panel text intentionally uses the platform/HOS font.  The supplied font is
+ * reserved for story text and choices; keeping this function path-free also
+ * prevents history/name-input panels from inheriting the story face cache. */
 static void ui_font_settings(KBootstrap *b,const char **path,const char **mincho){
+    (void)b;*path=NULL;*mincho=NULL;
+}
+/* Story text and choices may use the explicit Runtime font.  If no setting is
+ * present, the generated package font is the Japanese story face. */
+static void story_font_settings(KBootstrap *b,const char **path,const char **mincho){
     *path=NULL;*mincho=NULL;
     for(unsigned i=0;i<b->setting_count;i++){
         if(!equal(b->settings[i].section,"Runtime"))continue;
@@ -99,18 +106,19 @@ KFont *bootstrap_ui_font(KBootstrap *b){
     const char *path=NULL,*mincho=NULL;
     if(!b)return NULL;
     ui_font_settings(b,&path,&mincho);
-    return text_font(b,path,mincho,text_encoding(b));
+    int simplified=text_encoding(b)==KTEXT_GBK;
+    if(b->ui_font&&b->ui_font_simplified!=simplified){kfont_close(b->ui_font);b->ui_font=NULL;}
+    if(!b->ui_font){b->ui_font=open_font(b,path,simplified);b->ui_font_simplified=simplified;}
+    return b->ui_font;
 }
 /* Panels that render raw script bytes (backlog, history page) must decode them
    with the same strict CP932 decoder and Japanese glyph set as the story. */
 int bootstrap_decode_ui_text(KBootstrap *b,const char *text,size_t size,KTextChar *out,size_t capacity,size_t *count){
-    const char *path=NULL,*mincho=NULL;
     KTextEncoding encoding;
     if(!b||!text||!out||!count)return -1;
     encoding=text_encoding(b);
     if(decode_text(b,(const uint8_t *)text,size,out,capacity,count,&encoding))return -1;
-    ui_font_settings(b,&path,&mincho);
-    return text_font(b,path,mincho,encoding)?0:-1;
+    return bootstrap_ui_font(b)?0:-1;
 }
 /* Loose override files (translation / uncensor patches) win over archive
  * entries; see ai6_read_named in ai6arc.c for the search order. */
@@ -287,7 +295,7 @@ static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     return 0;
 }
 #include "backlog_store.h"
-void bootstrap_destroy(KBootstrap *b){if(!b)return;native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
+void bootstrap_destroy(KBootstrap *b){if(!b)return;native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
 static int message_init(KBootstrap *b){
     /* 481be0: the layout rectangle is (32,8,560,54), but 481d68/481dca
        clear both complete 640x84 text surfaces. 481a50 copies that surface
@@ -972,7 +980,7 @@ static void choice_native_pixel(KBootstrap *b,unsigned state,int hover,unsigned 
 static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
     memset(b->choice_text.pixels,0,640*480*4);
     KTextEncoding encoding=text_encoding(b);
-    const char *path=NULL,*mincho=NULL;ui_font_settings(b,&path,&mincho);
+    const char *path=NULL,*mincho=NULL;story_font_settings(b,&path,&mincho);
     for(unsigned i=0;i<count;i++){
         unsigned item=page*4+i;KTextChar chars[128];size_t n=0;
         if(decode_text(b,(const uint8_t *)b->choice_labels[item],b->choice_lengths[item],chars,128,&n,&encoding))return error(b,"choice text encoding invalid");
@@ -2831,7 +2839,7 @@ layer_fill_done:;
     b->handled++;if(v->status==KVM_SYSCALL)kvm_resume(v);return 0;
 }
 static int draw_text(KBootstrap *b){
-    KVM *v=b->vm;const char *path=NULL,*mincho=NULL;ui_font_settings(b,&path,&mincho);
+    KVM *v=b->vm;const char *path=NULL,*mincho=NULL;story_font_settings(b,&path,&mincho);
     for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,"Runtime")){
         if(equal(b->settings[i].key,"TextEncoding")&&!equal(b->settings[i].value,"CP932"))
             return error(b,"unsupported text encoding");
@@ -3639,10 +3647,10 @@ int bootstrap_name_submit(KBootstrap *b,const char *utf8){
 int bootstrap_name_preview(KBootstrap *b,const char *utf8,KImage *out){
     uint8_t name[33];size_t size,count;KTextChar chars[32];
     if(ktext_name_encode(utf8,name,&size)||ktext_decode(KTEXT_CP932,name,size,chars,32,&count))return -1;
-    if(!b->font){const char *path=NULL,*mincho=NULL;ui_font_settings(b,&path,&mincho);b->font=open_font(b,path,0);}
-    if(!b->font)return -1;
+    KFont *font=bootstrap_ui_font(b);
+    if(!font)return -1;
     KImage image={0,0,512,40,2048,calloc(512*40,4)};if(!image.pixels)return -1;
-    unsigned x=0;for(size_t i=0;i<count;i++){if(kfont_draw(b->font,&image,chars[i].codepoint,(int)x,4,24,24,0xffffff)){rmt_free(&image);return -1;}x+=chars[i].columns*12;}
+    unsigned x=0;for(size_t i=0;i<count;i++){if(kfont_draw(font,&image,chars[i].codepoint,(int)x,4,24,24,0xffffff)){rmt_free(&image);return -1;}x+=chars[i].columns*12;}
     rmt_free(out);*out=image;return 0;
 }
 

@@ -12,7 +12,8 @@ const char *bootstrap_history_voice(const KBootstrap *b,unsigned back){
     const char *name=b->history_voice[(b->history_next+63-back)%64];return name[0]?name:NULL;
 }
 int bootstrap_history_draw(KBootstrap *b,unsigned back,KImage *out){
-    if(!b||back>=b->history_count||!bootstrap_ui_font(b))return -1;
+    KFont *font= b?bootstrap_ui_font(b):NULL;
+    if(!b||back>=b->history_count||!font)return -1;
     if(!out->pixels){*out=(KImage){0,0,640,480,2560,calloc(640*480,4)};if(!out->pixels)return -1;}
     for(size_t i=0;i<640*480;i++){out->pixels[i*4]=28;out->pixels[i*4+1]=20;out->pixels[i*4+2]=16;out->pixels[i*4+3]=255;}
     /* Raw script bytes: decode with the runtime's effective encoding (auto
@@ -25,7 +26,7 @@ int bootstrap_history_draw(KBootstrap *b,unsigned back,KImage *out){
         if(chars[i].codepoint=='\n'){x=32;y+=24;continue;}
         int width=(int)chars[i].columns*8;if(x+width>608){x=32;y+=24;}
         if(y>408)break;
-        if(kfont_draw(b->font,out,chars[i].codepoint,x,y,16,16,0xffffff))return -1;
+        if(kfont_draw(font,out,chars[i].codepoint,x,y,16,16,0xffffff))return -1;
         x+=width;
     }
     return 0;

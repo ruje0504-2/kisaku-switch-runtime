@@ -43,7 +43,7 @@ static inline KFont *ui_font(KBootstrap *b){
     return bootstrap_ui_font(b);
 }
 static inline int ui_text_scroll(KBootstrap *b,KImage *p,const char *text,int x,int y,int width,int height,unsigned color,int encoded,unsigned skip){
-    KTextChar chars[4096];size_t n=0;if(!ui_font(b))return -1;
+    KTextChar chars[4096];size_t n=0;KFont *font=ui_font(b);if(!font)return -1;
     if(encoded){
         /* Same auto-detection and sticky GBK state as the story text: the
            backlog stores raw script bytes, so decoding them with the configured
@@ -55,7 +55,7 @@ static inline int ui_text_scroll(KBootstrap *b,KImage *p,const char *text,int x,
         unsigned c=chars[i].codepoint;if(c=='\r')continue;
         if(c=='\n'){xx=x;line++;continue;}int advance=(int)chars[i].columns*8;
         if(xx+advance>x+width){xx=x;line++;}
-        if(line>=skip){int yy=y+(int)(line-skip)*20;if(yy+16<=y+height&&kfont_draw(b->font,p,c,xx,yy,16,16,color))return -1;}xx+=advance;
+        if(line>=skip){int yy=y+(int)(line-skip)*20;if(yy+16<=y+height&&kfont_draw(font,p,c,xx,yy,16,16,color))return -1;}xx+=advance;
     }return (int)line+1;
 }
 static inline int ui_text(KBootstrap *b,KImage *p,const char *text,int x,int y,int width,int height,unsigned color,int encoded){

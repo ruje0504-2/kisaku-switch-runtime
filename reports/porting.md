@@ -744,3 +744,9 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - Switch SDL 渲染器对纹理级 `SDL_ScaleModeNearest` 提示会触发黑帧，因此最近邻提示仅保留在桌面构建；Switch 回到原生采样路径，避免启动后黑屏。桌面与 Switch 均不因该提示失败而终止渲染。
 - CName 姓名网格改为按类别/页缓存，避免每帧重复栅格化216个日文字形造成输入卡顿；缺失原版49帧游标资源时增加可见软件箭头回退，鼠标模态不再无指针。B/Escape 返回路径新增真实31/810后继续VM专项，无错误且释放临时模态状态。
 - `./build-host.sh`、`./test-host.sh 鬼作`、SDL dummy 前端专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作` 与 `git diff --check`通过。Switch 实机黑屏/鼠标和完整路线仍未验证。
+
+## 2026-09-22 CName无返回与面板字体分层
+
+- 姓名输入模态按原版保留确认完成路径，屏蔽手柄B、Esc和右键返回；确认框中的B也不会取消。底部提示同步移除B返回说明。
+- `b->font`继续服务剧情对白和选择分支，并在运行时配置或游戏目录存在时使用提供的`arshanghaisonggbpro_lt.otf`；历史、回想、设置、姓名、地点标签和其他原生面板改用独立的`b->ui_font`，Switch走HOS共享字体，桌面走系统字体回退。
+- 主机完整回归、CName/面板SDL专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`和`git diff --check`通过。最新NRO SHA-256为`9cc0b74b10276c8844c5196b2728b34db4039142e299651efdfd432d9649918e`；Switch实机字体和输入回归仍未验证。

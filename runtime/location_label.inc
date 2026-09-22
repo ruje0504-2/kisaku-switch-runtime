@@ -78,8 +78,7 @@ static int exec526_location(KBootstrap *b){
     if(advance<1||advance>128||line<1||line>256||ktext_decode(KTEXT_CP932,name,length,chars,32,&count)||
        ktext_layout_native(chars,count,168,344,639,479,advance,line,&x,&y,positions))
         return error(b,"31/526 location text layout invalid (arguments preserved)");
-    const char *path=NULL,*mincho=NULL;ui_font_settings(b,&path,&mincho);
-    KFont *font=text_font(b,path,NULL,KTEXT_CP932);
+    KFont *font=bootstrap_ui_font(b);
     if(!font)return error(b,"31/526 location font missing (arguments preserved)");
     KImage pair[2]={{0}},backing={0};
     for(unsigned i=0;i<2;i++)pair[i]=(KImage){0,0,336,32,1344,calloc(32,1344)};

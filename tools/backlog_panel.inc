@@ -98,7 +98,7 @@ static void backlog_panel_action(MessagePanel *p,KBootstrap *b,int action){
 }
 static int backlog_text(KBootstrap *b,KImage *d,const char *text,int y){
     KTextChar chars[4096];KTextPosition positions[4096];size_t count=0;
-    if(!ui_font(b)||bootstrap_decode_ui_text(b,text,strlen(text),chars,4096,&count))return -1;
+    KFont *font=ui_font(b);if(!font||bootstrap_decode_ui_text(b,text,strlen(text),chars,4096,&count))return -1;
     /* 4d8fe0: 16px glyphs, 18px lines, x=32, width=560, height=54.
        Keep the original kinsoku layout; the portable history currently stores
        flattened text, not the native record's executable drawing commands. */
@@ -107,7 +107,7 @@ static int backlog_text(KBootstrap *b,KImage *d,const char *text,int y){
         size_t end=start;while(end<count&&chars[end].codepoint>=32)end++;
         if(end>start){
             if(ktext_layout_native(chars+start,end-start,32,0,592,54,8,18,&x,&cy,positions))return -1;
-            for(size_t i=0;i<end-start;i++)if(kfont_draw(b->font,&row,chars[start+i].codepoint,positions[i].x,positions[i].y,16,16,0xffffff))return -1;
+            for(size_t i=0;i<end-start;i++)if(kfont_draw(font,&row,chars[start+i].codepoint,positions[i].x,positions[i].y,16,16,0xffffff))return -1;
         }
         if(end<count){if(chars[end].codepoint=='\n'){x=32;cy+=18;}else if(chars[end].codepoint!='\r')return -1;end++;}
         start=end;
