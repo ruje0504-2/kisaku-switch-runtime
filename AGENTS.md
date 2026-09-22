@@ -115,3 +115,5 @@
 - 2026-09-22 高清呈现回归：present_gles改用自有RGBA纹理并完整恢复SDL顶点/VBO/纹理/裁剪等状态，修复旧BGRA直接采样及污染SDL缓存的路径；960×720文字不以低清回退掩盖失败。历史页跳过被遮住的剧情后处理。新增真实Mesa GLES文字/菜单逐像素回归及GL状态夹具，Switch实机仍未验证。轮播动画开发差异暂存local/pending-scene-animation.patch和local/pending-scene-mode-thumbnails.inc，未混入修复包。
 
 - 2026-09-23：高清呈现CPU准备由present_worker在Switch core 2执行，主线程仅在此期间混音/SDL清屏并在使用结果前等待；不得在任务进行中推进VM、改设置/字体或释放runtime。语音core 1、图像解码core 2不变。合成去重、逐行遮挡比较、GPU .bgr通道转换、静态底图/CG缓存和高清文字变化行上传已接通；保留60 FPS目标和高清画质。真实SDL/GLES逐像素与ThreadSanitizer专项通过，实机性能尚未验证，详见reports/porting.md。
+
+- 同引擎复用入口：[高清呈现与多核心移植笔记](reports/高清呈现与多核心移植笔记.md)。涉及高清文字、呈现线程或GL缓存时参考其中的所有权契约与验证边界；不可照搬《鬼作》坐标，也不可把现有锐化路径称为已验证的官方算法一致实现。
