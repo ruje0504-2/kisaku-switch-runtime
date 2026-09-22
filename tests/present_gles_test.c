@@ -62,11 +62,13 @@ int main(void){
     for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){uint8_t *p=source.pixels+y*source.stride+x*4;p[0]=(uint8_t)(x%256);p[1]=127;p[2]=(uint8_t)(255-x%256);p[3]=91;}
     for(unsigned frame=0;frame<100;frame++){
         assert(!present_gles_draw(&pass,&renderer,&source,&dst,frame));assert(!memcmp(&state,&original,sizeof(state)));
-        for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){const uint8_t *p=source.pixels+y*source.stride+x*4,*q=uploaded+(y*640+x)*4;assert(q[0]==p[2]&&q[1]==p[1]&&q[2]==p[0]&&q[3]==255&&p[3]==91);}
+        for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){const uint8_t *p=source.pixels+y*source.stride+x*4,*q=uploaded+(y*640+x)*4;assert(q[0]==p[0]&&q[1]==p[1]&&q[2]==p[2]&&q[3]==p[3]&&p[3]==91);}
         /* Subsequent cached SDL menu/text draws see exactly their old state. */
         assert(state.program==77&&state.array==49&&state.attr[0].ptr==(void *)(uintptr_t)12&&state.attr[0].enabled&&!state.attr[1].enabled);
     }
-    assert(draws==100&&uploads==100);present_gles_clear(&pass);fail_texture=1;
+    assert(draws==100&&uploads==1);
+    source.pixels[0]^=7;assert(!present_gles_draw(&pass,&renderer,&source,&dst,50)&&uploads==2&&uploaded[0]==source.pixels[0]);
+    source.pixels[2560]^=1;assert(!present_gles_draw(&pass,&renderer,&source,&dst,50)&&uploads==2);present_gles_clear(&pass);fail_texture=1;
     assert(present_gles_draw(&pass,&renderer,&source,&dst,0)<0&&!memcmp(&state,&original,sizeof(state)));
-    present_gles_clear(&pass);free(source.pixels);puts("GLES presentation: RGBA upload, padded stride, 100 frames, SDL vertex/texture/scissor state and allocation failure restoration: PASS");return 0;
+    present_gles_clear(&pass);free(source.pixels);puts("GLES presentation: BGRA shader input, padded stride, 100 frames / 1 upload, SDL vertex/texture/scissor state and allocation failure restoration: PASS");return 0;
 }

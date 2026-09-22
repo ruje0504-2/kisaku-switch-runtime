@@ -644,6 +644,14 @@ static void message_slide_begin(KBootstrap *b,int hiding){
     b->message_slide=steps?steps+1:0;b->message_slide_frame=b->message_slide_clock=0;b->message_hiding=hiding;
     if(!steps)message_slide_finish(b);
 }
+static void message_text_into(KBootstrap *b,KImage *target){
+    unsigned offset=0;
+    if(b->message_slide){unsigned f=b->message_slide_frame,d=b->message_slide-1;unsigned move=d&&f<d?84*f/d:84;offset=b->message_hiding?move:84-move;}
+    for(unsigned y=0;y<54&&404+offset+y<480;y++)for(unsigned x=0;x<576;x++){
+        uint8_t *src=b->message_text.pixels+y*b->message_text.stride+x*4,*out=target->pixels+(404+offset+y)*target->stride+(32+x)*4;
+        for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(src[c]*src[3]/255+out[c]*(255-src[3])/255);
+    }
+}
 static void message_compose_into(KBootstrap *b,KImage *target,int text){
     unsigned offset=0;
     if(b->message_slide){unsigned f=b->message_slide_frame,d=b->message_slide-1;unsigned move=d&&f<d?84*f/d:84;offset=b->message_hiding?move:84-move;}
@@ -655,10 +663,7 @@ static void message_compose_into(KBootstrap *b,KImage *target,int text){
         uint8_t *out=target->pixels+y*target->stride+x*4;
         for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(color[c]*alpha/255+out[c]*(255-alpha)/255);
     }
-    if(text)for(unsigned y=0;y<54&&404+offset+y<480;y++)for(unsigned x=0;x<576;x++){
-        uint8_t *src=b->message_text.pixels+y*b->message_text.stride+x*4,*out=target->pixels+(404+offset+y)*target->stride+(32+x)*4;
-        for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(src[c]*src[3]/255+out[c]*(255-src[3])/255);
-    }
+    if(text)message_text_into(b,target);
     /* 481df0 / 482450: six independent sprites, with native atlas states. */
     const unsigned sx[]={76,532,152,76,0,152},sy[]={148,84,84,84,84,148};
     for(unsigned item=0;item<6;item++){
@@ -1059,6 +1064,12 @@ static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
     }
     b->choice_rendered_page=page;return 0;
 }
+static void choice_text_into(KBootstrap *b,KImage *target){
+    for(size_t i=0;i<640*480;i++){
+        uint8_t *s=b->choice_text.pixels+i*4,*d=target->pixels+i*4;unsigned a=s[3];if(!a)continue;
+        for(unsigned k=0;k<3;k++)d[k]=(uint8_t)(s[k]*a/255+d[k]*(255-a)/255);
+    }
+}
 static void choice_draw_into(KBootstrap *b,KImage *target,int text){
     if(!b->choice_active)return;
     if(b->choice_selected< -1||(b->choice_selected>=0&&(unsigned)b->choice_selected>=b->choice_count)){error(b,"choice selection invalid");return;}
@@ -1095,10 +1106,7 @@ static void choice_draw_into(KBootstrap *b,KImage *target,int text){
             for(unsigned c=0;c<3;c++)dst[c]=(uint8_t)(src[c]*src[3]/255+dst[c]*(255-src[3])/255);
         }
     }
-    if(text)for(size_t i=0;i<640*480;i++){
-        uint8_t *s=b->choice_text.pixels+i*4,*d=target->pixels+i*4;unsigned a=s[3];
-        for(unsigned k=0;k<3;k++)d[k]=(uint8_t)(s[k]*a/255+d[k]*(255-a)/255);
-    }
+    if(text)choice_text_into(b,target);
 }
 static void choice_draw(KBootstrap *b){choice_draw_into(b,&b->layers[0],1);}
 static int choice_begin(KBootstrap *b){
@@ -3750,12 +3758,16 @@ const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay){
        present_surface(&b->present_overlay,960,720))return raw;
     memset(b->present_overlay.pixels,0,960*720*4);
     if(choice){
-        choice_draw_into(b,&b->present_reference,1);
         choice_draw_into(b,&b->present_clean,0);
+        memcpy(b->present_reference.pixels,b->present_clean.pixels,640*480*4);
+        choice_text_into(b,&b->present_reference);
         memcpy(b->present_overlay.pixels,b->present_choice_text.pixels,960*720*4);
     }else{
-        message_compose_into(b,&b->present_reference,1);
         message_compose_into(b,&b->present_clean,0);
+        memcpy(b->present_reference.pixels,b->present_clean.pixels,640*480*4);
+        /* Buttons start at y=464; text ends before y=458, with the same
+           slide offset. Drawing text after buttons is pixel-identical. */
+        message_text_into(b,&b->present_reference);
         unsigned offset=0;
         if(b->message_slide){unsigned f=b->message_slide_frame,d=b->message_slide-1;
             unsigned move=d&&f<d?84*f/d:84;offset=b->message_hiding?move:84-move;}
@@ -3766,13 +3778,16 @@ const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay){
     /* Later native sprites (calendar, meters, fades) can cover either text
        or its backing. Keep those final pixels instead of recomposing them.
        No script-owned buffer is modified by presentation. */
-    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+    for(unsigned y=0;y<480;y++){
+      if(!memcmp(raw->pixels+y*raw->stride,b->present_reference.pixels+y*2560,2560))continue;
+      for(unsigned x=0;x<640;x++){
         const uint8_t *actual=raw->pixels+y*raw->stride+x*4;
         if(!memcmp(actual,b->present_reference.pixels+y*2560+x*4,4))continue;
         memcpy(b->present_clean.pixels+y*2560+x*4,actual,4);
         unsigned x0=(x*3+1)/2,x1=((x+1)*3+1)/2,y0=(y*3+1)/2,y1=((y+1)*3+1)/2;
         for(unsigned yy=y0;yy<y1;yy++)for(unsigned xx=x0;xx<x1;xx++)
             memset(b->present_overlay.pixels+yy*3840+xx*4,0,4);
+    }
     }
     *overlay=&b->present_overlay;return &b->present_clean;
 }

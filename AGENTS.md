@@ -113,3 +113,5 @@
 - 2026-09-22：31/320选择器撤除旧khistory检查点桥接，按4735ca/4a7bf0实现普通bank1[12..15]+返回0、秃作page*256+slot及取消-1；4012模态标记、完成字节、20组分支子列表、分类/页签方向键和秃作layer8第四页图集接通。主机夹具确认原始MES转入普通回放与sc_hage30.mes；进度为隔离夹具设置，不是全路线自然解锁。条件缩略图重排、悬停轮播和进退动画仍未完成，详见reports/porting.md最新节。
 
 - 2026-09-22 高清呈现回归：present_gles改用自有RGBA纹理并完整恢复SDL顶点/VBO/纹理/裁剪等状态，修复旧BGRA直接采样及污染SDL缓存的路径；960×720文字不以低清回退掩盖失败。历史页跳过被遮住的剧情后处理。新增真实Mesa GLES文字/菜单逐像素回归及GL状态夹具，Switch实机仍未验证。轮播动画开发差异暂存local/pending-scene-animation.patch和local/pending-scene-mode-thumbnails.inc，未混入修复包。
+
+- 2026-09-23：高清呈现CPU准备由present_worker在Switch core 2执行，主线程仅在此期间混音/SDL清屏并在使用结果前等待；不得在任务进行中推进VM、改设置/字体或释放runtime。语音core 1、图像解码core 2不变。合成去重、逐行遮挡比较、GPU .bgr通道转换、静态底图/CG缓存和高清文字变化行上传已接通；保留60 FPS目标和高清画质。真实SDL/GLES逐像素与ThreadSanitizer专项通过，实机性能尚未验证，详见reports/porting.md。

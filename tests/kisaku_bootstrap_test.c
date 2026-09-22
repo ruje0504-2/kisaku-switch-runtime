@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "../tools/present_worker.inc"
 static unsigned bowling_released;
 static int native_wait_call(KBootstrap *b,int action,int duration,int pump){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=29;b->vm->sp=0;
@@ -1606,6 +1607,8 @@ static void test_native_cg(const char *root,const char *saves){
 }
 static void test_hires_present(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b);b->present_hires=1;
+    KPresentWorker worker={0};assert(!present_worker_create(&worker));
+    uint8_t *serial_clean=malloc(640*480*4),*serial_overlay=malloc(960*720*4);assert(serial_clean&&serial_overlay);
     for(unsigned i=0;!b->title.active||b->title.age<64;i++){
         assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);
     }
@@ -1620,6 +1623,12 @@ static void test_hires_present(const char *root,const char *saves){
         memcpy(raw,b->layers[0].pixels,640*480*4);
         const KImage *overlay=NULL,*clean=bootstrap_present_layers(b,&overlay);
         assert(overlay&&clean!=&b->layers[0]&&overlay->width==960&&overlay->height==720);
+        assert(!memcmp(raw,b->layers[0].pixels,640*480*4));
+        memcpy(serial_clean,clean->pixels,640*480*4);memcpy(serial_overlay,overlay->pixels,960*720*4);
+        assert(!present_worker_submit(&worker,b));
+        uint8_t audio[4096];size_t position=0;(void)bootstrap_audio_mix_read(b,&position,audio,sizeof(audio));
+        clean=present_worker_finish(&worker,&overlay);
+        assert(clean&&overlay&&!memcmp(serial_clean,clean->pixels,640*480*4)&&!memcmp(serial_overlay,overlay->pixels,960*720*4));
         assert(!memcmp(raw,b->layers[0].pixels,640*480*4));
         unsigned ink=0;for(unsigned px=0;px<960*720;px++)ink+=overlay->pixels[px*4+3]!=0;
         if(ink)observed++;
@@ -1645,7 +1654,14 @@ static void test_hires_present(const char *root,const char *saves){
     const KImage *overlay=NULL,*clean=bootstrap_present_layers(b,&overlay);
     assert(overlay&&clean!=&b->layers[0]&&memcmp(clean->pixels,raw,640*480*4));
     assert(!memcmp(raw,b->layers[0].pixels,640*480*4));
-    free(raw);bootstrap_destroy(b);
+    memcpy(serial_clean,clean->pixels,640*480*4);memcpy(serial_overlay,overlay->pixels,960*720*4);
+    for(unsigned i=0;i<60;i++){
+        assert(!present_worker_submit(&worker,b));clean=present_worker_finish(&worker,&overlay);
+        assert(clean&&overlay&&!memcmp(serial_clean,clean->pixels,640*480*4)&&!memcmp(serial_overlay,overlay->pixels,960*720*4));
+    }
+    /* Destroy waits for an in-flight job before the runtime/font is freed. */
+    assert(!present_worker_submit(&worker,b));present_worker_clear(&worker);present_worker_clear(&worker);
+    free(serial_clean);free(serial_overlay);free(raw);bootstrap_destroy(b);
     puts("960x720 text: real startup reveal, clean backing, immutable raw and modified-layer fallback: PASS");
 }
 

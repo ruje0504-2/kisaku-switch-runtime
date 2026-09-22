@@ -16,6 +16,8 @@
 #include <switch.h>
 #endif
 #include "present_gles.inc"
+#include "present_worker.inc"
+#include "texture_cache.inc"
 /* Keep portable panel text legible inside the 960x720 game viewport. */
 static void panel_text(SDL_Renderer *r,int x,int y,const char *text){
     float sx,sy;SDL_RenderGetScale(r,&sx,&sy);
@@ -81,7 +83,7 @@ int main(int argc,char **argv){
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS,"0");
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_GAMECONTROLLER))return 1;
     SDL_AudioDeviceID audio=0;unsigned serial=0,audio_rate=0,audio_channels=0;size_t audio_queued=0;
-    int rc=1;KBootstrap *b=NULL;SDL_Texture *texture=NULL,*fade=NULL,*status_texture=NULL,*present_texture=NULL,*hires_texture=NULL;uint8_t *present_pixels=NULL;int present_disabled=0;KPresentGles present_gles={0};
+    int rc=1;KBootstrap *b=NULL;SDL_Texture *texture=NULL,*fade=NULL,*status_texture=NULL,*present_texture=NULL;uint8_t *present_pixels=NULL;int present_disabled=0;KPresentGles present_gles={0};KPresentWorker present_worker={0};KTextureCache hires_cache={0};
     SDL_Window *w=SDL_CreateWindow("KISAKU runtime preview",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1280,720,0);
     SDL_Renderer *r=w?SDL_CreateRenderer(w,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC):NULL;
     if(!r&&w)r=SDL_CreateRenderer(w,-1,SDL_RENDERER_SOFTWARE);
@@ -103,6 +105,7 @@ int main(int argc,char **argv){
         (void)cursor_load(&cursor,r,"local/native-cursors.bin");
 #endif
     }
+    if(present_worker_create(&present_worker)){fprintf(stderr,"Cannot start presentation worker\n");goto done;}
     if(bootstrap_enable_async_images(b)){fprintf(stderr,"Cannot start image decoding worker\n");goto done;}
     if(bootstrap_enable_async_voice(b)){fprintf(stderr,"Cannot start voice decoding worker\n");goto done;}
 #ifdef __SWITCH__
@@ -406,6 +409,9 @@ int main(int argc,char **argv){
             history_audio=navigation.sound;if(khistory_audio_restore(&history_audio,audio))goto done;
             audio_queued=navigation.queued;restore_navigation_audio=0;
         }
+        int prepare_present=b->layers[0].pixels&&panel.kind!=5&&panel.kind!=22&&
+            b->present_hires&&(b->choice_active||b->message_visible);
+        if(prepare_present&&present_worker_submit(&present_worker,b))goto done;
         if(audio&&!menu.active&&(!panel.kind||(panel.kind>=9&&panel.kind<=15))){
             uint8_t chunk[4096];
             while(SDL_GetQueuedAudioSize(audio)<8192){
@@ -416,21 +422,14 @@ int main(int argc,char **argv){
         if(audio&&!menu.active&&(!panel.kind||(panel.kind>=9&&panel.kind<=15)))SDL_PauseAudioDevice(audio,0);
         SDL_SetRenderDrawColor(r,12,15,20,255);SDL_RenderClear(r);
         SDL_Rect dst={160,0,960,720};
-        /* Backlog paints an opaque full-size panel and caches its settled
+        /* Backlog and native CG paint opaque full-size panels and cache their
            image. Do not recomposite/sharpen hidden story text every frame. */
-        int opaque_backlog=panel.kind==5;
+        int opaque_backlog=panel.kind==5||panel.kind==22;
         if(b->layers[0].pixels&&!opaque_backlog){
-            const KImage *hires=NULL,*source=bootstrap_present_layers(b,&hires);
-            if(hires){
-                if(!hires_texture){
-                    hires_texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,960,720);
-                    if(!hires_texture||SDL_SetTextureBlendMode(hires_texture,SDL_BLENDMODE_BLEND)){
-                        fprintf(stderr,"HQ text texture creation failed: %s\n",SDL_GetError());goto done;
-                    }
-                }
-                if(SDL_UpdateTexture(hires_texture,NULL,hires->pixels,(int)hires->stride)){
-                    fprintf(stderr,"HQ text texture upload failed: %s\n",SDL_GetError());goto done;
-                }
+            const KImage *hires=NULL,*source=prepare_present?present_worker_finish(&present_worker,&hires):bootstrap_present_layers(b,&hires);
+            if(!source)goto done;
+            if(hires&&texture_cache_update(&hires_cache,r,hires,SDL_BLENDMODE_BLEND)){
+                fprintf(stderr,"HQ text texture upload failed: %s\n",SDL_GetError());goto done;
             }
             unsigned cas_strength=raw_present?0u:(unsigned)bootstrap_cas_strength(b);
             if(!raw_present){
@@ -468,7 +467,7 @@ int main(int argc,char **argv){
 #endif
                 SDL_RenderCopy(r,texture,NULL,&dst);
             }
-            if(hires&&SDL_RenderCopy(r,hires_texture,NULL,&dst)){
+            if(hires&&SDL_RenderCopy(r,hires_cache.texture,NULL,&dst)){
                 fprintf(stderr,"HQ text overlay draw failed: %s\n",SDL_GetError());goto done;
             }
         }
@@ -522,6 +521,7 @@ int main(int argc,char **argv){
     rc=(state<0||bootstrap_flush_progress(b))?1:0;
     if(state<0){char report[4096];snprintf(report,sizeof(report),"%s/runtime-error.txt",save_root);FILE *f=fopen(report,"w");if(f){fprintf(f,"%s\n",b->error);fclose(f);}fprintf(stderr,"%s\n",b->error);}
  done:
+    present_worker_clear(&present_worker);
     if(rc&&(!b||!b->error[0]))fprintf(stderr,"Runtime viewer: %s\n",SDL_GetError());
     save_menu_clear(&menu);
     cursor_clear(&cursor);
@@ -534,7 +534,7 @@ int main(int argc,char **argv){
     rmt_free(&panel.name_artwork);rmt_free(&panel.name_grid_cache);rmt_free(&panel.nav_artwork);rmt_free(&panel.nav_scene);for(unsigned i=0;i<4;i++)rmt_free(&panel.nav_previews[i]);rmt_free(&panel.history_artwork);
     rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);rmt_free(&panel.direct_thumb);
     rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
-    rmt_free(&panel.image);SDL_DestroyTexture(panel.name_help_texture);rmt_free(&panel.name_help);present_gles_clear(&present_gles);free(present_pixels);SDL_DestroyTexture(hires_texture);SDL_DestroyTexture(present_texture);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
+    rmt_free(&panel.image);SDL_DestroyTexture(panel.name_help_texture);rmt_free(&panel.name_help);present_gles_clear(&present_gles);free(present_pixels);texture_cache_clear(&hires_cache);texture_cache_clear(&panel.cg_frame);SDL_DestroyTexture(present_texture);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
     if(audio)SDL_CloseAudioDevice(audio);
     bootstrap_destroy(navigation.next);bootstrap_destroy(navigation.owner);bootstrap_destroy(menu.next);bootstrap_destroy(b);SDL_DestroyTexture(fade);SDL_DestroyTexture(texture);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return rc;
 }

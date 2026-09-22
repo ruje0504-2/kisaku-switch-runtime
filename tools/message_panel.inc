@@ -10,7 +10,7 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
        grid/category cursor.  These fields mirror that transient state so the
        date/name modal does not fall back to the Switch system keyboard. */
     unsigned name_mode,name_page,name_cursor,name_focus,name_confirm,name_text_cursor;
-    KImage image;SDL_Texture *texture;
+    KImage image;SDL_Texture *texture;KTextureCache cg_frame;
     unsigned direct_scene,direct_selected,direct_page,direct_count;int direct_focus,direct_sub;KImage direct_artwork,direct_parts,direct_thumb;char direct_thumb_name[64];
     unsigned cg_scroll_active,cg_scroll_limit,cg_scroll_step,cg_movie_return;uint64_t cg_scroll_start;
     SDL_Texture *cg_textures[3];unsigned cg_cached,cg_group,cg_page,cg_count;
@@ -380,7 +380,15 @@ static void message_dialog_pointer(MessagePanel *p,KBootstrap *b,int x,int y,int
     else if(click==1&&hit>=0)message_panel_action(p,b,0);
 }
 static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
-    if(p->kind==22){const KImage *image=bootstrap_native_cg_image(b);if(image){SDL_Texture *t=kimage_texture(r,image);if(t){SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,t,NULL,&dst);SDL_DestroyTexture(t);}}if(p->status[0])panel_text(r,208,690,p->status);return;}
+    if(p->kind==22){
+        const KImage *image=bootstrap_native_cg_image(b);
+        if(image){
+            if(texture_cache_update(&p->cg_frame,r,image,SDL_BLENDMODE_BLEND))snprintf(p->status,sizeof(p->status),"CG texture upload failed");
+            else{SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,p->cg_frame.texture,NULL,&dst);}
+        }
+        if(p->status[0])panel_text(r,208,690,p->status);
+        return;
+    }
     if(p->kind!=5&&p->kind!=8){p->native_kind=0;p->native_key=0;}
     if(p->kind==16){navigation_panel_draw(p,b,r);return;}
     if(p->kind==8){settings_panel_draw(p,b,r);return;}

@@ -47,7 +47,8 @@ KImageWorker *kimage_worker_create(const char *path){
     if(pthread_mutex_init(&w->mutex,NULL)){free(w);return NULL;}
     if(pthread_cond_init(&w->condition,NULL)){pthread_mutex_destroy(&w->mutex);free(w);return NULL;}
 #ifdef __SWITCH__
-    int failed=R_FAILED(threadCreate(&w->thread,entry,w,NULL,1024*1024,0x2c,2));
+    /* Yield core 2 to the current-frame presentation worker (0x2c). */
+    int failed=R_FAILED(threadCreate(&w->thread,entry,w,NULL,1024*1024,0x2d,2));
     if(!failed&&R_FAILED(threadStart(&w->thread))){threadClose(&w->thread);failed=1;}
 #else
     int failed=pthread_create(&w->thread,NULL,entry,w)!=0;

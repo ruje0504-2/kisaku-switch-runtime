@@ -1,13 +1,13 @@
-/* Presentation owns its RGBA texture. SDL textures may use a shader-side
-   BGRA swizzle, so sampling their native storage with a custom shader is not
-   portable. All modified GL state is restored before returning to SDL. */
+/* Own texture storage is GL_RGBA containing authored BGRA bytes. The shader
+   explicitly swizzles .bgr; SDL textures and script surfaces remain untouched.
+   Stable frames reuse the upload; all modified GL state is still restored. */
 #if defined(__SWITCH__) || defined(KPRESENT_GLES_TEST)
 #ifndef KPRESENT_GLES_TEST
 #include <GLES2/gl2.h>
 #endif
 typedef struct {
     GLuint program,source;
-    uint8_t *rgba;
+    uint8_t *bgra;
     GLint pos,uv,tex,texel,strength;
     int ready,disabled;
 } KPresentGles;
@@ -22,11 +22,11 @@ static int present_gles_init(KPresentGles *p){
     static const char vertex[]="attribute vec2 a_pos;attribute vec2 a_uv;varying vec2 v_uv;void main(){gl_Position=vec4(a_pos,0.0,1.0);v_uv=a_uv;}";
     static const char fragment[]=
         "precision mediump float;uniform sampler2D u_tex;uniform vec2 u_texel;uniform float u_strength;varying vec2 v_uv;"
-        "void main(){vec3 c=texture2D(u_tex,v_uv).rgb;vec3 mn=c,mx=c;vec3 n0=texture2D(u_tex,v_uv+u_texel*vec2(-1.,-1.)).rgb;"
-        "vec3 n1=texture2D(u_tex,v_uv+u_texel*vec2(0.,-1.)).rgb;vec3 n2=texture2D(u_tex,v_uv+u_texel*vec2(1.,-1.)).rgb;"
-        "vec3 n3=texture2D(u_tex,v_uv+u_texel*vec2(-1.,0.)).rgb;vec3 n4=texture2D(u_tex,v_uv+u_texel*vec2(1.,0.)).rgb;"
-        "vec3 n5=texture2D(u_tex,v_uv+u_texel*vec2(-1.,1.)).rgb;vec3 n6=texture2D(u_tex,v_uv+u_texel*vec2(0.,1.)).rgb;"
-        "vec3 n7=texture2D(u_tex,v_uv+u_texel*vec2(1.,1.)).rgb;mn=min(mn,min(n0,min(n1,min(n2,min(n3,min(n4,min(n5,min(n6,n7))))))));"
+        "void main(){vec3 c=texture2D(u_tex,v_uv).bgr;vec3 mn=c,mx=c;vec3 n0=texture2D(u_tex,v_uv+u_texel*vec2(-1.,-1.)).bgr;"
+        "vec3 n1=texture2D(u_tex,v_uv+u_texel*vec2(0.,-1.)).bgr;vec3 n2=texture2D(u_tex,v_uv+u_texel*vec2(1.,-1.)).bgr;"
+        "vec3 n3=texture2D(u_tex,v_uv+u_texel*vec2(-1.,0.)).bgr;vec3 n4=texture2D(u_tex,v_uv+u_texel*vec2(1.,0.)).bgr;"
+        "vec3 n5=texture2D(u_tex,v_uv+u_texel*vec2(-1.,1.)).bgr;vec3 n6=texture2D(u_tex,v_uv+u_texel*vec2(0.,1.)).bgr;"
+        "vec3 n7=texture2D(u_tex,v_uv+u_texel*vec2(1.,1.)).bgr;mn=min(mn,min(n0,min(n1,min(n2,min(n3,min(n4,min(n5,min(n6,n7))))))));"
         "mx=max(mx,max(n0,max(n1,max(n2,max(n3,max(n4,max(n5,max(n6,n7))))))));"
         "vec3 amp=clamp(min(mn,vec3(2.)-mx)/max(mx,vec3(.0001)),0.,1.);amp=sqrt(max(amp,vec3(.0001)));"
         "vec3 w=-.2*u_strength*amp;vec3 o=(c+w*(n1+n3+n4+n6))/(1.+4.*w);gl_FragColor=vec4(clamp(o,mn,mx),1.);}";
@@ -62,11 +62,13 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage
     int vw=(int)(dst->w*scale+0.5f),vh=(int)(dst->h*scale+0.5f);if(vw<=0||vh<=0)return -1;
     if(SDL_RenderFlush(renderer))return -1;
     if(!p->ready&&present_gles_init(p)){p->disabled=1;return -1;}
-    if(!p->rgba){p->rgba=malloc(640u*480u*4u);if(!p->rgba)return -1;}
-    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
-        const uint8_t *src=image->pixels+y*image->stride+x*4;uint8_t *out=p->rgba+(y*640+x)*4;
-        out[0]=src[2];out[1]=src[1];out[2]=src[0];out[3]=255;
+    if(!p->bgra){p->bgra=malloc(640u*480u*4u);if(!p->bgra)return -1;}
+    int changed=!p->source;
+    if(!changed){
+        if(image->stride==2560)changed=memcmp(p->bgra,image->pixels,640u*480u*4u)!=0;
+        else for(unsigned y=0;y<480&&!changed;y++)changed=memcmp(p->bgra+y*2560,image->pixels+y*image->stride,2560)!=0;
     }
+    if(changed)for(unsigned y=0;y<480;y++)memcpy(p->bgra+y*2560,image->pixels+y*image->stride,2560);
     GLint program,active,texture0,viewport[4],array,unpack;KPresentAttrib attrib[2];
     glGetIntegerv(GL_CURRENT_PROGRAM,&program);glGetIntegerv(GL_ACTIVE_TEXTURE,&active);
     glActiveTexture(GL_TEXTURE0);glGetIntegerv(GL_TEXTURE_BINDING_2D,&texture0);
@@ -79,11 +81,12 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage
         glBindTexture(GL_TEXTURE_2D,p->source);
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-        glPixelStorei(GL_UNPACK_ALIGNMENT,1);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,640,480,0,GL_RGBA,GL_UNSIGNED_BYTE,p->rgba);
-    }else{
+        glPixelStorei(GL_UNPACK_ALIGNMENT,1);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,640,480,0,GL_RGBA,GL_UNSIGNED_BYTE,p->bgra);
+    }else if(changed){
         glBindTexture(GL_TEXTURE_2D,p->source);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
-        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,640,480,GL_RGBA,GL_UNSIGNED_BYTE,p->rgba);
+        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,640,480,GL_RGBA,GL_UNSIGNED_BYTE,p->bgra);
     }
+    glBindTexture(GL_TEXTURE_2D,p->source);
     glDisable(GL_BLEND);glDisable(GL_SCISSOR_TEST);glViewport(vx,oh-(vy+vh),vw,vh);glUseProgram(p->program);
     glUniform1i(p->tex,0);glUniform2f(p->texel,1.0f/640.0f,1.0f/480.0f);glUniform1f(p->strength,(float)(strength>100?100:strength)/100.0f);
     static const GLfloat pos[]={-1,-1,1,-1,-1,1,1,1},uv[]={0,1,1,1,0,0,1,0};
@@ -97,7 +100,7 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage
     glViewport(viewport[0],viewport[1],viewport[2],viewport[3]);if(blend)glEnable(GL_BLEND);else glDisable(GL_BLEND);if(scissor)glEnable(GL_SCISSOR_TEST);else glDisable(GL_SCISSOR_TEST);
     return failed?-1:0;
 }
-static void present_gles_clear(KPresentGles *p){if(!p)return;if(p->source)glDeleteTextures(1,&p->source);if(p->program)glDeleteProgram(p->program);free(p->rgba);memset(p,0,sizeof(*p));}
+static void present_gles_clear(KPresentGles *p){if(!p)return;if(p->source)glDeleteTextures(1,&p->source);if(p->program)glDeleteProgram(p->program);free(p->bgra);memset(p,0,sizeof(*p));}
 
 #else
 typedef struct {int unused;} KPresentGles;

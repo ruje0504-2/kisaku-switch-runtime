@@ -38,29 +38,47 @@ int main(int argc,char **argv){
             if(diff)fprintf(stderr,"%s frame %u: %u mismatched channels\n",names[test],frame,diff);
             assert(!diff);
         }
+        if(panel.kind==22)assert(panel.cg_frame.uploads==1);
         printf("%s: 12 real SDL GLES frames after postprocess match reference exactly: PASS\n",names[test]);
         save_menu_clear(&menu);gallery_panel_clear(&panel);
         rmt_free(&panel.image);rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
         rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);rmt_free(&panel.direct_thumb);
-        rmt_free(&panel.history_artwork);SDL_DestroyTexture(panel.texture);
+        rmt_free(&panel.history_artwork);SDL_DestroyTexture(panel.texture);texture_cache_clear(&panel.cg_frame);
     }
     KImage letters={0,0,960,720,3840,calloc(960*720,4)};assert(letters.pixels);
     KFont *font=kfont_open(argv[3],0);assert(font);
     const uint32_t glyphs[]={0x65e5,0x672c,0x8a9e,0x6587,0x5b57,0x5c65,0x6b74};
     for(unsigned i=0;i<7;i++)assert(!kfont_draw(font,&letters,glyphs[i],40+(int)i*30,610,24,24,0xffffff));
     unsigned ink=0;for(unsigned i=0;i<960*720;i++)ink+=letters.pixels[4*i+3]!=0;assert(ink>200);
-    SDL_Texture *hq=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,960,720);assert(hq);
-    assert(!SDL_SetTextureBlendMode(hq,SDL_BLENDMODE_BLEND));
-    assert(!SDL_UpdateTexture(hq,NULL,letters.pixels,letters.stride));
-    assert(!SDL_RenderCopy(r,background,NULL,&dst)&&!SDL_RenderCopy(r,hq,NULL,&dst));read_pixels(r,expected);
+    KTextureCache hq={0};assert(!texture_cache_update(&hq,r,&letters,SDL_BLENDMODE_BLEND));
+    assert(!SDL_RenderCopy(r,background,NULL,&dst)&&!SDL_RenderCopy(r,hq.texture,NULL,&dst));read_pixels(r,expected);
     for(unsigned frame=0;frame<30;frame++){
-        assert(!SDL_UpdateTexture(hq,NULL,letters.pixels,letters.stride));
+        assert(!texture_cache_update(&hq,r,&letters,SDL_BLENDMODE_BLEND));
         assert(!present_gles_draw(&pass,r,&source,&dst,50));
-        assert(!SDL_RenderCopy(r,hq,NULL,&dst));read_pixels(r,actual);
+        assert(!SDL_RenderCopy(r,hq.texture,NULL,&dst));read_pixels(r,actual);
         assert(!memcmp(actual,expected,960*720*4));
     }
-    printf("960x720 HQ text: %u ink pixels, 30 SDL uploads and postprocess compositions match exactly: PASS\n",ink);
-    SDL_DestroyTexture(hq);SDL_DestroyTexture(background);rmt_free(&letters);kfont_close(font);
+    printf("960x720 HQ text: %u ink pixels, 30 compositions / 1 upload match exactly: PASS\n",ink);
+    assert(hq.uploads==1&&hq.bytes==960u*720u*4u);
+    letters.pixels[10*letters.stride+11*4]=15;letters.pixels[10*letters.stride+11*4+3]=255;
+    assert(!texture_cache_update(&hq,r,&letters,SDL_BLENDMODE_BLEND));
+    assert(hq.uploads==2&&hq.bytes==960u*721u*4u);
+    SDL_Texture *full=kimage_texture(r,&letters);assert(full);
+    assert(!SDL_RenderCopy(r,background,NULL,&dst)&&!SDL_RenderCopy(r,full,NULL,&dst));read_pixels(r,expected);
+    assert(!SDL_RenderCopy(r,background,NULL,&dst)&&!SDL_RenderCopy(r,hq.texture,NULL,&dst));read_pixels(r,actual);
+    assert(!memcmp(expected,actual,960*720*4));
+
+    letters.pixels[10*letters.stride+11*4]=0;letters.pixels[10*letters.stride+11*4+3]=0;
+    letters.pixels[719*letters.stride+5*4+3]=127;
+    assert(!texture_cache_update(&hq,r,&letters,SDL_BLENDMODE_BLEND)&&hq.uploads==3);
+    assert(!memcmp(hq.copy.pixels,letters.pixels,letters.height*letters.stride));
+    assert(!SDL_UpdateTexture(full,NULL,letters.pixels,letters.stride));
+    assert(!SDL_RenderCopy(r,background,NULL,&dst)&&!SDL_RenderCopy(r,full,NULL,&dst));read_pixels(r,expected);
+    assert(!SDL_RenderCopy(r,background,NULL,&dst)&&!SDL_RenderCopy(r,hq.texture,NULL,&dst));read_pixels(r,actual);
+    assert(!memcmp(expected,actual,960*720*4));SDL_DestroyTexture(full);
+    puts("HQ partial upload: changed row, erased glyph and bottom row match full GPU upload: PASS");
+
+    texture_cache_clear(&hq);SDL_DestroyTexture(background);rmt_free(&letters);kfont_close(font);
     present_gles_clear(&pass);free(source.pixels);free(expected);free(actual);bootstrap_destroy(b);
     SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return 0;
 }
