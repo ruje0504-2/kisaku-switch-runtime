@@ -137,6 +137,7 @@ typedef struct {
     unsigned helper_steps,helper_frame,helper_visible,helper_hide;
     unsigned fade_visible,fade_alpha,fade_steps,fade_frame,fade_from,fade_to,fade_hide;
     uint64_t frames,wait_clock; unsigned wait_input;
+    uint64_t native_wait_clock; unsigned native_wait_skippable;
     int message_cursor_x,message_cursor_y;
     unsigned message_initialized,message_visible;
     uint8_t animation_status[320];

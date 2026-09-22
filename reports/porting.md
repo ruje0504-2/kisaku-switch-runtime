@@ -603,3 +603,12 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 构建主入口、兼容名与SD交付主入口SHA-256一致：`4196fb8eb6a78a6ff8e436ccbc0a33bf856be0340c0cebe8f58c3851e082275c`。
 
 仍缺通用命令捕获、换行/文字状态、多语音重放、23/5/7/8及前端/存档统一，前端仍用64条旧历史；不能称完整回看已交付。后续按①→②→③剩余细节→④→鬼作PC参数校验→⑤继续。Switch实机、真实场景完整回放与全路线仍未验证。主人说明的 `icon.png` 是后续NRO/NSP打包图标，本轮原样保留，未混入运行时提交。
+
+
+### 2026-09-22 29等待第一阶段
+
+按鬼作4f2900/4f2890及4e4640/4e2ee0接入更新标志为0的29/0、29/1。独立64位等待时钟和输入/存档隔离；29/1只接受原版Shift/Ctrl及脚本快进条件。非零更新标志的应用菜单泵和负时长仍保留参数报错，不称29完整实现。60Hz量化保留，20ms为两帧。详情见reports/backlog-native.md。
+
+验证全部exit 0：`./build-host.sh`、`./test-host.sh 鬼作`、回看/等待专项及ASan/UBSan（detect_leaks=0）、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`。日志为local/native-wait-{build,test-build,focused,test-host,asan-build,asan,switch,package}.log。主入口NRO SHA256：`e2427fa1611ece1d87bdaa34c40864a096c7a54936d0d462f75dbffc56831b08`。
+
+①完整回看仍缺通用命令流、多语音、文字状态及前端/存档统一。Switch实机、真实场景完整回放、PC逐帧对照未验证；仍为开发预览。图标变更未纳入本次提交。

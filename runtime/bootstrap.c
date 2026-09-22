@@ -1308,15 +1308,20 @@ int bootstrap_dispatch(KBootstrap *b){
         b->scene_modal=1;b->scene_panel_request=3;b->scene_focus=0;
         v->sp--;b->handled++;return kvm_resume(v);
     }
-    if(main==29&&sub==0){
+    if(main==29&&(sub==0||sub==1)){
         /* 5061c0 case 0x1d -> CFuncWait 4f2970 -> 4f2900, NOT
            CFuncBackLog. Two operands: milliseconds, then update flag.
-           Only the immediate wait is supported here until native pumping
-           and non-skippable timing are implemented. Never discard a wait. */
+           4f2890 uses 4e2ee0 for Shift/Ctrl/script-skippable waits.
+           The optional 4e3a20 application-menu pump is not yet portable. */
         if(v->sp<3||v->stack[v->sp-2].string||v->stack[v->sp-3].string)
-            return error(b,"29/0 wait requires two numeric operands (arguments preserved)");
-        if(v->stack[v->sp-2].number!=0)
-            return error(b,"29/0 nonzero native wait unsupported (arguments preserved)");
+            return error(b,"29 wait requires two numeric operands (arguments preserved)");
+        int32_t duration=v->stack[v->sp-2].number;
+        if(duration<0)
+            return error(b,"29 negative native wait unsupported (arguments preserved)");
+        if(duration&&v->stack[v->sp-3].number)
+            return error(b,"29 application-menu pump unsupported (arguments preserved)");
+        b->native_wait_clock=(uint64_t)duration*60;
+        b->native_wait_skippable=(unsigned)sub;
         v->sp-=3;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==810){
@@ -2728,12 +2733,12 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
     if(restore_message(b))return -1;
     history_restore_apply(b);
     if(b->scene_replay_finished)return 1;
-    if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
+    if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
     while(budget--){b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;int old_module=b->vm->module;unsigned old_scripts=b->vm->script_depth;KStatus s=kvm_run(b->vm,1);
         /* Native 408060 notifies navigation on a script return, but library
            function calls only change the VM instruction source. */
         if(b->vm->script_depth<old_scripts&&scene_transition(b,b->vm->modules[old_module].name,b->vm->modules[b->vm->module].name))return -1;
-        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
+        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
         else if(s==KVM_TEXT){if(draw_text(b))return -1;}
         else if(s==KVM_BUDGET)kvm_resume(b->vm);
         else if(s==KVM_ERROR)return error(b,b->vm->error);
@@ -2768,6 +2773,13 @@ void bootstrap_frame(KBootstrap *b){
         if(ready){b->voice_loading=0;if(ready<0){free(pcm);error(b,"background voice decode failed");return;}
             free(b->voice_pcm);b->voice_pcm=pcm;b->voice_size=size;b->voice_read_cursor=b->voice_clock_cursor=0;b->voice_clock=0;b->voice_active=1;
         }
+    }
+    if(b->native_wait_clock){
+        unsigned flags=(unsigned)b->vm->globals[0][50].number;
+        int script_skip=(flags&0x8000)&&!(b->vm->byte_count>4012&&b->vm->bytes[4012]==1);
+        int key_skip=b->effect_fast&&!(flags&0x4000);
+        if(b->native_wait_skippable&&(script_skip||key_skip))b->native_wait_clock=0;
+        else b->native_wait_clock=b->native_wait_clock>1000?b->native_wait_clock-1000:0;
     }
     if(b->wait_clock)b->wait_clock=b->wait_clock>1000?b->wait_clock-1000:0;
     /* 60 Hz host clock, 20 ms AX ticks. Headless diagnostics advance this
@@ -2961,6 +2973,7 @@ void bootstrap_frame(KBootstrap *b){
 #include "history_reset.inc"
 
 void bootstrap_confirm(KBootstrap *b){
+    if(b&&b->native_wait_clock)return;
     if(bootstrap_bowling_active(b)){bowling_confirm(b);return;}
     if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
@@ -3059,6 +3072,7 @@ void bootstrap_confirm(KBootstrap *b){
     b->wait_input=0;b->wait_clock=0;
 }
 void bootstrap_message_hide(KBootstrap *b,int hidden){
+    if(b&&b->native_wait_clock)return;
     if(b&&b->letter_active){if(!hidden)b->letter_backlog=0;letter_text_hide(b,hidden);return;}
     if(!b||!b->message_active)return;
     b->message_user_hidden=hidden!=0;
@@ -3066,6 +3080,7 @@ void bootstrap_message_hide(KBootstrap *b,int hidden){
     else if(b->message_base.pixels)message_compose(b);
 }
 void bootstrap_cancel(KBootstrap *b){
+    if(b&&b->native_wait_clock)return;
     if(bootstrap_bowling_active(b))return;
     if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
@@ -3085,6 +3100,7 @@ void bootstrap_cancel(KBootstrap *b){
     if(b->flag_dialog.active){b->flag_dialog.selected=2;bootstrap_confirm(b);}
 }
 void bootstrap_menu_move(KBootstrap *b,int dx,int dy){
+    if(b&&b->native_wait_clock)return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->area_active){area_move(b,dy?dy:dx);return;}
     if(b->bonus52_active){if(dx||dy)b->bonus52_motion+=100;return;}
@@ -3099,6 +3115,7 @@ void bootstrap_menu_move(KBootstrap *b,int dx,int dy){
     if(dy)bootstrap_title_move(b,dy);
 }
 void bootstrap_title_move(KBootstrap *b,int delta){
+    if(b&&b->native_wait_clock)return;
     if(b->area_active){area_move(b,delta);return;}
     if(b->bonus52_active){if(delta)b->bonus52_motion+=100;return;}
     if(b->choice_active){if(!delta)return;int next=b->choice_selected<0?(delta<0?(int)b->choice_count-1:0):(b->choice_selected+delta)%(int)b->choice_count;if(next<0)next+=(int)b->choice_count;b->choice_selected=next;choice_draw(b);return;}
@@ -3108,6 +3125,7 @@ void bootstrap_title_move(KBootstrap *b,int delta){
     else b->title.selected=(b->title.selected+(delta>0?1:(int)b->title.count-1))%(int)b->title.count;
 }
 void bootstrap_pointer(KBootstrap *b,int x,int y,int click){
+    if(b&&b->native_wait_clock)return;
     if(bootstrap_bowling_active(b)){bootstrap_bowling_pointer(b,x,y,click!=0);return;}
     if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
@@ -3222,6 +3240,7 @@ int bootstrap_quit_dialog_close(KBootstrap *b,int accept){
 }
 
 void bootstrap_message_action(KBootstrap *b,unsigned action){
+    if(b&&b->native_wait_clock)return;
     if(!b||bootstrap_bowling_active(b)||b->param_animation_active||b->exec523_active||b->exec522_motion)return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(!b||!b->message_active||b->letter_transition||b->letter_exit_pending||b->message_slide||b->message_buttons_motion)return;

@@ -7,6 +7,42 @@
 #include <string.h>
 #include <math.h>
 static unsigned bowling_released;
+static int native_wait_call(KBootstrap *b,int action,int duration,int pump){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=29;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){789,NULL}));
+    assert(!kvm_push(b->vm,(KValue){pump,NULL}));
+    assert(!kvm_push(b->vm,(KValue){duration,NULL}));
+    assert(!kvm_push(b->vm,(KValue){action,NULL}));
+    return bootstrap_dispatch(b);
+}
+static void test_native_wait(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    assert(!native_wait_call(b,0,20,0)&&b->vm->sp==1&&b->vm->stack[0].number==789);
+    size_t ip=b->vm->ip;
+    assert(bootstrap_run(b,1)==1&&b->vm->ip==ip);
+    bootstrap_confirm(b);bootstrap_cancel(b);bootstrap_pointer(b,10,10,1);
+    assert(b->native_wait_clock==1200&&!b->input_events&&!bootstrap_can_save(b));
+    b->effect_fast=1;b->vm->globals[0][50].number=0x8000;
+    bootstrap_frame(b);assert(b->native_wait_clock==200);
+    bootstrap_frame(b);assert(!b->native_wait_clock); /* action 0 never skips */
+    b->vm->globals[0][50].number=0;
+    assert(!native_wait_call(b,1,1000,0));bootstrap_frame(b);assert(!b->native_wait_clock);
+    b->vm->globals[0][50].number=0x4000;
+    assert(!native_wait_call(b,1,1000,0));bootstrap_frame(b);assert(b->native_wait_clock==59000);
+    b->vm->globals[0][50].number|=0x8000;
+    bootstrap_frame(b);assert(!b->native_wait_clock); /* script skip independent of 4000 */
+    b->effect_fast=0;b->vm->bytes[4012]=1;
+    assert(!native_wait_call(b,1,1000,0));bootstrap_frame(b);assert(b->native_wait_clock==59000);
+    b->effect_fast=1;b->vm->globals[0][50].number=0x8000;
+    bootstrap_frame(b);assert(!b->native_wait_clock); /* byte4012 only blocks script skip */
+    assert(!native_wait_call(b,0,2147483647,0)&&b->native_wait_clock==UINT64_C(128849018820));
+    uint64_t clock=b->native_wait_clock;
+    assert(native_wait_call(b,0,-1,0)<0&&b->vm->sp==4&&b->native_wait_clock==clock);
+    assert(native_wait_call(b,1,20,1)<0&&b->vm->sp==4&&b->native_wait_clock==clock);
+    assert(!native_wait_call(b,1,0,1)&&!b->native_wait_clock&&b->vm->sp==1);
+    bootstrap_destroy(b);
+    puts("Kisaku native waits: duration, input isolation, skip flags, wide clock, preserved unsupported pump: PASS");
+}
 static int backlog_call(KBootstrap *b,int action,int has_value,KValue value){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=23;b->vm->sp=0;
     assert(!kvm_push(b->vm,(KValue){789,NULL}));
@@ -1137,7 +1173,7 @@ static void test_ui_and_logo(const char *root,const char *saves){
 }
 int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--backlog")){
-        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);return 0;
+        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);return 0;
     }
     if(argc!=3)return 2;
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);
@@ -1617,6 +1653,7 @@ int main(int argc,char **argv){
     test_bowling_modal(argv[1],argv[2]);
     test_week(argv[1],argv[2]);
     test_backlog_records(argv[1],argv[2]);
+    test_native_wait(argv[1],argv[2]);
     test_backlog_lifecycle(argv[1],argv[2]);
     test_native_tint(argv[1],argv[2]);
     assert(!call(b,1011,0));
