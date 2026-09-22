@@ -578,4 +578,5 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 4b2820图片表按role*0x24+item*4（一基item）从已校验EXE静态提取，保留原版跨度；56个详情条目的真实图片均可解码。4b1ec0/4b1c70的-640/-320滑动及4b1b50淡化接入15ms前端时钟，动画期间隔离点击；图片随详情退出及菜单销毁释放。
 - 修正前端夹具误把共享byte237当成独立标记的问题。前端专项、主机构建、完整`./test-host.sh 鬼作`、Switch交叉编译和SD打包通过；八角色解锁字节还与004ac3b0伪代码逐项交叉核对。日志：`local/character-detail-{build,tests,panel,switch,package,static-check}.log`。
 - 构建主入口及SD交付主入口/兼容名SHA-256均为`ba3f8f69d44b3969ef86bb5a193bd2b134a3160fbfe012866e753cf108982390`。用户图标改动不纳入提交。
+- 提交`0eed410`后补验：同一源码的前端ASan/UBSan通过（`local/character-detail-asan-fixed.log`，LeakSanitizer关闭）。最初两次运行停在SDL2-compat动态库初始化的缺SDL3弹窗，采样证据`local/character-detail-asan-sample.txt`，均已终止，未记为通过；按既有环境记录设置`DYLD_LIBRARY_PATH=/opt/homebrew/opt/sdl3/lib`后正常结束，exit 0。
 - 此提交仅完成存档group5详情子集。剧情角色动态状态及语音组合、完整回看、精确20ms、受限调用和全部参数校验仍待继续；参数校验顺序在精确平台绘制差异之前。未运行PC原版，Switch实机及全路线/真实场景回归仍未验证。
