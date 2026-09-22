@@ -906,3 +906,25 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 L存档保持原入口，新增ZL以load=1打开原读档界面；撤除剧情ZL原自动播放映射，Y自动播放保留。菜单/面板已打开、标题、保龄球、参数演出、场景回放均不新开读档；回放navigation.phase==3时仍用ZL取消回放。按下沿触发，不按住连续重开。
 
 `./build-switch.sh`通过（local/zl-load-switch.log），`git diff --check`通过；此轮只改输入映射，未重复渲染/完整主机测试。Switch实机按键交互未验证。主入口SHA256 `7922d93e3c65e40d3bd623ebed207d09208f8da8b1745afb3f0f6f14f2333d6b`。README已补按键说明。
+
+## 2026-09-23：回想缩略图轮播、条件重排与进退动画
+
+从历史local/pending-scene-animation.patch草稿接手并重新核对鬼作自身反编译/汇编。已接入CScMode/CHageScMode普通与秃作回想的选中缩略图轮播、页面/子列表交叉淡化、进入淡化、秃作退出淡出，以及确认缩略图高亮与延后VM返回。普通取消保持原即时退出行为。
+
+静态依据：
+
+- `471f30`普通循环用旧counter计算`counter*255/80`，大于129后换帧并清零；`4050b0` IMsgTask为15ms tick。`471650`焦点切换时重置counter/帧。
+- `4a7040/4a74f0`秃作帧数取`5a3748`交错表，40步淡化、结束及50 tick停留后继续；按92个15ms tick循环。`46b790/46b5d0`核对淡化步数与结束边界。帧率不足时以时间定位，非逐条复刻Win32事件泵抖动。
+- `470450`删除指定149×112帧，后续列左移，末列填0xff000000；`4709f0`扫描全黑空帧确定0..4帧数。`470ba0`按真实进度重排/替换缩略图，特殊聚合分支用4201d0的最大值而不是位或。`5c2dd0`汇编数据为3476..3480。
+- `471740`右下变体已解锁数/总数使用CG图集图片数字；此前只显示第一帧且漏掉计数。`473250/4a7aa0/4a8210/4a8370`接进退和切页；三档8/4/0步与flag0x4000强制16步，15ms时钟。
+
+实现与生命周期：独立背景/前帧缓冲，不改VM脚本图层；原始AKB每页解码一次后在私有缩略图上做重排；焦点变动重置轮播，锁定项不播放。加入尺寸检查，混合RGB两项各自/255取整，后台图层3按黑色Alpha128减暗。普通确认呈现一次高亮后返回（15ms呈现适配）；动画期间隔离操作。延迟完成先成功push返回值，随后提交12..15选择参数，失败保留模态和参数。退出统一释放新增缓冲。
+
+验证：
+
+- `./build-host.sh`通过（local/scene-animation-build.log）；`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/message-panel-test 鬼作 local/scene-animation-test`通过。真实普通图集189个页面/进度组合、秃作4页，半程混色逐像素、缓存不重复解码、取消/选择/特殊子列表、普通与秃作第30项原始MES回放跳转通过。
+- 最新代码的ASan/UBSan场景专项：`DYLD_LIBRARY_PATH=/opt/homebrew/opt/sdl3/lib SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 build/scene-animation-asan 鬼作 local/scene-animation-final-test --scene`通过（local/scene-animation-final-asan.log），包括三档/强制时序、动画输入隔离、列删除/补黑与邻行保护。关闭泄漏检查，仅报告地址/UB检查范围。首次未设SDL3库路径的旧ASan进程停在系统初始化，已终止，不作为通过证据。
+- `tools/test_present_gles.sh`通过（local/scene-animation-gles.log）：实际GLES菜单与HQ文字像素回归；场景菜单比较稳定帧，不把处于不同淡化时间的画面拿来相等比较。
+- `./build-switch.sh`通过（local/scene-animation-switch.log）；草稿最初的3处misleading-indentation已修正，最终-Werror构建无告警。`git diff --check`通过。
+
+最终NRO SHA256：`284b33ffd0994559c02cf1ef946b3dde3d619f793f7fb662435115e964dcd1ee`。FSR80和L/ZL存读档保持。此轮未重复全部test-host.sh；全回想逐槽/全部进度组合、Win32精确时序、Switch实机动画/性能未验证。仍不能称整个移植完成，最新具体缺口见remaining-work.md。

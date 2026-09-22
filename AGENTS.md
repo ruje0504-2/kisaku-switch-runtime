@@ -125,3 +125,5 @@
 - 2026-09-23：可恢复FSR1试用，GLES默认EASU+RCAS（AMD公式FP32 GLES2适配，显式采样/精确倒数替代gather/位近似，非SDK位精确）。PresentFilter=edge恢复旧两阶段；FSRSharpness默认90→0.2 stops，范围0..100。afbc2d9原NRO备份在交付/恢复版本；MIT声明随THIRD_PARTY.md交付。GLES参考、菜单/HQ回归和Switch编译通过，实机未验证，详见笔记第15节/porting.md。
 
 - 2026-09-23：用户反馈FSR90噪点增多，已恢复初版默认FSRSharpness80（0.4 stops）；EASU/RCAS保留，显式INI配置仍优先。笔记第16节覆盖此前默认90记录，GLES80像素/HQ/菜单回归通过，实机改善未验证。
+
+- 2026-09-23：CScMode/CHageScMode缩略图轮播、470ba0条件重排、变体图片数字、进入/切页/子列表淡化及秃作退出淡出已接通；旧local暂存补丁只保留历史用途。普通131/80和秃作92/40个15ms tick，独立私有图像，延迟返回成功后提交VM选择参数。真实普通189个页面/进度组合、秃作4页、脚本返回、场景ASan/UBSan和GLES菜单回归通过；Switch编译通过，实机/全回想未验证，详见porting.md。

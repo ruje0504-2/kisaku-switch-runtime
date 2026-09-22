@@ -43,6 +43,7 @@ int main(int argc,char **argv){
         if(panel.kind==22){b->title.active=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;assert(!kvm_push(b->vm,(KValue){310,NULL}));assert(!bootstrap_dispatch(b)&&b->native_cg);}
         if(!panel.kind)save_menu_open(&menu,b,1);
         assert(!SDL_RenderCopy(r,background,NULL,&dst));
+        if(panel.kind==20){scene_mode_prepare(&panel,b);scene_mode_skip(&panel,b);}
         if(panel.kind)message_panel_draw(&panel,b,r);else save_menu_draw(&menu,b,r);
         assert(panel.kind?(panel.texture!=NULL||(panel.kind==22&&b->native_cg!=NULL)):menu.texture!=NULL);read_pixels(r,expected);
         for(unsigned frame=0;frame<12;frame++){
@@ -57,7 +58,7 @@ int main(int argc,char **argv){
         printf("%s: 12 real SDL GLES frames after postprocess match reference exactly: PASS\n",names[test]);
         save_menu_clear(&menu);gallery_panel_clear(&panel);
         rmt_free(&panel.image);rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
-        rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);rmt_free(&panel.direct_thumb);
+        rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);rmt_free(&panel.direct_thumb);rmt_free(&panel.direct_from);rmt_free(&panel.direct_background);
         rmt_free(&panel.history_artwork);SDL_DestroyTexture(panel.texture);texture_cache_clear(&panel.cg_frame);
     }
     KImage letters={0,0,960,720,3840,calloc(960*720,4)};assert(letters.pixels);

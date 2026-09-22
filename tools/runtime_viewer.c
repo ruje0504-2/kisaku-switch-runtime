@@ -196,6 +196,7 @@ int main(int argc,char **argv){
 #endif
         const Uint8 *keys=SDL_GetKeyboardState(NULL);
         if(panel.kind==8&&(keys[SDL_SCANCODE_LCTRL]||keys[SDL_SCANCODE_RCTRL]||keys[SDL_SCANCODE_LSHIFT]||keys[SDL_SCANCODE_RSHIFT]))config_motion_skip(&panel,b);
+        if(panel.kind==20&&(keys[SDL_SCANCODE_LCTRL]||keys[SDL_SCANCODE_RCTRL]||keys[SDL_SCANCODE_LSHIFT]||keys[SDL_SCANCODE_RSHIFT]))scene_mode_skip(&panel,b);
         b->force_skip=!panel.kind&&!menu.active&&(keys[SDL_SCANCODE_LCTRL]||keys[SDL_SCANCODE_RCTRL]);
         b->effect_fast=b->force_skip||(!panel.kind&&!menu.active&&(keys[SDL_SCANCODE_LSHIFT]||keys[SDL_SCANCODE_RSHIFT]));
         if(b->quit_requested)break;
@@ -541,7 +542,7 @@ int main(int argc,char **argv){
     for(unsigned i=0;i<5;i++)rmt_free(&panel.config_art[i]);
     rmt_free(&panel.dialog_artwork);rmt_free(&panel.dialog_body);
     rmt_free(&panel.name_artwork);rmt_free(&panel.name_grid_cache);rmt_free(&panel.nav_artwork);rmt_free(&panel.nav_scene);for(unsigned i=0;i<4;i++)rmt_free(&panel.nav_previews[i]);rmt_free(&panel.history_artwork);
-    rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);rmt_free(&panel.direct_thumb);
+    rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);rmt_free(&panel.direct_thumb);rmt_free(&panel.direct_from);rmt_free(&panel.direct_background);
     rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
     rmt_free(&panel.image);SDL_DestroyTexture(panel.name_help_texture);rmt_free(&panel.name_help);present_gles_clear(&present_gles);free(present_pixels);texture_cache_clear(&hires_cache);texture_cache_clear(&panel.cg_frame);SDL_DestroyTexture(present_texture);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
     if(audio)SDL_CloseAudioDevice(audio);

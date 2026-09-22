@@ -641,6 +641,94 @@ static void letter_exit_open(MessagePanel *p,SaveMenu *menu,KBootstrap *b){
     game_cancel(menu,p,b);assert(b->letter_exit_pending&&b->message_request==19&&!p->scene_cancel);
     p->kind=b->message_request;b->message_request=0;p->viewing=0;p->status[0]=0;
 }
+/* Existing script-dispatch checks run after each completed modal motion;
+   the dedicated timing checks below exercise input isolation mid-animation. */
+static void scene_test_action(MessagePanel *p,KBootstrap *b,int action){
+    scene_mode_prepare(p,b);scene_mode_tick(p,b,p->direct_clock+(uint64_t)p->direct_steps*15);
+    message_panel_action(p,b,action);
+    if(p->direct_motion)scene_mode_tick(p,b,p->direct_clock+(uint64_t)p->direct_steps*15);
+}
+static void test_scene_clock(void){
+    unsigned from,to,alpha;
+    scene_mode_cycle(0,3,0,&from,&to,&alpha);assert(from==0&&to==1&&!alpha);
+    scene_mode_cycle(0,3,40*15,&from,&to,&alpha);assert(from==0&&to==1&&alpha==127);
+    scene_mode_cycle(0,3,80*15,&from,&to,&alpha);assert(alpha==255);
+    scene_mode_cycle(0,3,131*15,&from,&to,&alpha);assert(from==1&&to==2&&!alpha);
+    scene_mode_cycle(1,4,20*15,&from,&to,&alpha);assert(from==0&&to==1&&alpha==127);
+    scene_mode_cycle(1,4,92*15,&from,&to,&alpha);assert(from==1&&to==2&&!alpha);
+    scene_mode_cycle(1,4,368*15,&from,&to,&alpha);assert(!from&&to==1&&!alpha);
+}
+static void scene_test_free(MessagePanel *p){
+    SDL_DestroyTexture(p->texture);rmt_free(&p->image);rmt_free(&p->direct_artwork);rmt_free(&p->direct_parts);
+    rmt_free(&p->direct_thumb);rmt_free(&p->direct_from);rmt_free(&p->direct_background);
+}
+static void test_scene_assets(KBootstrap *b,SDL_Renderer *r){
+    uint8_t saved[9192];memcpy(saved,b->vm->bytes,sizeof(saved));
+    KValue globals[4];memcpy(globals,b->vm->globals[1]+12,sizeof(globals));
+    int hage=scene_mode_hage(b);unsigned pages_checked=0;
+    if(!hage){
+        for(unsigned value=1;value<=2;value++){
+            MessagePanel q={0};q.direct_thumb=(KImage){0,0,596,1008,596*4,calloc(596*1008,4)};assert(q.direct_thumb.pixels);
+            for(unsigned y=0;y<1008;y++)for(unsigned x=0;x<596;x++){
+                uint8_t *d=q.direct_thumb.pixels+y*q.direct_thumb.stride+x*4;
+                d[0]=d[1]=d[2]=(uint8_t)((x/149+1)*40);d[3]=255;
+            }
+            b->vm->bytes[kscene_mode_flags[1][0]]=(uint8_t)value;
+            assert(!scene_thumb_reorder(&q,b,1,0));assert(scene_thumb_count(&q.direct_thumb,0)==3);
+            const unsigned expected[2][4]={{40,120,160,0},{80,120,160,0}};
+            for(unsigned col=0;col<4;col++)assert(q.direct_thumb.pixels[col*149*4]==expected[value-1][col]);
+            assert(q.direct_thumb.pixels[112*q.direct_thumb.stride]==40);
+            rmt_free(&q.direct_thumb);
+        }
+    }
+    for(unsigned v=1;v<=7;v++){
+        for(unsigned i=3200;i<3600;i++)b->vm->bytes[i]=(uint8_t)(hage?1:v);
+        b->vm->bytes[4006]=1;
+        MessagePanel p={.kind=20};
+        b->vm->globals[1][12]=(KValue){0,NULL};b->vm->globals[1][13]=(KValue){0,NULL};
+        b->vm->globals[1][14]=(KValue){0,NULL};b->vm->globals[1][15]=(KValue){-1,NULL};
+        scene_mode_prepare(&p,b);
+        for(unsigned cat=0;cat<(hage?1u:11u);cat++)for(unsigned page=0;page<(scene_mode_items(b,cat)+8)/9;page++){
+            scene_mode_page(&p,b,cat,page);p.direct_focus=0;
+            uint64_t end=p.direct_clock+(uint64_t)p.direct_steps*15;
+            assert(!scene_mode_draw_at(&p,b,r,end));assert(!p.direct_motion);pages_checked++;
+            unsigned serial=p.direct_thumb_serial;
+            if(p.direct_frames[0]>1){
+                int x,y;scene_mode_grid(&p,b,0,&x,&y);
+                assert(!scene_mode_draw_at(&p,b,r,end+(hage?20u:40u)*15));
+                unsigned differences=0;
+                for(unsigned yy=0;yy<95;yy++)for(unsigned xx=0;xx<149;xx++){
+                    const uint8_t *a=p.direct_thumb.pixels+yy*p.direct_thumb.stride+xx*4,*z=a+149*4;
+                    const uint8_t *out=p.image.pixels+(y+(int)yy)*p.image.stride+(x+(int)xx)*4;
+                    for(unsigned c=0;c<3;c++){assert(out[c]==a[c]*128/255+z[c]*127/255);differences+=a[c]!=z[c];}
+                }
+                /* Some authored consecutive frames may be identical. */
+                (void)differences;assert(p.direct_thumb_serial==serial);
+            }
+        }
+        scene_test_free(&p);if(hage)break;
+    }
+    memcpy(b->vm->bytes,saved,sizeof(saved));memcpy(b->vm->globals[1]+12,globals,sizeof(globals));
+    printf("Scene thumbnail real assets mode %d: %u pages/progress combinations, half-fade pixels and cached decode: PASS\n",hage,pages_checked);
+}
+static void test_scene_motion(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
+    unsigned speed=(unsigned)bootstrap_message_setting(b,8,0);int flag=b->vm->globals[0][50].number;
+    for(unsigned forced=0;forced<2;forced++)for(unsigned s=0;s<3;s++){
+        bootstrap_message_setting(b,8,(int)s-bootstrap_message_setting(b,8,0));
+        b->vm->globals[0][50].number=forced?flag|0x4000:flag&~0x4000;
+        assert(!scene_mode_motion(p,b,2));unsigned steps=forced?16:s==2?0:s==1?4:8;
+        assert(p->direct_steps==steps);
+        uint64_t start=p->direct_clock;
+        unsigned stack=b->vm->sp;int focus=p->direct_focus;
+        if(steps){
+            message_panel_action(p,b,5);message_panel_action(p,b,0);message_panel_action(p,b,1);
+            assert(p->kind==20&&p->direct_focus==focus&&b->vm->sp==stack&&p->direct_motion);
+            scene_mode_tick(p,b,start+(uint64_t)(steps/2)*15);assert(p->direct_alpha==127&&p->direct_motion);
+        }
+        assert(!scene_mode_draw_at(p,b,r,start+(uint64_t)steps*15));assert(!p->direct_motion&&p->direct_alpha==255);
+    }
+    bootstrap_message_setting(b,8,(int)speed-bootstrap_message_setting(b,8,0));b->vm->globals[0][50].number=flag;
+}
 static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,const char *shot){
     for(unsigned mode=0;mode<2;mode++){
         char folder[4096];snprintf(folder,sizeof(folder),"%s/letter-exit-%u",saves,mode);assert(!mkdir(folder,0700));
@@ -697,18 +785,19 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
         p.kind=20;p.direct_scene=1;p.direct_count=0;p.status[0]=0;message_panel_draw(&p,b,r);
         assert(p.direct_artwork.pixels&&p.direct_artwork.width==496&&p.direct_parts.pixels);
         assert(p.direct_count==(mode?30:kscene_mode_total())&&p.direct_thumb.pixels);
+        test_scene_clock();test_scene_motion(&p,b,r);test_scene_assets(b,r);
         if(getenv("KISAKU_SCENE_SHOTS")){
             char path[128];snprintf(path,sizeof(path),"local/scene-selector-%u.bmp",mode);
             assert(!capture(r,path));
         }
-        message_panel_action(&p,b,1);assert(!p.kind&&!b->scene_modal&&b->vm->sp==1&&b->vm->stack[0].number==-1);
+        scene_test_action(&p,b,1);assert(!p.kind&&!b->scene_modal&&b->vm->sp==1&&b->vm->stack[0].number==-1);
         /* A native completion byte, not a checkpoint, unlocks the slot. */
         b->vm->sp=0;p.kind=20;p.direct_count=0;p.status[0]=0;
         b->vm->globals[1][12]=(KValue){0,NULL};b->vm->globals[1][13]=(KValue){0,NULL};
         b->vm->globals[1][14]=(KValue){0,NULL};b->vm->globals[1][15]=(KValue){-1,NULL};
         unsigned flag=mode?kscene_mode_hage_flags[0]:kscene_mode_flags[0][0];
-        b->vm->bytes[flag]=0;message_panel_action(&p,b,0);assert(p.kind==20&&!b->vm->sp);
-        b->vm->bytes[flag]=1;message_panel_action(&p,b,0);
+        b->vm->bytes[flag]=0;scene_test_action(&p,b,0);assert(p.kind==20&&!b->vm->sp);
+        b->vm->bytes[flag]=1;scene_test_action(&p,b,0);
         assert(!p.kind&&!p.scene_request&&b->vm->sp==1&&b->vm->stack[0].number==0&&!b->vm->bytes[4012]);
         if(!mode){
             assert(b->vm->globals[1][14].number==0&&b->vm->globals[1][15].number==-1);
@@ -716,18 +805,18 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
             b->vm->sp=0;p.kind=20;p.direct_count=0;
             b->vm->globals[1][12]=(KValue){3,NULL};b->vm->globals[1][13]=(KValue){2,NULL};b->vm->globals[1][14]=(KValue){20,NULL};
             b->vm->bytes[kscene_mode_flags[3][20]]=0;b->vm->bytes[3551]=0;b->vm->bytes[3552]=1;
-            scene_mode_prepare(&p,b);p.direct_focus=2;message_panel_action(&p,b,0);
+            scene_mode_prepare(&p,b);p.direct_focus=2;scene_test_action(&p,b,0);
             assert(p.kind==20&&p.direct_sub==0);message_panel_draw(&p,b,r);
             assert(!strcmp(p.direct_thumb_name,"scene_01_02_02.akb"));
-            message_panel_action(&p,b,0);assert(p.kind==20&&!b->vm->sp);
-            message_panel_action(&p,b,1);assert(p.kind==20&&p.direct_sub==-1);
-            message_panel_action(&p,b,0);message_panel_action(&p,b,5);message_panel_action(&p,b,5);message_panel_action(&p,b,0);
+            scene_test_action(&p,b,0);assert(p.kind==20&&!b->vm->sp);
+            scene_test_action(&p,b,1);assert(p.kind==20&&p.direct_sub==-1);
+            scene_test_action(&p,b,0);scene_test_action(&p,b,5);scene_test_action(&p,b,5);scene_test_action(&p,b,0);
             assert(!p.kind&&b->vm->sp==1&&b->vm->stack[0].number==0);
             assert(b->vm->globals[1][12].number==3&&b->vm->globals[1][13].number==2&&b->vm->globals[1][14].number==20&&b->vm->globals[1][15].number==2);
         }else{
             b->vm->sp=0;p.kind=20;p.direct_count=0;b->vm->globals[1][12]=(KValue){3,NULL};
             b->vm->bytes[kscene_mode_hage_flags[29]]=1;scene_mode_prepare(&p,b);p.direct_focus=2;
-            message_panel_draw(&p,b,r);message_panel_action(&p,b,0);
+            message_panel_draw(&p,b,r);scene_test_action(&p,b,0);
             assert(!p.kind&&b->vm->sp==1&&b->vm->stack[0].number==0x302);
         }
         /* Resume the original selector MES until it calls a real replay module. */
@@ -742,7 +831,7 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
             if(state==1)bootstrap_frame(b);
         }
         assert(dispatched&&!b->scene_modal&&!b->error[0]);
-        SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.dialog_artwork);rmt_free(&p.dialog_body);rmt_free(&p.direct_artwork);rmt_free(&p.direct_parts);rmt_free(&p.direct_thumb);bootstrap_destroy(b);
+        SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.dialog_artwork);rmt_free(&p.dialog_body);rmt_free(&p.direct_artwork);rmt_free(&p.direct_parts);rmt_free(&p.direct_thumb);rmt_free(&p.direct_from);rmt_free(&p.direct_background);bootstrap_destroy(b);
     }
     puts("Kisaku letter replay exit and 31/320 selector: native mode7 atlas, scene catalog lock state, AKB selector layers, cancel/result and both selector script targets: PASS");
 }
@@ -752,6 +841,10 @@ int main(int argc,char **argv){
     assert(!SDL_Init(SDL_INIT_VIDEO));
     SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,1280,720,32,SDL_PIXELFORMAT_BGRA32);assert(surface);
     SDL_Renderer *renderer=SDL_CreateSoftwareRenderer(surface);assert(renderer);
+    if(argc==4&&!strcmp(argv[3],"--scene")){
+        test_letter_exit(argv[1],argv[2],renderer,NULL);
+        SDL_DestroyRenderer(renderer);SDL_FreeSurface(surface);SDL_Quit();return 0;
+    }
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b&&!b->error[0]);
     int rc=bootstrap_run(b,100000);
     for(unsigned frame=0;rc==1&&frame<1000&&!(b->title.active&&b->title.age>=64);frame++){

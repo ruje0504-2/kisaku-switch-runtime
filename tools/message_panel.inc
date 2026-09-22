@@ -12,6 +12,9 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
     unsigned name_mode,name_page,name_cursor,name_focus,name_confirm,name_text_cursor;
     KImage image;SDL_Texture *texture;KTextureCache cg_frame;
     unsigned direct_scene,direct_selected,direct_page,direct_count;int direct_focus,direct_sub;KImage direct_artwork,direct_parts,direct_thumb;char direct_thumb_name[64];
+    KImage direct_from,direct_background;unsigned direct_frames[9],direct_unlocked[9];
+    unsigned direct_motion,direct_steps,direct_alpha,direct_thumb_serial;int direct_result,direct_hover;
+    uint64_t direct_clock,direct_hover_clock;
     unsigned cg_scroll_active,cg_scroll_limit,cg_scroll_step,cg_movie_return;uint64_t cg_scroll_start;
     SDL_Texture *cg_textures[3];unsigned cg_cached,cg_group,cg_page,cg_count;
     unsigned replay_key,replay_from,replay_to,replay_alpha;uint64_t replay_next;
