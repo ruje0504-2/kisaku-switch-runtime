@@ -16,6 +16,17 @@ int main(int argc,char **argv){
     assert(strstr(info.name,"opengles2"));printf("Actual SDL renderer: %s\n",info.name);
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b&&!b->error[0]);
     for(unsigned i=0;!b->title.active||b->title.age<64;i++){assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+    const char *shot=getenv("KISAKU_FILTER_SHOTS");
+    if(shot){
+        SDL_Rect area={160,0,960,720};char path[4096];
+        SDL_Texture *linear=kimage_texture(r,&b->layers[0]);assert(linear);
+        assert(!SDL_SetTextureScaleMode(linear,SDL_ScaleModeLinear));
+        assert(!SDL_RenderCopy(r,linear,NULL,&area));
+        snprintf(path,sizeof(path),"%s-linear.bmp",shot);assert(!capture(r,path));
+        KPresentGles preview={0};assert(!present_gles_draw(&preview,r,&b->layers[0],&area,0));
+        snprintf(path,sizeof(path),"%s-cubic.bmp",shot);assert(!capture(r,path));
+        present_gles_clear(&preview);SDL_DestroyTexture(linear);
+    }
     KImage source={0,0,640,480,2560,calloc(640*480,4)};assert(source.pixels);
     for(unsigned i=0;i<640*480;i++){source.pixels[4*i]=23;source.pixels[4*i+1]=53;source.pixels[4*i+2]=201;source.pixels[4*i+3]=255;}
     uint8_t *expected=malloc(960*720*4),*actual=malloc(960*720*4);assert(expected&&actual);

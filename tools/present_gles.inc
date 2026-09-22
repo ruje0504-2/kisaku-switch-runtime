@@ -20,16 +20,31 @@ static GLuint present_gles_shader(GLenum type,const char *source){
 }
 static int present_gles_init(KPresentGles *p){
     static const char vertex[]="attribute vec2 a_pos;attribute vec2 a_uv;varying vec2 v_uv;void main(){gl_Position=vec4(a_pos,0.0,1.0);v_uv=a_uv;}";
+    /* Catmull-Rom's two positive middle weights share one bilinear fetch,
+       leaving a 3x3 grid (9 fetches). Four central texels bound ringing.
+       This uses source texel centres and highp to retain subpixel accuracy. */
     static const char fragment[]=
-        "precision mediump float;uniform sampler2D u_tex;uniform vec2 u_texel;uniform float u_strength;varying vec2 v_uv;"
-        "void main(){vec3 c=texture2D(u_tex,v_uv).bgr;vec3 mn=c,mx=c;vec3 n0=texture2D(u_tex,v_uv+u_texel*vec2(-1.,-1.)).bgr;"
+        "precision highp float;uniform sampler2D u_tex;uniform vec2 u_texel;uniform float u_strength;varying vec2 v_uv;"
+        "vec3 px(vec2 p){return texture2D(u_tex,p*u_texel).bgr;}"
+        "void main(){vec2 p=v_uv/u_texel-.5;vec2 base=floor(p);vec2 f=p-base;"
+        "vec2 w0=f*(-.5+f*(1.-.5*f));vec2 w1=1.+f*f*(-2.5+1.5*f);"
+        "vec2 w2=f*(.5+f*(2.-1.5*f));vec2 w3=f*f*(-.5+.5*f);vec2 wm=w1+w2;"
+        "vec2 a=base-.5;vec2 m=base+.5+w2/wm;vec2 z=base+2.5;"
+        "vec3 row0=px(vec2(a.x,a.y))*w0.x+px(vec2(m.x,a.y))*wm.x+px(vec2(z.x,a.y))*w3.x;"
+        "vec3 row1=px(vec2(a.x,m.y))*w0.x+px(vec2(m.x,m.y))*wm.x+px(vec2(z.x,m.y))*w3.x;"
+        "vec3 row2=px(vec2(a.x,z.y))*w0.x+px(vec2(m.x,z.y))*wm.x+px(vec2(z.x,z.y))*w3.x;"
+        "vec3 s00=px(base+.5),s10=px(base+vec2(1.5,.5)),s01=px(base+vec2(.5,1.5)),s11=px(base+1.5);"
+        "vec3 lo=min(min(s00,s10),min(s01,s11)),hi=max(max(s00,s10),max(s01,s11));"
+        "vec3 c=clamp(row0*w0.y+row1*wm.y+row2*w3.y,lo,hi);"
+        "if(u_strength>0.){vec3 mn=c,mx=c;vec3 n0=texture2D(u_tex,v_uv+u_texel*vec2(-1.,-1.)).bgr;"
         "vec3 n1=texture2D(u_tex,v_uv+u_texel*vec2(0.,-1.)).bgr;vec3 n2=texture2D(u_tex,v_uv+u_texel*vec2(1.,-1.)).bgr;"
         "vec3 n3=texture2D(u_tex,v_uv+u_texel*vec2(-1.,0.)).bgr;vec3 n4=texture2D(u_tex,v_uv+u_texel*vec2(1.,0.)).bgr;"
         "vec3 n5=texture2D(u_tex,v_uv+u_texel*vec2(-1.,1.)).bgr;vec3 n6=texture2D(u_tex,v_uv+u_texel*vec2(0.,1.)).bgr;"
         "vec3 n7=texture2D(u_tex,v_uv+u_texel*vec2(1.,1.)).bgr;mn=min(mn,min(n0,min(n1,min(n2,min(n3,min(n4,min(n5,min(n6,n7))))))));"
         "mx=max(mx,max(n0,max(n1,max(n2,max(n3,max(n4,max(n5,max(n6,n7))))))));"
         "vec3 amp=clamp(min(mn,vec3(2.)-mx)/max(mx,vec3(.0001)),0.,1.);amp=sqrt(max(amp,vec3(.0001)));"
-        "vec3 w=-.2*u_strength*amp;vec3 o=(c+w*(n1+n3+n4+n6))/(1.+4.*w);gl_FragColor=vec4(clamp(o,mn,mx),1.);}";
+        "vec3 w=-.2*u_strength*amp;c=clamp((c+w*(n1+n3+n4+n6))/(1.+4.*w),mn,mx); }"
+        "gl_FragColor=vec4(c,1.);}";
     GLuint vs=present_gles_shader(GL_VERTEX_SHADER,vertex),fs=present_gles_shader(GL_FRAGMENT_SHADER,fragment);
     if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return -1;}
     p->program=glCreateProgram();if(!p->program){glDeleteShader(vs);glDeleteShader(fs);return -1;}

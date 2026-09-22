@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include "font.h"
@@ -39,6 +40,49 @@ static void ui_upload(const KImage *im){
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,(GLsizei)im->width,(GLsizei)im->height,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba);free(rgba);assert(glGetError()==GL_NO_ERROR);
 }
 static void read_frame(uint8_t *pixels){glFinish();glReadPixels(0,0,1280,720,GL_RGBA,GL_UNSIGNED_BYTE,pixels);assert(glGetError()==GL_NO_ERROR);}
+/* Independent scalar 16-tap kernel, rather than the shader's 9-fetch
+   bilinear grouping. Validate subpixel phase, channel order and edge clamp. */
+static double cubic_kernel(double x){
+    x=fabs(x);if(x<1)return 1.+x*x*(1.5*x-2.5);
+    if(x<2)return 2.+x*(-4.+x*(2.5-.5*x));return 0;
+}
+static double source_channel(const KImage *im,int x,int y,unsigned channel){
+    if(x<0)x=0;if(y<0)y=0;if(x>639)x=639;if(y>479)y=479;
+    return im->pixels[(size_t)y*im->stride+(unsigned)x*4+2-channel];
+}
+static void test_cubic(KPresentGles *pass,SDL_Renderer *renderer,KImage *source,const SDL_Rect *dst,uint8_t *actual){
+    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+        uint8_t *p=source->pixels+y*source->stride+x*4;
+        p[0]=(uint8_t)(20+(x%17)*12);p[1]=(uint8_t)(30+(y%19)*10);
+        p[2]=(uint8_t)((x<320?((x+y)%9<4):((x/2+y/2)%2))?215:35);p[3]=91;
+    }
+    assert(!present_gles_draw(pass,renderer,source,dst,0));read_frame(actual);
+    unsigned max_error=0,changed=0;
+    for(unsigned y=0;y<720;y++)for(unsigned x=0;x<960;x++){
+        double sx=((double)x+.5)*640/960-.5,sy=((double)y+.5)*480/720-.5;
+        int bx=(int)floor(sx),by=(int)floor(sy);double fx=sx-bx,fy=sy-by;
+        for(unsigned c=0;c<3;c++){
+            double out=0,lo=255,hi=0;
+            for(int oy=-1;oy<=2;oy++)for(int ox=-1;ox<=2;ox++)
+                out+=source_channel(source,bx+ox,by+oy,c)*cubic_kernel(sx-(bx+ox))*cubic_kernel(sy-(by+oy));
+            for(int oy=0;oy<2;oy++)for(int ox=0;ox<2;ox++){
+                double v=source_channel(source,bx+ox,by+oy,c);if(v<lo)lo=v;if(v>hi)hi=v;
+            }
+            if(out<lo)out=lo;if(out>hi)out=hi;
+            int ref=(int)floor(out+.5),got=actual[((719-y)*1280+160+x)*4+c];
+            unsigned error=(unsigned)abs(got-ref);if(error>max_error)max_error=error;
+            double linear=(1-fy)*((1-fx)*source_channel(source,bx,by,c)+fx*source_channel(source,bx+1,by,c))+
+                fy*((1-fx)*source_channel(source,bx,by+1,c)+fx*source_channel(source,bx+1,by+1,c));
+            changed+=abs(got-(int)floor(linear+.5))>2;
+            assert(got>=(int)lo-1&&got<=(int)hi+1);
+        }
+        assert(actual[((719-y)*1280+160+x)*4+3]==255);
+    }
+    printf("Bicubic GPU vs independent 16-tap CPU reference: max error %u/255, %u channels differ from bilinear\n",max_error,changed);
+    assert(max_error<=2&&changed>10000);
+    assert(!present_gles_draw(pass,renderer,source,dst,100));read_frame(actual);
+    for(unsigned i=0;i<640*480;i++)assert(source->pixels[i*4+3]==91);
+}
 int main(int argc,char **argv){
     assert(argc==2);EGLDisplay d=eglGetDisplay(EGL_DEFAULT_DISPLAY);EGLint major,minor;assert(eglInitialize(d,&major,&minor));assert(eglBindAPI(EGL_OPENGL_ES_API));
     EGLint config_attrs[]={EGL_SURFACE_TYPE,EGL_PBUFFER_BIT,EGL_RENDERABLE_TYPE,EGL_OPENGL_ES2_BIT,EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,EGL_ALPHA_SIZE,8,EGL_NONE};EGLConfig config;EGLint n;assert(eglChooseConfig(d,config_attrs,&config,1,&n)&&n==1);
@@ -63,5 +107,6 @@ int main(int argc,char **argv){
         }
     }
     printf("Native 960x720 Japanese glyphs: %u ink pixels; 60 GLES story+text/menu frames match reference pixels exactly: PASS\n",ink);
+    test_cubic(&pass,&renderer,&source,&dst,actual);
     present_gles_clear(&pass);kfont_close(font);free(source.pixels);free(letters.pixels);free(expected);free(actual);glDeleteTextures(1,&ui_texture);glDeleteBuffers(1,&ui_vbo);glDeleteProgram(ui_shader);eglMakeCurrent(d,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);eglDestroyContext(d,context);eglDestroySurface(d,surface);eglTerminate(d);return 0;
 }

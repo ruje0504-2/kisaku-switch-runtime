@@ -849,3 +849,12 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - 最终主机完整回归通过（local/optimize-test-host.log）；改变行/擦除/底行的局部上传与整张上传做实际GPU像素对比。最终Switch编译和SD交付哈希见后续行。
 
 - 最终Switch构建通过（-Werror），主入口SHA-256：`f76f0805d1263b385802628b4d8e38a38a94f5416119ab7c1f90697c53362e28`。已打包同步交付；实机负载、帧率、功耗仍未验证。
+
+## 2026-09-23 GPU图片重建：限幅Catmull-Rom
+
+- 将正常GLES底图从双线性改为9次合并采样的Catmull-Rom，加中央2×2范围限幅抑制过冲，使用highp保持子像素坐标；CASStrength=0不执行额外锐化，非零继续原有强度控制。
+- 静态上传缓存、BGRA .bgr解释、完整GL状态恢复、独立960×720高清文字、第三核分工及60 FPS目标不变；CPU后备仍使用既有算法，不增加CPU放大步骤。模态面板仍使用自己的SDL绘制路径。
+- GPU源码逻辑路径13次采样，非零额外锐化时21次（旧shader 9次）；这不是实际内存带宽或GPU耗时倍数。Switch实机GPU/CPU等待增幅及清晰度收益未验证。
+- 实际Mesa GLES对独立16点CPU三次核参考：全960×720最大误差1/255，584978通道与双线性差异超过2/255；颜色、边界夹取、过冲限幅、透明源的最终Alpha和原始图层不变专项通过。
+- 真实SDL CG/音乐/视频/回想/历史/存读档及高清文字/局部上传专项通过；真实标题截图已检查。日志local/bicubic-gles.log、local/bicubic-preview.log。用户要求的复用笔记已更新reports/高清呈现与多核心移植笔记.md第5、13节，记录公式、成本与后备路径差异。
+- `./build-host.sh`、`./build-switch.sh`（-Werror）、`tools/test_present_gles.sh`和`git diff --check`通过；本轮未改变VM或存档逻辑，未重复全路线探针。主入口SHA-256：`ac52ad776e59b4598f36b9d9a22b0abee66d4523a141404fb497b214b76c39d0`。SD交付同步；Switch实机图像质量与性能尚未验证。

@@ -434,9 +434,9 @@ int main(int argc,char **argv){
             unsigned cas_strength=raw_present?0u:(unsigned)bootstrap_cas_strength(b);
             if(!raw_present){
                 /* The normal presentation path is always a filtered 1.5x
-                   reconstruction.  GLES uses its linear sampler and the
-                   optional RCAS weight; the CPU fallback uses the same
-                   bilinear/RCAS equations.  --raw-present remains the
+                   reconstruction. GLES uses bounded Catmull-Rom sampling and the
+                   optional sharpening weight; the CPU fallback retains its
+                   existing bilinear/RCAS equations.  --raw-present remains the
                    explicit nearest-neighbour reference path. */
                 if(!present_gles_draw(&present_gles,r,source,&dst,cas_strength)){
                     /* GLES2 handled the full-screen pass. */
