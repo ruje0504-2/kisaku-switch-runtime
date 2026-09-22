@@ -1,11 +1,51 @@
 #include "font.h"
 #include <stdlib.h>
+#include <string.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
-struct KFont {FT_Library library;FT_Face faces[3];unsigned count,shared;};
+enum { FONT_CACHE_BUCKETS=1024, FONT_CACHE_GLYPHS=1024, FONT_CACHE_BYTES=2*1024*1024 };
+typedef struct KFontGlyph {
+    uint32_t codepoint;
+    unsigned width,height;
+    FT_Bitmap bitmap;
+    int64_t left,top;
+    size_t bytes;
+    struct KFontGlyph *hash_next,*newer,*older;
+} KFontGlyph;
+struct KFont {
+    FT_Library library;FT_Face faces[3];unsigned count,shared;
+    KFontGlyph *glyphs[FONT_CACHE_BUCKETS],*newest,*oldest;
+    size_t cache_count,cache_bytes;
+    uint64_t cache_hits,rasterizations;
+};
+static unsigned font_glyph_bucket(uint32_t cp,unsigned width,unsigned height){
+    uint32_t key=cp*0x9e3779b1u^(width*0x85ebca6bu)^(height*0xc2b2ae35u);
+    return (key^(key>>16))&(FONT_CACHE_BUCKETS-1u);
+}
+static void font_cache_touch(KFont *f,KFontGlyph *g){
+    if(f->newest==g)return;
+    if(g->newer)g->newer->older=g->older;
+    if(g->older)g->older->newer=g->newer;
+    else f->oldest=g->newer;
+    g->newer=NULL;g->older=f->newest;
+    if(f->newest)f->newest->newer=g;
+    f->newest=g;
+    if(!f->oldest)f->oldest=g;
+}
+static void font_cache_evict(KFont *f){
+    KFontGlyph *g=f->oldest;if(!g)return;
+    unsigned bucket=font_glyph_bucket(g->codepoint,g->width,g->height);
+    KFontGlyph **link=&f->glyphs[bucket];
+    while(*link&&*link!=g)link=&(*link)->hash_next;
+    if(*link)*link=g->hash_next;
+    f->oldest=g->newer;
+    if(f->oldest)f->oldest->older=NULL;else f->newest=NULL;
+    f->cache_bytes-=g->bytes;f->cache_count--;
+    free(g->bitmap.buffer);free(g);
+}
 /* Nintendo's shared fonts are returned as raw SFNT/TTC memory.  FreeType
  * normally selects Unicode automatically, but some Horizon revisions expose
  * a platform-default charmap first; that leaves FT_Get_Char_Index returning
@@ -45,12 +85,18 @@ static FT_UInt glyph_index(FT_Face face,uint32_t codepoint){
 }
 void kfont_close(KFont *f){
     if(!f)return;
+    while(f->oldest)font_cache_evict(f);
     for(unsigned i=0;i<f->count;i++)FT_Done_Face(f->faces[i]);
     if(f->library)FT_Done_FreeType(f->library);
 #ifdef __SWITCH__
     if(f->shared)plExit();
 #endif
     free(f);
+}
+int kfont_cache_stats(const KFont *f,KFontCacheStats *stats){
+    if(!f||!stats)return -1;
+    *stats=(KFontCacheStats){f->cache_count,f->cache_bytes,FONT_CACHE_GLYPHS,FONT_CACHE_BYTES,
+                           f->cache_hits,f->rasterizations};return 0;
 }
 KFont *kfont_open(const char *path,int simplified){
     KFont *f=calloc(1,sizeof(*f));if(!f)return NULL;
@@ -83,12 +129,40 @@ static int font_load_glyph(KFont *f,uint32_t cp,unsigned width,unsigned height,
                            FT_Bitmap **bitmap_out,
                            int64_t *left_out,int64_t *top_out){
     if(!f||width<1||height<1||width>256||height>256)return -1;
+    unsigned bucket=font_glyph_bucket(cp,width,height);
+    for(KFontGlyph *cached=f->glyphs[bucket];cached;cached=cached->hash_next){
+        if(cached->codepoint!=cp||cached->width!=width||cached->height!=height)continue;
+        font_cache_touch(f,cached);f->cache_hits++;
+        *bitmap_out=&cached->bitmap;*left_out=cached->left;*top_out=cached->top;return 0;
+    }
     FT_Face face=NULL;FT_UInt index=0;
     for(unsigned i=0;i<f->count;i++)if((index=glyph_index(f->faces[i],cp))){face=f->faces[i];break;}
     if(!face||FT_Set_Pixel_Sizes(face,width,height)||FT_Load_Glyph(face,index,FT_LOAD_RENDER|FT_LOAD_TARGET_NORMAL))return -1;
+    f->rasterizations++;
     FT_GlyphSlot g=face->glyph;FT_Bitmap *bitmap=&g->bitmap;
     if(bitmap->pixel_mode!=FT_PIXEL_MODE_GRAY&&bitmap->pixel_mode!=FT_PIXEL_MODE_MONO)return -1;
-    *bitmap_out=bitmap;*left_out=g->bitmap_left;*top_out=(face->size->metrics.ascender>>6)-g->bitmap_top;return 0;
+    *bitmap_out=bitmap;*left_out=g->bitmap_left;*top_out=(face->size->metrics.ascender>>6)-g->bitmap_top;
+    /* Store coverage and metrics only: position, colour and the outline are
+       applied by the unchanged draw loops. Copying the bitmap also keeps it
+       valid when FreeType loads another size into the same glyph slot. */
+    size_t pitch=(size_t)abs(bitmap->pitch);
+    if(pitch&&bitmap->rows>FONT_CACHE_BYTES/pitch)return 0;
+    size_t bytes=pitch*bitmap->rows;
+    KFontGlyph *cached=calloc(1,sizeof(*cached));if(!cached)return 0;
+    uint8_t *pixels=bytes?malloc(bytes):NULL;
+    if(bytes&&!pixels){free(cached);return 0;}
+    for(unsigned row=0;row<bitmap->rows&&pitch;row++){
+        const uint8_t *src=bitmap->buffer+(bitmap->pitch>=0?row:bitmap->rows-row-1)*pitch;
+        memcpy(pixels+row*pitch,src,pitch);
+    }
+    while(f->cache_count>=FONT_CACHE_GLYPHS||f->cache_bytes>FONT_CACHE_BYTES-bytes)font_cache_evict(f);
+    cached->codepoint=cp;cached->width=width;cached->height=height;
+    cached->bitmap=*bitmap;cached->bitmap.buffer=pixels;cached->bitmap.pitch=(int)pitch;
+    cached->left=*left_out;cached->top=*top_out;cached->bytes=bytes;
+    cached->hash_next=f->glyphs[bucket];f->glyphs[bucket]=cached;
+    cached->older=f->newest;if(f->newest)f->newest->newer=cached;else f->oldest=cached;
+    f->newest=cached;f->cache_count++;f->cache_bytes+=bytes;
+    *bitmap_out=&cached->bitmap;return 0;
 }
 static void font_blend_pixel(KImage *dst,int64_t xx,int64_t yy,unsigned alpha,unsigned rgb){
     if(!alpha||xx<0||yy<0||xx>=dst->width||yy>=dst->height)return;

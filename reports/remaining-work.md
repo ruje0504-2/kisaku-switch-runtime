@@ -43,3 +43,10 @@
 `./build-host.sh`、`./test-host.sh 鬼作`、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`。保龄球专项包含score/player/throw/motion/contact/world/cpu-throw/session/projection/rack/draw/turn/game；真实MES与模态测试位于tests/kisaku_bootstrap_test.c。最终结果和NRO哈希见reports/porting.md最新节。
 
 - **CG鉴赏已接通**：31/310普通/秃作分类、锁定、变体、大图脚本隔离播放与返回已实现并通过主机专项；完整逐槽实机回放仍未验证。附录音乐31/340、视频31/70已接通；完整视频槽逐项回放和实机仍未验证。
+
+## 2026-09-22 显示后处理后续
+
+- 本轮仅完成普通消息/选项的960×720字形重绘；信件/小说/交叉淡化和旧档当前句的高清重建仍待补齐。HOS系统面板字体分工保持原状。
+- CScMode/CHageScMode图集重叠已纠正，但解锁和选择返回仍残留旧khistory桥接，必须改为本作原生进度与scene.mes/hage_scmode.mes调度；特殊子列表和缩略图轮播待完成。不能把前端截图/编译通过当作完整回想播放通过。
+- 用户第一张图中的周末第一项“秘伝書”进入后的界面故障尚未完成定位。
+- 新呈现路径Switch实机性能/效果未验证。

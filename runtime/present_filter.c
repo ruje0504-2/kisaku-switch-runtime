@@ -65,6 +65,15 @@ int kpresent_resize_nearest(const uint8_t *src,unsigned sw,unsigned sh,size_t ss
     }
     return 0;
 }
+int kpresent_resize_bilinear(const uint8_t *src,unsigned sw,unsigned sh,size_t ss,
+                             uint8_t *dst,unsigned dw,unsigned dh,size_t ds){
+    if(!src||!dst||!sw||!sh||!dw||!dh||ss<(size_t)sw*4||ds<(size_t)dw*4)return -1;
+    for(unsigned y=0;y<dh;y++)for(unsigned x=0;x<dw;x++){
+        uint8_t *out=dst+y*ds+x*4;
+        for(unsigned c=0;c<4;c++)out[c]=bilinear(src,sw,sh,ss,x,y,c,dw,dh);
+    }
+    return 0;
+}
 int kpresent_resize_cas(const uint8_t *src,unsigned sw,unsigned sh,size_t ss,
                         uint8_t *dst,unsigned dw,unsigned dh,size_t ds,
                         unsigned sharpness_percent){
@@ -73,7 +82,7 @@ int kpresent_resize_cas(const uint8_t *src,unsigned sw,unsigned sh,size_t ss,
     /* RCAS sharpness is mapped to [0, 1/5].  Keeping the negative neighbour
        coefficient explicit makes the clamp and the reference formula easy to
        audit against FidelityFX's ffx_cas.h. */
-    if(!sharpness_percent)return kpresent_resize_nearest(src,sw,sh,ss,dst,dw,dh,ds);
+    if(!sharpness_percent)return kpresent_resize_bilinear(src,sw,sh,ss,dst,dw,dh,ds);
     for(unsigned y=0;y<dh;y++)for(unsigned x=0;x<dw;x++){
         uint8_t out[4];
         for(unsigned c=0;c<3;c++)out[c]=rcas_channel(src,sw,sh,ss,x,y,c,dw,dh,sharpness_percent);

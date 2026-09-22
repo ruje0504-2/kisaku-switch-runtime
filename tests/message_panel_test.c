@@ -689,6 +689,11 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
         assert(selector_seen&&b->scene_modal);
         p.kind=20;p.direct_scene=1;p.direct_count=0;p.status[0]=0;message_panel_draw(&p,b,r);
         assert(p.direct_artwork.pixels&&p.direct_artwork.width==496&&p.direct_parts.pixels);
+        assert(p.direct_count==(mode?30:kscene_mode_total())&&p.direct_thumb.pixels);
+        if(getenv("KISAKU_SCENE_SHOTS")){
+            char path[128];snprintf(path,sizeof(path),"local/scene-selector-%u.bmp",mode);
+            assert(!capture(r,path));
+        }
         message_panel_action(&p,b,1);assert(!p.kind&&!b->scene_modal&&b->vm->sp==1&&b->vm->stack[0].number==-1);
         if(!mode){
             assert(!khistory_register(&b->scene_history,b->save_root,1,1,"s01.mes",0));
@@ -698,7 +703,7 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
             assert(p.kind==16&&p.scene_request==1&&!b->scene_modal&&b->vm->sp==1&&b->vm->stack[0].number==1);
             p.kind=0;p.scene_request=0;b->vm->sp=0;
         }
-        SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.dialog_artwork);rmt_free(&p.dialog_body);rmt_free(&p.direct_artwork);rmt_free(&p.direct_parts);bootstrap_destroy(b);
+        SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.dialog_artwork);rmt_free(&p.dialog_body);rmt_free(&p.direct_artwork);rmt_free(&p.direct_parts);rmt_free(&p.direct_thumb);bootstrap_destroy(b);
     }
     puts("Kisaku letter replay exit and 31/320 selector: native mode7 atlas, scene catalog lock state, AKB selector layers, cancel/result and both selector script targets: PASS");
 }

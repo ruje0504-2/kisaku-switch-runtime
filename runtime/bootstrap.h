@@ -124,6 +124,10 @@ typedef struct {
     int message_read_id,message_reveal_x,message_reveal_y,message_end_x,message_end_y;
     uint32_t message_color;
     KImage message_text,fade_surface,helper_surfaces[3];
+    /* Optional presentation companions; never saved or used by script reads. */
+    unsigned present_hires,present_text_valid;
+    KImage present_source_text,present_message_text,present_choice_text;
+    KImage present_shadow,present_clean,present_reference,present_overlay;
     /* CFuncExec 31/526 keeps a separate two-surface working pair.  It is
        distinct from the CLetter and 31/13 helper surfaces; action 1 releases
        this pair and resets its native state. */
@@ -269,8 +273,11 @@ int bootstrap_message_setting(KBootstrap *b,unsigned item,int change);
    outside the native CConfig index table so old save/settings layouts remain
    byte-for-byte compatible.  The value is returned as a clamped percentage
    (0..100); integer values are percentages and decimal values in 0..1 are
-   accepted as normalized strength.  Zero preserves the raw nearest path. */
+   accepted as normalized strength.  Zero disables sharpening; the viewer still uses bilinear scaling. */
 int bootstrap_cas_strength(const KBootstrap *b);
+/* Returns a 640x480 clean presentation copy plus a 960x720 text overlay.
+   Unsupported/modified text surfaces safely retain their authored pixels. */
+const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay);
 unsigned bootstrap_video_count(void);
 const char *bootstrap_video_preview_name(unsigned index);
 int bootstrap_video_unlocked(const KBootstrap *b,unsigned index);

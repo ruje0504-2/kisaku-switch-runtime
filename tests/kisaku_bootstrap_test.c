@@ -1604,7 +1604,53 @@ static void test_native_cg(const char *root,const char *saves){
     assert(b->vm->sp==1&&b->vm->stack[0].number==-1);
     free(locked);bootstrap_destroy(b);puts("Native CG: original script entry, lock, variants, isolated normal/Hage full image and appendix return: PASS");
 }
+static void test_hires_present(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);b->present_hires=1;
+    for(unsigned i=0;!b->title.active||b->title.age<64;i++){
+        assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);
+    }
+    b->title.selected=0;bootstrap_confirm(b);
+    unsigned observed=0;
+    uint8_t *raw=malloc(640*480*4);assert(raw);
+    for(unsigned i=0;i<6000;i++){
+        assert(bootstrap_run(b,100000)>=0);
+        if(b->flag_dialog.active)bootstrap_pointer(b,300,350,1);
+        bootstrap_frame(b);
+        if(!b->message_active||b->message_slide)continue;
+        memcpy(raw,b->layers[0].pixels,640*480*4);
+        const KImage *overlay=NULL,*clean=bootstrap_present_layers(b,&overlay);
+        assert(overlay&&clean!=&b->layers[0]&&overlay->width==960&&overlay->height==720);
+        assert(!memcmp(raw,b->layers[0].pixels,640*480*4));
+        unsigned ink=0;for(unsigned px=0;px<960*720;px++)ink+=overlay->pixels[px*4+3]!=0;
+        if(ink)observed++;
+        if(!b->message_revealing){
+            assert(ink&&memcmp(clean->pixels,raw,640*480*4));
+            b->present_hires=0;assert(bootstrap_present_layers(b,&overlay)==&b->layers[0]&&!overlay);
+            b->present_hires=1;
+            b->layers[1].pixels[0]^=1;
+            assert(bootstrap_present_layers(b,&overlay)==&b->layers[0]&&!overlay);
+            b->layers[1].pixels[0]^=1;
+            break;
+        }
+    }
+    assert(observed);
+    b->message_active=b->message_visible=0;b->vm->globals[0][50].number=0;
+    assert(!call(b,30,0));
+    b->choice_normal=b->choice_active=1;b->choice_count=1;b->choice_selected=0;b->choice_rendered_page=~0u;
+    b->choice_base=(KImage){0,0,640,480,2560,calloc(480,2560)};
+    b->choice_text=(KImage){0,0,640,480,2560,calloc(480,2560)};
+    strcpy(b->choice_labels[0],"ABC");b->choice_lengths[0]=3;
+    b->choice_values[0]=0;b->choice_returns[0]=1;
+    bootstrap_frame(b);assert(!b->error[0]);memcpy(raw,b->layers[0].pixels,640*480*4);
+    const KImage *overlay=NULL,*clean=bootstrap_present_layers(b,&overlay);
+    assert(overlay&&clean!=&b->layers[0]&&memcmp(clean->pixels,raw,640*480*4));
+    assert(!memcmp(raw,b->layers[0].pixels,640*480*4));
+    free(raw);bootstrap_destroy(b);
+    puts("960x720 text: real startup reveal, clean backing, immutable raw and modified-layer fallback: PASS");
+}
+
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--hires")){test_hires_present(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--native-cg")){test_native_cg(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--audio-overlap")){test_audio_overlap(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}

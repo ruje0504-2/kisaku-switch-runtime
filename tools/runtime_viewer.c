@@ -81,7 +81,7 @@ int main(int argc,char **argv){
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS,"0");
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_GAMECONTROLLER))return 1;
     SDL_AudioDeviceID audio=0;unsigned serial=0,audio_rate=0,audio_channels=0;size_t audio_queued=0;
-    int rc=1;KBootstrap *b=NULL;SDL_Texture *texture=NULL,*fade=NULL,*status_texture=NULL,*present_texture=NULL;uint8_t *present_pixels=NULL;int present_disabled=0;KPresentGles present_gles={0};
+    int rc=1;KBootstrap *b=NULL;SDL_Texture *texture=NULL,*fade=NULL,*status_texture=NULL,*present_texture=NULL,*hires_texture=NULL;uint8_t *present_pixels=NULL;int present_disabled=0;KPresentGles present_gles={0};
     SDL_Window *w=SDL_CreateWindow("KISAKU runtime preview",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1280,720,0);
     SDL_Renderer *r=w?SDL_CreateRenderer(w,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC):NULL;
     if(!r&&w)r=SDL_CreateRenderer(w,-1,SDL_RENDERER_SOFTWARE);
@@ -388,6 +388,7 @@ int main(int argc,char **argv){
         if(new_game&&b->title.active&&b->title.age>=64){bootstrap_title_move(b,1);bootstrap_confirm(b);new_game=0;}
         if(start_story&&b->flag_dialog.active){bootstrap_pointer(b,300,350,1);start_story=0;}
         if(advance_texts&&b->text_count<advance_texts&&b->message_active&&!b->message_slide)bootstrap_confirm(b);
+        b->present_hires=!raw_present;
         if(state==1&&!menu.active&&(!panel.kind||(panel.kind>=9&&panel.kind<=15))){bootstrap_frame(b);state=bootstrap_run(b,100000);if(state<0)fprintf(stderr,"%s\n",b->error);}
         if(b->audio_serial!=serial){
             memset(&history_audio,0,sizeof(history_audio));
@@ -416,9 +417,15 @@ int main(int argc,char **argv){
         SDL_SetRenderDrawColor(r,12,15,20,255);SDL_RenderClear(r);
         SDL_Rect dst={160,0,960,720};
         if(b->layers[0].pixels){
-            if(SDL_UpdateTexture(texture,NULL,b->layers[0].pixels,(int)b->layers[0].stride))goto done;
+            const KImage *hires=NULL,*source=bootstrap_present_layers(b,&hires);
+            if(SDL_UpdateTexture(texture,NULL,source->pixels,(int)source->stride))goto done;
             unsigned cas_strength=raw_present?0u:(unsigned)bootstrap_cas_strength(b);
-            if(cas_strength&&!raw_present){
+            if(!raw_present){
+                /* The normal presentation path is always a filtered 1.5x
+                   reconstruction.  GLES uses its linear sampler and the
+                   optional RCAS weight; the CPU fallback uses the same
+                   bilinear/RCAS equations.  --raw-present remains the
+                   explicit nearest-neighbour reference path. */
                 if(!present_gles_draw(&present_gles,r,texture,&dst,cas_strength)){
                     /* GLES2 handled the full-screen pass. */
                 }else {
@@ -431,7 +438,7 @@ int main(int argc,char **argv){
                     else{free(present_pixels);present_pixels=NULL;present_disabled=1;}
                 }
                 if(present_texture&&present_pixels&&
-                   !kpresent_resize_cas(b->layers[0].pixels,640,480,b->layers[0].stride,
+                   !kpresent_resize_cas(source->pixels,640,480,source->stride,
                                         present_pixels,960,720,960u*4u,cas_strength)&&
                    !SDL_UpdateTexture(present_texture,NULL,present_pixels,960*4))
                     SDL_RenderCopy(r,present_texture,NULL,&dst);
@@ -445,6 +452,14 @@ int main(int argc,char **argv){
                 (void)SDL_SetTextureScaleMode(texture,SDL_ScaleModeNearest);
 #endif
                 SDL_RenderCopy(r,texture,NULL,&dst);
+            }
+            if(hires){
+                if(!hires_texture){
+                    hires_texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,960,720);
+                    if(hires_texture)SDL_SetTextureBlendMode(hires_texture,SDL_BLENDMODE_BLEND);
+                }
+                if(!hires_texture||SDL_UpdateTexture(hires_texture,NULL,hires->pixels,(int)hires->stride)||
+                   SDL_RenderCopy(r,hires_texture,NULL,&dst))goto done;
             }
         }
         if(b->fade_visible&&b->fade_surface.pixels){
@@ -507,9 +522,9 @@ int main(int argc,char **argv){
     for(unsigned i=0;i<5;i++)rmt_free(&panel.config_art[i]);
     rmt_free(&panel.dialog_artwork);rmt_free(&panel.dialog_body);
     rmt_free(&panel.name_artwork);rmt_free(&panel.name_grid_cache);rmt_free(&panel.nav_artwork);rmt_free(&panel.nav_scene);for(unsigned i=0;i<4;i++)rmt_free(&panel.nav_previews[i]);rmt_free(&panel.history_artwork);
-    rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);
+    rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);rmt_free(&panel.direct_thumb);
     rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
-    rmt_free(&panel.image);SDL_DestroyTexture(panel.name_help_texture);rmt_free(&panel.name_help);present_gles_clear(&present_gles);free(present_pixels);SDL_DestroyTexture(present_texture);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
+    rmt_free(&panel.image);SDL_DestroyTexture(panel.name_help_texture);rmt_free(&panel.name_help);present_gles_clear(&present_gles);free(present_pixels);SDL_DestroyTexture(hires_texture);SDL_DestroyTexture(present_texture);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
     if(audio)SDL_CloseAudioDevice(audio);
     bootstrap_destroy(navigation.next);bootstrap_destroy(navigation.owner);bootstrap_destroy(menu.next);bootstrap_destroy(b);SDL_DestroyTexture(fade);SDL_DestroyTexture(texture);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return rc;
 }

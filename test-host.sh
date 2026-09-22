@@ -35,6 +35,7 @@ fi
 build/flags-test "$test_save/flags-test.dat"
 build/kisaku-bootstrap-test "$game" "$test_save"
 build/kisaku-bootstrap-test "$game" "$menu_save" --title-paths
+build/kisaku-bootstrap-test "$game" "$menu_save" --hires
 build/save-runtime-test "$game" "$roundtrip_save"
 build/letter-save-test "$game" "$letter_save"
 build/transition-cadence-test "$game" "$test_save"

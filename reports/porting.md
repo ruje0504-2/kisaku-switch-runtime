@@ -792,3 +792,14 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - `kfont_draw_outline` 改为每个字只栅格化一次，再直接写入外轮廓和正文；删除原先每个字重复 9 次 FreeType 渲染，降低 Switch 文本绘制开销。
 - `./build-host.sh`、`./test-host.sh 鬼作`、字体专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过；构建与 SD 交付入口 SHA-256 均为 `ae0998e071be765611a49917b1bb99eed3226cfc109d0f2ac9f6ddb9a2da8468`。
 - Switch 实机帧率和字体观感仍未验证。
+
+## 2026-09-22：960×720 显示文字与鉴赏图集裁切
+
+- 普通对话、普通选项使用 presentation companion：排版与 VM 保留 640×480，原字形位置/字号乘 3/2，重新栅格到 960×720。源文字、逐字复制、姓名前缀与消息滑动同步；不从合并后的字符串重新排版。先输出无旧字的底图，再叠高清文字，保留后续覆盖精灵；无法对应的文字层回退原画面。
+- 默认输出采用双线性放大，CASStrength=0 只关闭锐化，不再暗中变成 nearest；`--raw` / `--raw-present` 保留原始 nearest 路径。CAS/GLES 算法本轮未重写，不能称新的 AMD 参考实现。
+- 每个字体新增有界字形覆盖率/metrics 缓存（1024 项、2 MiB bitmap），复用字体不同颜色的绘制，保持现有黑边算法。缓存不保存到游戏存档。
+- 场景鉴赏停止把 p/p2 整张图集贴上屏幕；依据 471950、471740 分别裁分类、页签、返回、160×120 边框及149×112缩略图。分类资源采用547c74映射；秃作资源范围00_08至27_29，30项。删除旧600槽编号调试覆盖文字。
+- **未完成**：鉴赏解锁/播放仍有旧 khistory/checkpoint 桥接，未还原原生31/320返回码、原生进度字节及完整子选择/缩略图轮播。第一张周末“秘伝書”进入界面问题尚未定位修复，不计入本轮已修复项。
+- **高清覆盖限制**：信件/小说全屏模式、消息交叉淡化、系统面板/历史仍采用原640合成后放大；缺少companion的旧检查点当前句也保留原渲染，下一次正常消息初始化可启用高清字层。没有修改字体分工：系统界面继续HOS，剧情使用已配置字体。
+- 验证：`./build-host.sh`、`./test-host.sh 鬼作`、`build/present-filter-test`、`build/font-test local/fonts/arshanghaisonggbpro_lt.otf`、高清专项 `build/kisaku-bootstrap-test 鬼作 local/hires-test-save --hires` 通过；高清专项 ASan/UBSan 通过。实际开场逐字显示、旧字底图清除、原始画面不变、源层被另行修改后的回退及选项层均有断言。主机截图 `local/hires-first.png` 已检查。
+- Switch `./build-switch.sh` 已通过 `-Werror`；主入口 SHA-256 `ba2c6cf047aea12d3dabfade461359d671a8c8b7ca3b2122da21183b033cc46b`。主机日志 `local/hires-regression.log`、`local/hires-asan.log`、`local/hires-final-build.log`、`local/hires-final-switch.log`。**Switch 实机画面、帧率和完整路线仍未验证。**

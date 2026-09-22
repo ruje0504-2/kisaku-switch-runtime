@@ -295,7 +295,36 @@ static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     return 0;
 }
 #include "backlog_store.h"
-void bootstrap_destroy(KBootstrap *b){if(!b)return;native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
+void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->present_source_text);rmt_free(&b->present_message_text);rmt_free(&b->present_choice_text);rmt_free(&b->present_shadow);rmt_free(&b->present_clean);rmt_free(&b->present_reference);rmt_free(&b->present_overlay);native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
+/* Companions use original layout coordinates at 3/2 scale; layout and VM
+   surfaces stay at 640x480. Allocation failure simply leaves raw text intact. */
+static int present_surface(KImage *im,unsigned w,unsigned h){
+    if(im->pixels)return 0;
+    uint8_t *pixels=calloc((size_t)w*h,4);if(!pixels)return -1;
+    *im=(KImage){0,0,w,h,(size_t)w*4,pixels};return 0;
+}
+static void present_text_reset(KBootstrap *b){
+    b->present_text_valid=0;if(!b->present_hires)return;
+    if(present_surface(&b->present_source_text,960,126)||
+       present_surface(&b->present_message_text,864,81)||
+       present_surface(&b->present_shadow,640,84))return;
+    memset(b->present_source_text.pixels,0,960*126*4);
+    memset(b->present_message_text.pixels,0,864*81*4);
+    memset(b->present_shadow.pixels,0,640*84*4);
+    b->present_text_valid=1;
+}
+static void present_reveal(KBootstrap *b,int x,int y,int w,int h){
+    if(!b->present_text_valid||x<32||y<8||x+w>608||y+h>62)return;
+    for(int row=0;row<h*3/2;row++)memcpy(
+        b->present_message_text.pixels+((y-8)*3/2+row)*b->present_message_text.stride+(x-32)*3/2*4,
+        b->present_source_text.pixels+(y*3/2+row)*b->present_source_text.stride+x*3/2*4,(size_t)w*3/2*4);
+}
+static int present_choice_glyph(KBootstrap *b,KFont *font,KImage *dst,uint32_t cp,int x,int y,unsigned w,unsigned h,uint32_t color){
+    if(b->present_hires&&b->present_choice_text.pixels&&
+       kfont_draw_outline(font,&b->present_choice_text,cp,x*3/2,y*3/2,w*3/2,h*3/2,color))
+        rmt_free(&b->present_choice_text);
+    return kfont_draw_outline(font,dst,cp,x,y,w,h,color);
+}
 static int message_init(KBootstrap *b){
     /* 481be0: the layout rectangle is (32,8,560,54), but 481d68/481dca
        clear both complete 640x84 text surfaces. 481a50 copies that surface
@@ -313,6 +342,7 @@ static int message_init(KBootstrap *b){
     const unsigned slots[]={42,43,44,45,46,47,30,31,49};
     const int values[]={32,8,592,62,32,8,16,18,1};
     for(unsigned i=0;i<sizeof(slots)/sizeof(*slots);i++)v->globals[0][slots[i]]=(KValue){values[i],NULL};
+    present_text_reset(b);
     b->font_width=b->font_height=16;
     b->message_pending_size=0;b->message_pending[0]=0;b->message_voice_name[0]=0;
     b->message_buttons_motion=0;
@@ -516,6 +546,7 @@ static void message_copy_text(KBootstrap *b){
     int top=b->vm->globals[0][43].number;
     if(top<0||top>(int)src->height-54)return;
     for(unsigned y=0;y<54;y++)memcpy(b->message_text.pixels+y*b->message_text.stride,src->pixels+(top+y)*src->stride+32*4,576*4);
+    present_reveal(b,32,8,576,54);
     b->message_revealing=0;
 }
 static int message_skin_reload(KBootstrap *b);
@@ -601,6 +632,7 @@ static void message_name_reveal(KBootstrap *b){
     if(top<0||top+height>(int)source->height)return;
     for(int row=0;row<height;row++)memcpy(b->message_text.pixels+row*b->message_text.stride,
         source->pixels+(top+row)*source->stride+32*4,(size_t)width*4);
+    present_reveal(b,32,8,(int)width,height);
     b->message_reveal_x=32+(int)width;
 }
 static void message_slide_finish(KBootstrap *b){
@@ -612,19 +644,19 @@ static void message_slide_begin(KBootstrap *b,int hiding){
     b->message_slide=steps?steps+1:0;b->message_slide_frame=b->message_slide_clock=0;b->message_hiding=hiding;
     if(!steps)message_slide_finish(b);
 }
-static void message_compose(KBootstrap *b){
+static void message_compose_into(KBootstrap *b,KImage *target,int text){
     unsigned offset=0;
     if(b->message_slide){unsigned f=b->message_slide_frame,d=b->message_slide-1;unsigned move=d&&f<d?84*f/d:84;offset=b->message_hiding?move:84-move;}
-    memcpy(b->layers[0].pixels,b->message_base.pixels,640*480*4);
+    memcpy(target->pixels,b->message_base.pixels,640*480*4);
     if(b->message_user_hidden)return;
     const uint8_t *color=b->message_skin.background.pixels;
     unsigned alpha=color[3];
     for(unsigned y=396+offset;y<480;y++)for(unsigned x=0;x<640;x++){
-        uint8_t *out=b->layers[0].pixels+y*b->layers[0].stride+x*4;
+        uint8_t *out=target->pixels+y*target->stride+x*4;
         for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(color[c]*alpha/255+out[c]*(255-alpha)/255);
     }
-    for(unsigned y=0;y<54&&404+offset+y<480;y++)for(unsigned x=0;x<576;x++){
-        uint8_t *src=b->message_text.pixels+y*b->message_text.stride+x*4,*out=b->layers[0].pixels+(404+offset+y)*b->layers[0].stride+(32+x)*4;
+    if(text)for(unsigned y=0;y<54&&404+offset+y<480;y++)for(unsigned x=0;x<576;x++){
+        uint8_t *src=b->message_text.pixels+y*b->message_text.stride+x*4,*out=target->pixels+(404+offset+y)*target->stride+(32+x)*4;
         for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(src[c]*src[3]/255+out[c]*(255-src[3])/255);
     }
     /* 481df0 / 482450: six independent sprites, with native atlas states. */
@@ -639,11 +671,12 @@ static void message_compose(KBootstrap *b){
         unsigned row=sy[item]+state*16;
         if(row+16>atlas->height){error(b,"CMesWnd button state outside atlas");return;}
         for(unsigned y=0;y<16&&button_y+offset+y<480;y++)for(unsigned x=0;x<button->width;x++){
-            uint8_t *src=atlas->pixels+(row+y)*atlas->stride+(sx[item]+x)*4,*out=b->layers[0].pixels+(button_y+offset+y)*b->layers[0].stride+(button->x+x)*4;
+            uint8_t *src=atlas->pixels+(row+y)*atlas->stride+(sx[item]+x)*4,*out=target->pixels+(button_y+offset+y)*target->stride+(button->x+x)*4;
             for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(src[c]*src[3]/255+out[c]*(255-src[3])/255);
         }
     }
 }
+static void message_compose(KBootstrap *b){message_compose_into(b,&b->layers[0],1);}
 static int message_slide_skip(KBootstrap *b){
     if(!b->message_slide&&!b->message_buttons_motion)return 0;
     if(!(b->vm->globals[0][50].number&0x4000)){
@@ -677,6 +710,7 @@ static int message_begin(KBootstrap *b,int id){
     b->message_reveal_x=32;b->message_reveal_y=408;b->message_end_x=end_x;b->message_end_y=408+end_y-top;
     if(end_y<top||end_y>v->globals[0][45].number||end_x<32||end_x>608)return error(b,"message cursor range");
     memset(b->message_text.pixels,0,b->message_text.stride*b->message_text.height);
+    if(b->present_message_text.pixels)memset(b->present_message_text.pixels,0,864*81*4);
     if(speed==124)message_copy_text(b);else message_name_reveal(b);
     if(!b->message_visible)message_slide_begin(b,0);
     b->message_active=b->message_visible=1;b->message_read_id=id;
@@ -998,6 +1032,7 @@ static void choice_native_pixel(KBootstrap *b,unsigned state,int hover,unsigned 
 }
 static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
     memset(b->choice_text.pixels,0,640*480*4);
+    if(b->present_hires&&!present_surface(&b->present_choice_text,960,720))memset(b->present_choice_text.pixels,0,960*720*4);
     KTextEncoding encoding=text_encoding(b);
     const char *path=NULL,*mincho=NULL;story_font_settings(b,&path,&mincho);
     for(unsigned i=0;i<count;i++){
@@ -1009,29 +1044,29 @@ static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
             b->vm->bytes[8100]==0&&b->vm->bytes[2000+b->choice_values[item]]?0xffb400:0xffffff;
         if(!choice_enabled(b,item))color=0x808080;
         for(size_t j=0;j<n;j++){
-            if(kfont_draw_outline(b->font,&b->choice_text,chars[j].codepoint,x,top+(int)i*52+(b->choice_normal?17:18),16,16,color))return error(b,"choice glyph unavailable");
+            if(present_choice_glyph(b,b->font,&b->choice_text,chars[j].codepoint,x,top+(int)i*52+(b->choice_normal?17:18),16,16,color))return error(b,"choice glyph unavailable");
             x+=chars[j].columns*8;
         }
     }
     if(b->choice_normal){
         /* 523d64/523d68: native CP932 ▲ / ▼, centered in 496x34 rows. */
-        if(page&&kfont_draw_outline(b->font,&b->choice_text,0x25b2,312,top-34+8,16,16,0xffffff))return error(b,"choice previous-page glyph unavailable");
-        if(page*4+4<b->choice_count&&kfont_draw_outline(b->font,&b->choice_text,0x25bc,312,top+208+8,16,16,0xffffff))return error(b,"choice next-page glyph unavailable");
+        if(page&&present_choice_glyph(b,b->font,&b->choice_text,0x25b2,312,top-34+8,16,16,0xffffff))return error(b,"choice previous-page glyph unavailable");
+        if(page*4+4<b->choice_count&&present_choice_glyph(b,b->font,&b->choice_text,0x25bc,312,top+208+8,16,16,0xffffff))return error(b,"choice next-page glyph unavailable");
     }else if(b->choice_count>4){
         char label[48];snprintf(label,sizeof(label),"<    %u / %u    >",page+1,(b->choice_count+3)/4);
         int x=(640-(int)strlen(label)*8)/2;
-        for(unsigned i=0;label[i];i++)if(kfont_draw_outline(b->font,&b->choice_text,(unsigned char)label[i],x+(int)i*8,448,16,16,0xffffff))return error(b,"choice page glyph unavailable");
+        for(unsigned i=0;label[i];i++)if(present_choice_glyph(b,b->font,&b->choice_text,(unsigned char)label[i],x+(int)i*8,448,16,16,0xffffff))return error(b,"choice page glyph unavailable");
     }
     b->choice_rendered_page=page;return 0;
 }
-static void choice_draw(KBootstrap *b){
+static void choice_draw_into(KBootstrap *b,KImage *target,int text){
     if(!b->choice_active)return;
     if(b->choice_selected< -1||(b->choice_selected>=0&&(unsigned)b->choice_selected>=b->choice_count)){error(b,"choice selection invalid");return;}
     unsigned page=b->choice_selected<0?b->choice_page:(unsigned)b->choice_selected/4,count=b->choice_count-page*4;if(count>4)count=4;
     b->choice_page=page;
     int top=choice_top(b,count);
     if(b->choice_rendered_page!=page&&choice_page_text(b,page,count,top))return;
-    memcpy(b->layers[0].pixels,b->choice_base.pixels,640*480*4);
+    memcpy(target->pixels,b->choice_base.pixels,640*480*4);
     for(unsigned i=0;i<count;i++){
         unsigned item=page*4+i;int seen=b->vm->bytes[2000+b->choice_values[item]]!=0;
         /* Main-story seen rows in selparts2 are cyan. Keep the requested
@@ -1045,7 +1080,7 @@ static void choice_draw(KBootstrap *b){
             uint8_t native[4];
             if(b->choice_normal)choice_native_pixel(b,native_state,(int)item==b->choice_selected,x,y,1,color,alpha,native);
             const uint8_t *src=b->choice_normal?native:b->choice_parts.pixels+(sy+y)*b->choice_parts.stride+x*4;
-            uint8_t *dst=b->layers[0].pixels+(top+i*52+y)*b->layers[0].stride+(72+x)*4;
+            uint8_t *dst=target->pixels+(top+i*52+y)*target->stride+(72+x)*4;
             unsigned a=src[3];
             for(unsigned c=0;c<3;c++)dst[c]=(uint8_t)(src[c]*a/255+dst[c]*(255-a)/255);
             dst[3]=(uint8_t)(a+dst[3]*(255-a)/255);
@@ -1056,15 +1091,16 @@ static void choice_draw(KBootstrap *b){
         int y0=top+(nav?208:-34);unsigned alpha=(unsigned)option(b,"SELECT","MIXED",112)&255;
         for(unsigned y=0;y<34;y++)for(unsigned x=0;x<496;x++){
             uint8_t src[4];choice_native_pixel(b,0,b->choice_page_hover==(int)nav+1,x,y,0,0,alpha,src);
-            uint8_t *dst=b->layers[0].pixels+(y0+y)*b->layers[0].stride+(72+x)*4;
+            uint8_t *dst=target->pixels+(y0+y)*target->stride+(72+x)*4;
             for(unsigned c=0;c<3;c++)dst[c]=(uint8_t)(src[c]*src[3]/255+dst[c]*(255-src[3])/255);
         }
     }
-    for(size_t i=0;i<640*480;i++){
-        uint8_t *s=b->choice_text.pixels+i*4,*d=b->layers[0].pixels+i*4;unsigned a=s[3];
+    if(text)for(size_t i=0;i<640*480;i++){
+        uint8_t *s=b->choice_text.pixels+i*4,*d=target->pixels+i*4;unsigned a=s[3];
         for(unsigned k=0;k<3;k++)d[k]=(uint8_t)(s[k]*a/255+d[k]*(255-a)/255);
     }
 }
+static void choice_draw(KBootstrap *b){choice_draw_into(b,&b->layers[0],1);}
 static int choice_begin(KBootstrap *b){
     KVM *v=b->vm;
     if(v->current_list<0)return error(b,"choice list missing");
@@ -2894,9 +2930,20 @@ static int draw_text(KBootstrap *b){
         }
         if(b->novel_font)active_font=b->novel_font;
     }
+    int companion=b->present_hires&&b->present_text_valid&&!b->novel_mode&&!b->letter_mode&&
+        dst==&b->layers[1]&&dst->width==640&&dst->height>=84;
+    if(companion){
+        for(unsigned row=0;row<84;row++)if(memcmp(dst->pixels+row*dst->stride,b->present_shadow.pixels+row*2560,2560)){
+            b->present_text_valid=0;companion=0;break;
+        }
+    }
     for(size_t i=0;i<count;i++){
+        if(companion&&kfont_draw_outline(active_font,&b->present_source_text,chars[i].codepoint,
+           positions[i].x*3/2,positions[i].y*3/2,(unsigned)b->font_width*3/2,(unsigned)b->font_height*3/2,
+           (uint32_t)v->globals[0][33].number)){b->present_text_valid=0;companion=0;}
         if(kfont_draw_outline(active_font,dst,chars[i].codepoint,positions[i].x,positions[i].y,(unsigned)b->font_width,(unsigned)b->font_height,(uint32_t)v->globals[0][33].number))return error(b,"glyph unavailable");
     }
+    if(companion)for(unsigned row=0;row<84;row++)memcpy(b->present_shadow.pixels+row*2560,dst->pixels+row*dst->stride,2560);
     if(record_text(b))return -1;
     /* A displayed line may contain several TEXT opcodes, a substituted name,
        or a numeric syscall. Retain the whole message for portable history. */
@@ -3097,6 +3144,7 @@ void bootstrap_frame(KBootstrap *b){
                         int source_top=b->vm->globals[0][43].number,source_y=source_top+(y-408);
                         if(source_top<0||source_y<0||source_y+18>(int)b->layers[1].height)return;
                         for(int row=0;row<18&&y+row<462;row++)memcpy(b->message_text.pixels+(y-408+row)*b->message_text.stride+(x-32)*4,b->layers[1].pixels+(source_y+row)*b->layers[1].stride+x*4,(size_t)(x+16<=608?16:608-x)*4);
+                        present_reveal(b,x,source_y,x+16<=608?16:608-x,source_y+18<=62?18:62-source_y);
                         b->message_reveal_x+=16;
                     }else if(y<b->message_end_y){b->message_reveal_x=32;b->message_reveal_y+=18;}
                     else message_copy_text(b);
@@ -3681,4 +3729,50 @@ int bootstrap_scene_draw(KBootstrap *b,unsigned selected,unsigned overview,KImag
         if(read_named(&b->images,names[i],&data,&size)||rmt_decode(data,size,images[i])){free(data);return -1;}free(data);
     }
     return kscene_view(b->scene,&b->scene_tiles,&b->scene_parts,selected,overview,out);
+}
+
+const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay){
+    if(overlay)*overlay=NULL;
+    if(!b)return NULL;
+    const KImage *raw=&b->layers[0];
+    if(!overlay||!b->present_hires||!raw->pixels||raw->width!=640||raw->height!=480||
+       b->novel_mode||b->letter_mode||b->mes_fade_transition||b->helper_steps||b->exec_wipe_active)
+        return raw;
+    int choice=b->choice_active&&b->present_choice_text.pixels;
+    int message=!choice&&b->message_visible&&!b->message_user_hidden&&b->present_text_valid;
+    if(!choice&&!message)return raw;
+    if(message){
+        KImage *source=&b->layers[1];
+        if(!source->pixels||source->width!=640||source->height<84)return raw;
+        for(unsigned y=0;y<84;y++)if(memcmp(source->pixels+y*source->stride,b->present_shadow.pixels+y*2560,2560))return raw;
+    }
+    if(present_surface(&b->present_clean,640,480)||present_surface(&b->present_reference,640,480)||
+       present_surface(&b->present_overlay,960,720))return raw;
+    memset(b->present_overlay.pixels,0,960*720*4);
+    if(choice){
+        choice_draw_into(b,&b->present_reference,1);
+        choice_draw_into(b,&b->present_clean,0);
+        memcpy(b->present_overlay.pixels,b->present_choice_text.pixels,960*720*4);
+    }else{
+        message_compose_into(b,&b->present_reference,1);
+        message_compose_into(b,&b->present_clean,0);
+        unsigned offset=0;
+        if(b->message_slide){unsigned f=b->message_slide_frame,d=b->message_slide-1;
+            unsigned move=d&&f<d?84*f/d:84;offset=b->message_hiding?move:84-move;}
+        unsigned dy=(404+offset)*3/2;
+        for(unsigned y=0;y<81&&dy+y<720;y++)memcpy(b->present_overlay.pixels+(dy+y)*3840+48*4,
+            b->present_message_text.pixels+y*3456,3456);
+    }
+    /* Later native sprites (calendar, meters, fades) can cover either text
+       or its backing. Keep those final pixels instead of recomposing them.
+       No script-owned buffer is modified by presentation. */
+    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+        const uint8_t *actual=raw->pixels+y*raw->stride+x*4;
+        if(!memcmp(actual,b->present_reference.pixels+y*2560+x*4,4))continue;
+        memcpy(b->present_clean.pixels+y*2560+x*4,actual,4);
+        unsigned x0=(x*3+1)/2,x1=((x+1)*3+1)/2,y0=(y*3+1)/2,y1=((y+1)*3+1)/2;
+        for(unsigned yy=y0;yy<y1;yy++)for(unsigned xx=x0;xx<x1;xx++)
+            memset(b->present_overlay.pixels+yy*3840+xx*4,0,4);
+    }
+    *overlay=&b->present_overlay;return &b->present_clean;
 }

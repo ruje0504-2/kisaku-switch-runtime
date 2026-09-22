@@ -12,6 +12,14 @@ int kpresent_resize_cas(const uint8_t *src, unsigned src_width,
                         unsigned dst_height, size_t dst_stride,
                         unsigned sharpness_percent);
 
+/* High-quality presentation default: bilinear reconstruction without RCAS.
+   This is distinct from raw nearest so screenshots can compare authored
+   pixels against the 960x720 output deterministically. */
+int kpresent_resize_bilinear(const uint8_t *src, unsigned src_width,
+                             unsigned src_height, size_t src_stride,
+                             uint8_t *dst, unsigned dst_width,
+                             unsigned dst_height, size_t dst_stride);
+
 /* Nearest is kept as a separate path for pixel tests and reference captures. */
 int kpresent_resize_nearest(const uint8_t *src, unsigned src_width,
                             unsigned src_height, size_t src_stride,

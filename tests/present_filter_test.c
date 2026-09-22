@@ -18,8 +18,10 @@ int main(void){
         const uint8_t *p=sharp+i*4;
         assert(p[0]<=192&&p[1]<=192&&p[2]<=192&&p[3]==255);
     }
+    assert(!kpresent_resize_bilinear(source,4,4,16,sharp,8,8,32));
+    assert(memcmp(sharp,raw,sizeof(raw))!=0); /* filtered midpoint differs from nearest */
     assert(!kpresent_resize_cas(source,4,4,16,sharp,8,8,32,0));
-    assert(!memcmp(raw,sharp,sizeof(raw)));
+    assert(memcmp(sharp,raw,sizeof(raw))!=0);
     /* RCAS' min/max limiter must preserve a flat neighbourhood at every
        strength; this catches a wrong centre coefficient immediately. */
     uint8_t flat[4*4*4],flat_out[8*8*4];

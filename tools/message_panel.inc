@@ -11,7 +11,7 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
        date/name modal does not fall back to the Switch system keyboard. */
     unsigned name_mode,name_page,name_cursor,name_focus,name_confirm,name_text_cursor;
     KImage image;SDL_Texture *texture;
-    unsigned direct_scene,direct_selected,direct_page,direct_count;KImage direct_artwork,direct_parts;
+    unsigned direct_scene,direct_selected,direct_page,direct_count;KImage direct_artwork,direct_parts,direct_thumb;char direct_thumb_name[64];
     unsigned cg_scroll_active,cg_scroll_limit,cg_scroll_step,cg_movie_return;uint64_t cg_scroll_start;
     SDL_Texture *cg_textures[3];unsigned cg_cached,cg_group,cg_page,cg_count;
     unsigned replay_key,replay_from,replay_to,replay_alpha;uint64_t replay_next;
