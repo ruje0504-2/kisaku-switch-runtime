@@ -9,6 +9,8 @@ gate_save=$(mktemp -d)
 stage_save=$(mktemp -d)
 menu_save=$(mktemp -d)
 trap 'rm -f "$test_save/kisaku-runtime.ini" "$test_save/kisaku-flag-0-100.dat" "$test_save/flags-test.dat"; rmdir "$test_save" 2>/dev/null || :; rm -rf "$roundtrip_save" "$letter_save" "$gate_save" "$stage_save" "$menu_save"' EXIT
+build/video-hw-test
+build/video-test "$game"
 build/akb-test
 build/vm-memory-test
 build/present-filter-test

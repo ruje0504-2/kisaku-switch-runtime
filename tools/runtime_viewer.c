@@ -99,6 +99,12 @@ int main(int argc,char **argv){
     (void)SDL_SetTextureScaleMode(fade,SDL_ScaleModeNearest);
 #endif
     b=bootstrap_create_split(root,save_root);if(!b)goto done;
+    char video_log[4096];
+    if(snprintf(video_log,sizeof(video_log),"%s/video-decoder.log",save_root)<(int)sizeof(video_log))kvideo_set_log_path(video_log);
+    for(unsigned i=0;i<b->setting_count;i++)if(!strcmp(b->settings[i].section,"Runtime")&&!strcmp(b->settings[i].key,"VideoDecoder")){
+        if(!strcmp(b->settings[i].value,"software"))kvideo_set_default_mode(KVIDEO_SOFTWARE);
+        else if(!strcmp(b->settings[i].value,"auto"))kvideo_set_default_mode(KVIDEO_AUTO);
+    }
     char cursor_path[4096];snprintf(cursor_path,sizeof(cursor_path),"%s/kisaku-cursors.bin",root);
     if(cursor_load(&cursor,r,cursor_path)){
 #ifndef __SWITCH__

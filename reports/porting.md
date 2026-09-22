@@ -963,3 +963,18 @@ L存档保持原入口，新增ZL以load=1打开原读档界面；撤除剧情ZL
 NRO SHA256（三份一致）：`c853368a80662e50fccb92ddea3b1021dcc8b6950cba7bbfa0cbfba335ceea53`。
 
 未验证：Switch实机视觉/帧时/长期内存、包含23/5的全路线回放。高清淡化的字形覆盖片使用双线性底色，非“两个完整FSR端点混合”的逐像素等价；具体内存和取舍已记入高清笔记第18节。普通旧档当前句高清重建及其余剩余项仍见remaining-work.md。
+
+## 2026-09-23：视频 NVTEGRA 硬解接入
+
+- Switch默认AUTO，使用现有devkitPro FFmpeg的NVTEGRA codec配置、设备和get_format接口；MPEG-1硬解符号、设备创建及帧下载函数已链接到最终ELF。未修改Mesa、GL后处理、FSR或原始素材。
+- 硬件帧下载为CPU帧后才进入现有时间戳、循环缓存和swscale路径；保留音频与MOV区间语义。缓存不持有硬解表面，退出和跳转释放对应引用。缺后端/设备/硬件格式/codec打开失败记录原因并回退软件；中途解码或下载失败仍明确报错，不支持无缝中途重启。
+- `[Runtime] VideoDecoder=software`允许强制软件，`auto`恢复自动选择。当前save root下`video-decoder.log`区分设备就绪和首个实际硬件帧，并记录关闭时计数。详细复用和性能边界见高清笔记第19节。
+- 新增video-hw-test故障注入，以及真实endfilm.VSD/ev119gr_12.vsd的主机AUTO回退与软件RGB/PCM对比、循环缓存、seek、提前退出测试，并接入build-host/test-host。主机注入不是NVDEC实机测试。
+
+已完成验证：`./build-host.sh`、`build/video-hw-test`、`build/video-test 鬼作`；两项视频测试以`-fsanitize=address,undefined -fno-omit-frame-pointer`重编译，并以`ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1`运行通过（未启用泄漏检查）。日志为`local/nvtegra-host-build.log`、`local/video-hw-unit.log`、`local/video-real.log`、`local/nvtegra-unit-asan.log`、`local/nvtegra-real-asan.log`。
+
+最终`./build-switch.sh`通过（运行时-Werror，日志`local/nvtegra-switch-final.log`）。NRO SHA256：`41d9b8ec162cfb46caec6974830a310d724a2e2b279ecd22cfe07562bbdd5cdd`。
+
+未验证：Switch实际硬件帧产出、与软件解码色彩对比、音画同步/长时稳定性、CPU负载与帧时变化；没有把设备创建、链接或交叉编译作为实机成功证据。VIC转色与GPU零拷贝未实现，本轮不包含Mesa迁移。
+
+完整`./test-host.sh 鬼作`通过（`local/nvtegra-host-test.log`）；`python3 tools/package_sd.py 鬼作`与`git diff --check`通过。交付主入口、兼容入口和build-switch的NRO哈希一致。未额外重复GLES像素测试，本次没有更改渲染路径。
