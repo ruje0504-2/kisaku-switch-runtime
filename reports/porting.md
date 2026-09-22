@@ -690,3 +690,5 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 主机验证：`./build-host.sh`、`./test-host.sh 鬼作`、标题附录往返专项通过；`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。日志为`local/appendix-media-build.log`、`local/appendix-media-tests.log`、`local/appendix-media-switch.log`、`local/appendix-media-package.log`。
 - 当前构建与SD交付三个入口SHA-256均为`fa24512fbc2c2ef1d6f7ebfe9413535bd57fa6c51d6fe6791e10dd9b708b40a9`。
 - Switch实机、完整视频槽逐项回放、全路线及原版PC实时画面对照仍未验证；未运行PC原版程序。
+
+用户复核：女性角色眨眼当前表现正常，不再作为剩余移植缺口。
