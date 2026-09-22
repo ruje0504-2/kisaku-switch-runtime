@@ -123,3 +123,5 @@
 - 2026-09-23：正常GLES底图在受限双三次放大后新增输出尺寸3×3亮度边缘锐化，`Display/EdgeStrength`默认55、0恢复旧CASStrength单pass；非FSR。RGBA8/FBO与纹理方向、FRAMEBUFFER_BINDING恢复、弱纹理及实际SDL菜单/HQ字层回归通过；CPU后备和独立模态图片不包含此新pass。Switch构建/打包通过，实机性能与画质未验证。复用笔记第14节及porting.md记录最新证据/哈希。
 
 - 2026-09-23：可恢复FSR1试用，GLES默认EASU+RCAS（AMD公式FP32 GLES2适配，显式采样/精确倒数替代gather/位近似，非SDK位精确）。PresentFilter=edge恢复旧两阶段；FSRSharpness默认90→0.2 stops，范围0..100。afbc2d9原NRO备份在交付/恢复版本；MIT声明随THIRD_PARTY.md交付。GLES参考、菜单/HQ回归和Switch编译通过，实机未验证，详见笔记第15节/porting.md。
+
+- 2026-09-23：用户反馈FSR90噪点增多，已恢复初版默认FSRSharpness80（0.4 stops）；EASU/RCAS保留，显式INI配置仍优先。笔记第16节覆盖此前默认90记录，GLES80像素/HQ/菜单回归通过，实机改善未验证。

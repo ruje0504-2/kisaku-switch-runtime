@@ -1683,12 +1683,12 @@ int main(int argc,char **argv){
     assert(result==1&&!b->error[0]);assert(b->vm->syscall==31);
     /* Presentation-only CAS strength accepts normalized and percentage
        settings without entering the native CConfig index table. */
-    assert(bootstrap_fsr_enabled(b)&&bootstrap_fsr_strength(b)==90);
+    assert(bootstrap_fsr_enabled(b)&&bootstrap_fsr_strength(b)==80);
     test_setting(b,"Display","PresentFilter","edge");assert(!bootstrap_fsr_enabled(b));
     test_setting(b,"Display","PresentFilter","fsr1");assert(bootstrap_fsr_enabled(b));
     test_setting(b,"Display","FSRSharpness","100");assert(bootstrap_fsr_strength(b)==100);
     test_setting(b,"Display","FSRSharpness","0");assert(bootstrap_fsr_strength(b)==0);
-    test_setting(b,"Display","FSRSharpness","nan");assert(bootstrap_fsr_strength(b)==90);
+    test_setting(b,"Display","FSRSharpness","nan");assert(bootstrap_fsr_strength(b)==80);
     assert(bootstrap_edge_strength(b)==55);
     test_setting(b,"Display","EdgeStrength","0");assert(bootstrap_edge_strength(b)==0);
     test_setting(b,"Display","EdgeStrength","75");assert(bootstrap_edge_strength(b)==75);

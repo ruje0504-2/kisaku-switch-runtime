@@ -39,7 +39,7 @@ static void fsr_easu_reference(const KImage *src,int x,int y,double out[3]){
 }
 static void test_fsr(KPresentGles *pass,SDL_Renderer *r,KImage *src,const SDL_Rect *dst,uint8_t *actual,uint8_t *base){
     /* EASU intermediate from actual FBO, independent of RCAS presentation. */
-    pass->fsr1=1;pass->fsr_strength=90;assert(!present_gles_draw(pass,r,src,dst,0));read_frame(actual);
+    pass->fsr1=1;pass->fsr_strength=80;assert(!present_gles_draw(pass,r,src,dst,0));read_frame(actual);
     GLint old;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&old);glBindFramebuffer(GL_FRAMEBUFFER,pass->fbo);
     glReadPixels(0,0,960,720,GL_RGBA,GL_UNSIGNED_BYTE,base);glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)old);
     assert(glGetError()==GL_NO_ERROR);
@@ -62,7 +62,7 @@ static void test_fsr(KPresentGles *pass,SDL_Renderer *r,KImage *src,const SDL_Re
             double v=fmax(-fmin(lo,col[2][c])/fmax(4*hi,1e-8),(1-fmax(hi,col[2][c]))/fmin(4*lo-4,-1e-8));
             lobe=fmax(lobe,fmin(v,0));
         }
-        lobe*=exp2(-.2);
+        lobe*=exp2(-.4);
         for(int c=0;c<3;c++){
             double v=(col[2][c]+lobe*(col[0][c]+col[1][c]+col[3][c]+col[4][c]))/(1+4*lobe);
             unsigned e=(unsigned)abs(actual[(y*1280+160+x)*4+c]-(int)floor(fsr_clamp(v,0,1)*255+.5));if(e>max_rcas)max_rcas=e;

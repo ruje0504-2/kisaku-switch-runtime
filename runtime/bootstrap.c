@@ -467,10 +467,10 @@ int bootstrap_fsr_strength(const KBootstrap *b){
     if(b)for(unsigned i=0;i<b->setting_count;i++)
         if(equal(b->settings[i].section,"Display")&&equal(b->settings[i].key,"FSRSharpness")){
             char *end=NULL;const char *value=b->settings[i].value;double n=strtod(value,&end);
-            if(end==value||*end||!isfinite(n)||n<0)return 90;
+            if(end==value||*end||!isfinite(n)||n<0)return 80;
             return n>=100?100:(int)(n+.5);
         }
-    return 90;
+    return 80;
 }
 /* Independent output-pixel sharpening; zero selects the previous filter. */
 int bootstrap_edge_strength(const KBootstrap *b){

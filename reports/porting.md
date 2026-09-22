@@ -892,3 +892,11 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 新NRO及交付主入口SHA256 `4693f20c582a86134e0c59a768a34d9da22b1acd376079cf25c20c8912b4e0ac`。核心分配/高清文字/60FPS目标不变，Switch实机画质、性能、发热仍未验证。设置、源码来源及适配边界补入高清呈现与多核心移植笔记第15节。
 
 最终强度按用户追加要求80→90（0.4→0.2 stops），无额外pass。`build/kisaku-bootstrap-test 鬼作 local/fsr90-settings-test`通过，含默认90、0/100和非法配置回退断言；此前 `build/kisaku-bootstrap-test 鬼作 local/fsr-hires-test --hires`通过，后续只调强度未改高清/线程实现。最终GLES强度90参考/切回旧模式/菜单检查通过，日志 `local/fsr-gles.log`、`local/fsr90-bootstrap.log`、`local/fsr-hires.log`；`git diff --check`通过。未重复完整test-host.sh，不宣称Switch实机通过。
+
+## 2026-09-23：按用户噪点反馈恢复FSR初版80
+
+默认/非法值回退从FSRSharpness90恢复80（RCAS 0.2→0.4 stops），保留EASU/RCAS与可恢复模式；未增加降噪或改变图层/字体。用户显式INI强度设置保持优先。交付目录现有配置未发现强度覆盖。
+
+`tools/test_present_gles.sh`通过（local/fsr80-gles.log）：强度80的EASU/RCAS参考误差均≤1/255，旧模式恢复、纯黑白、高清文字及六类SDL菜单回归通过。仅修改默认参数及夹具，未重复全路线/完整test-host.sh；实机噪点改善待实际运行，不能报成实机已验证。高清笔记第16节记录反馈原因和当前默认值，覆盖第15节的增强版默认90。
+
+`./build-switch.sh`通过（local/fsr80-switch.log），最终主入口SHA256 `c82aba87fe75990713b549abb8d7b061b4d9abe772198069776ad5a5548037c9`；交付使用此重新构建的80默认版本。
