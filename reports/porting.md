@@ -580,3 +580,11 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 构建主入口及SD交付主入口/兼容名SHA-256均为`ba3f8f69d44b3969ef86bb5a193bd2b134a3160fbfe012866e753cf108982390`。用户图标改动不纳入提交。
 - 提交`0eed410`后补验：同一源码的前端ASan/UBSan通过（`local/character-detail-asan-fixed.log`，LeakSanitizer关闭）。最初两次运行停在SDL2-compat动态库初始化的缺SDL3弹窗，采样证据`local/character-detail-asan-sample.txt`，均已终止，未记为通过；按既有环境记录设置`DYLD_LIBRARY_PATH=/opt/homebrew/opt/sdl3/lib`后正常结束，exit 0。
 - 此提交仅完成存档group5详情子集。剧情角色动态状态及语音组合、完整回看、精确20ms、受限调用和全部参数校验仍待继续；参数校验顺序在精确平台绘制差异之前。未运行PC原版，Switch实机及全路线/真实场景回归仍未验证。
+
+## 2026-09-22 回看容器接口核对
+
+- 鬼作分发表确认23是CFuncBackLog、29是CFuncWait。23/0追加槽位的错误参数/分配失败改为保留操作数；23/1按500960→40c550清除命令、文本和语音标志；接通23/4非空记录计数与23/6语音标志查询。原版地址及下一步缺项见`reports/backlog-native.md`，汇编证据`local/backlog-record-native.asm`。
+- 撤回29/0的错误回看初始化空操作：按4f2900读取毫秒数及更新标志，零时长消费两参数立即返回，非零等待明确报未支持并保留现场。旧错误放行不能当作路径通过证据。
+- `./build-host.sh`、最终代码的`./test-host.sh 鬼作`、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`均exit 0；`git diff --check`通过。日志分别为`local/backlog-record-build.log`、`local/backlog-record-final-test-host.log`、`local/backlog-record-switch.log`、`local/backlog-record-package.log`。新增容器专项在完整主机日志第43行PASS；本轮未重跑ASan/UBSan，不沿用上一提交结论。
+- 构建及SD交付主入口SHA-256均为`83231f145a7c196dda6fc69f51564091d207e7194de2cb8cbb5dbf9e3d2b65bf`。图标改动未纳入提交。
+- **①仍未完成**：前端仍是64条扁平文本/单语音，原生命令流、多语音及文字状态保存/恢复尚未接通；29非零等待也待实现。Switch实机和全路线/真实场景回归未验证，未运行PC原版。保持①②③剩余细节④→鬼作参数校验→⑤的顺序。

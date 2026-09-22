@@ -1152,6 +1152,43 @@ int bootstrap_dispatch(KBootstrap *b){
     /* Peek first: unsupported handlers preserve their arguments for diagnostics. */
     if(!v->sp||v->stack[v->sp-1].string)return error(b,"missing integer subcall");
     sub=v->stack[v->sp-1].number;
+    if(main==23&&(sub==0||sub==1||sub==4||sub==6)){
+        /* Kisaku 5061c0 case 0x17 -> 4fe5f0 (CFuncBackLog).
+           Validate before consuming operands; queries replace their operands
+           in-place so returning a value cannot fail after changing state. */
+        unsigned operands=(sub==0||sub==6)?2:1;
+        if(v->sp<operands||(operands==2&&v->stack[v->sp-2].string))
+            return error(b,"backlog numeric operand required (arguments preserved)");
+        int value=operands==2?v->stack[v->sp-2].number:0;
+        if(sub==0){
+            /* 500c10 appends count empty records, retaining the current index. */
+            if(value<0||b->message_count>4096||(unsigned)value>4096-b->message_count)
+                return error(b,"message record limit (arguments preserved)");
+            if(value){
+                KMessageRecord *p=realloc(b->messages,(b->message_count+(unsigned)value)*sizeof(*p));
+                if(!p)return error(b,"message allocation failed (arguments preserved)");
+                b->messages=p;memset(p+b->message_count,0,(size_t)value*sizeof(*p));b->message_count+=(unsigned)value;
+            }
+        }else if(sub==1){
+            /* 500960 -> 40c550 clears commands, text AND voice flag. */
+            b->message_index=-1;
+            for(unsigned i=0;i<b->message_count;i++){
+                KMessageRecord *r=&b->messages[i];r->size=0;r->flag=0;
+                if(r->data)r->data[0]=0;
+                if(r->text)r->text[0]=0;
+            }
+        }else if(sub==4){
+            /* 4fe3b0 -> 500900 counts nonempty command vectors, not slots. */
+            value=0;
+            for(unsigned i=0;i<b->message_count;i++)if(b->messages[i].size)value++;
+        }else{
+            /* 4fe270 -> 4fe0b0: invalid slot returns false, no dereference. */
+            value=value>=0&&(unsigned)value<b->message_count&&b->messages[value].flag!=0;
+        }
+        v->sp-=operands;
+        if(sub==4||sub==6)v->stack[v->sp++]=(KValue){value,NULL};
+        b->handled++;return kvm_resume(v);
+    }
     if(main==31&&sub==3){
         /* 4fbdb0 -> 4b4060: no script arguments or return value. The
            frontend owns CDialog mode 0; the VM remains suspended until No. */
@@ -1234,13 +1271,15 @@ int bootstrap_dispatch(KBootstrap *b){
         v->sp--;b->handled++;return kvm_resume(v);
     }
     if(main==29&&sub==0){
-        /* CFuncBackLog::virtual_0 (4fe5f0 -> 4fe5b0 -> 4fe580) is the
-           zero-command history-container initialization.  It has no script
-           variants beyond the action value already at the top of the VM
-           stack; the native helper allocates an empty record list and then
-           returns to the caller.  Keep the portable 64-entry history intact
-           because it is populated by subsequent message records. */
-        v->sp--;b->handled++;return kvm_resume(v);
+        /* 5061c0 case 0x1d -> CFuncWait 4f2970 -> 4f2900, NOT
+           CFuncBackLog. Two operands: milliseconds, then update flag.
+           Only the immediate wait is supported here until native pumping
+           and non-skippable timing are implemented. Never discard a wait. */
+        if(v->sp<3||v->stack[v->sp-2].string||v->stack[v->sp-3].string)
+            return error(b,"29/0 wait requires two numeric operands (arguments preserved)");
+        if(v->stack[v->sp-2].number!=0)
+            return error(b,"29/0 nonzero native wait unsupported (arguments preserved)");
+        v->sp-=3;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==810){
         /* 4fd3f0 initializes the Japanese name-part object after name.mes
@@ -2306,19 +2345,6 @@ int bootstrap_dispatch(KBootstrap *b){
             free(b->controls[i].values);b->control_count--;
             memmove(b->controls+i,b->controls+i+1,(b->control_count-i)*sizeof(*b->controls));
         }
-    }else if(main==23&&sub==0){
-        /* 414950 appends, rather than resizing/replacing, message records. */
-        if(integer(b,&a))return -1;
-        if(a<0||(unsigned)a>4096-b->message_count)return error(b,"message record limit");
-        if(a){
-            KMessageRecord *p=realloc(b->messages,(b->message_count+(unsigned)a)*sizeof(*p));
-            if(!p)return error(b,"message allocation failed");
-            b->messages=p;memset(p+b->message_count,0,(size_t)a*sizeof(*p));b->message_count+=(unsigned)a;
-        }
-    }else if(main==23&&sub==1){
-        /* 414a70 clears vector/string lengths, retains allocations and flag. */
-        b->message_index=-1;
-        for(unsigned i=0;i<b->message_count;i++){b->messages[i].size=0;if(b->messages[i].text)b->messages[i].text[0]=0;}
     }else if(main==27&&sub==1){
         /* 437de0 -> 4217b0: mouse/keyboard state query, used by clip loops. */
         if(integer(b,&a))return -1;

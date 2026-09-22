@@ -7,6 +7,48 @@
 #include <string.h>
 #include <math.h>
 static unsigned bowling_released;
+static int backlog_call(KBootstrap *b,int action,int has_value,KValue value){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=23;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){789,NULL}));
+    if(has_value)assert(!kvm_push(b->vm,value));
+    assert(!kvm_push(b->vm,(KValue){action,NULL}));
+    return bootstrap_dispatch(b);
+}
+static void test_backlog_records(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    assert(!backlog_call(b,0,1,(KValue){3,NULL})&&b->message_count==3&&b->vm->sp==1);
+    b->message_index=1;
+    KMessageRecord *r=&b->messages[1];
+    r->data=malloc(4);r->capacity=r->size=4;memcpy(r->data,"abc",4);
+    r->text=malloc(4);r->text_capacity=4;memcpy(r->text,"xyz",4);r->flag=1;
+    assert(!backlog_call(b,0,1,(KValue){2,NULL})&&b->message_count==5&&b->message_index==1);
+    assert(!backlog_call(b,4,0,(KValue){0,NULL})&&b->vm->sp==2&&b->vm->stack[1].number==1);
+    assert(b->vm->stack[0].number==789);
+    assert(!backlog_call(b,6,1,(KValue){1,NULL})&&b->vm->sp==2&&b->vm->stack[1].number==1);
+    assert(!backlog_call(b,6,1,(KValue){-1,NULL})&&b->vm->stack[1].number==0);
+    assert(!backlog_call(b,6,1,(KValue){5,NULL})&&b->vm->stack[1].number==0);
+    assert(backlog_call(b,0,1,(KValue){-1,NULL})<0&&b->vm->sp==3&&b->message_count==5);
+    assert(backlog_call(b,0,1,(KValue){4092,NULL})<0&&b->vm->sp==3&&b->message_count==5);
+    assert(backlog_call(b,6,1,(KValue){0,"bad"})<0&&b->vm->sp==3&&b->messages[1].flag);
+    b->vm->status=KVM_SYSCALL;b->vm->sp=1;b->vm->stack[0]=(KValue){6,NULL};
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==1);
+    uint8_t *data=b->messages[1].data;char *text=b->messages[1].text;
+    assert(!backlog_call(b,1,0,(KValue){0,NULL})&&b->vm->sp==1&&b->message_index==-1);
+    assert(b->message_count==5&&b->messages[1].data==data&&b->messages[1].text==text);
+    assert(!b->messages[1].size&&!b->messages[1].flag&&!data[0]&&!text[0]);
+    assert(!backlog_call(b,4,0,(KValue){0,NULL})&&b->vm->stack[1].number==0);
+    assert(!backlog_call(b,6,1,(KValue){1,NULL})&&b->vm->stack[1].number==0);
+    b->vm->syscall=29;b->vm->status=KVM_SYSCALL;b->vm->sp=1;b->vm->stack[0]=(KValue){0,NULL};
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==1);
+    b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){789,NULL})&&!kvm_push(b->vm,(KValue){1,NULL}));
+    assert(!kvm_push(b->vm,(KValue){20,NULL})&&!kvm_push(b->vm,(KValue){0,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==4&&b->message_count==5);
+    b->error[0]=0;b->vm->stack[2].number=0;b->vm->status=KVM_SYSCALL;
+    assert(!bootstrap_dispatch(b)&&b->vm->sp==1&&b->vm->stack[0].number==789);
+    bootstrap_destroy(b);
+    puts("Kisaku backlog records: append, nonempty count, voice query, clear and preserved invalid operands: PASS");
+}
 static void test_setting(KBootstrap *b,const char *section,const char *key,const char *value);
 static void bowling_free(void *p){bowling_released++;free(p);}
 static int call(KBootstrap *b,int sub,int action){
@@ -1532,6 +1574,7 @@ int main(int argc,char **argv){
     test_bowling_scripts(argv[1],argv[2]);
     test_bowling_modal(argv[1],argv[2]);
     test_week(argv[1],argv[2]);
+    test_backlog_records(argv[1],argv[2]);
     test_native_tint(argv[1],argv[2]);
     assert(!call(b,1011,0));
     b->vm->bytes[3600]=b->vm->bytes[5038]=b->vm->bytes[4001]=b->vm->bytes[4004]=0;
