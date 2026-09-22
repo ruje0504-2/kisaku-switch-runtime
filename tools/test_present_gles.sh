@@ -4,7 +4,8 @@ cd "$(dirname "$0")/.."
 # Mesa EGL surfaceless executes the GLES shader and restores real driver state.
 # This is a host regression, not a Switch hardware result.
 mesa=${KISAKU_MESA_PREFIX:-/opt/homebrew/opt/mesa}
-font=${1:-local/fonts/arshanghaisonggbpro_lt.otf}
+font=${1:-assets/arshanghaisonggbpro_lt.otf}
+[ -f "$font" ] || font=local/fonts/arshanghaisonggbpro_lt.otf
 mkdir -p build
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime -I"$mesa/include" \
   tests/present_gles_test.c -o build/present-gles-test

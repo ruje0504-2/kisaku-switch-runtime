@@ -131,3 +131,7 @@
 - 2026-09-23：CNormalSelect按4f1dd0补byte1500非零时取消返回0/sys18的分支，修复周末书目子菜单无法返回。真实sat01_2.mes两本/三本目录、高清字形、父菜单返回、book01_1.mes和参数演出完成及完整bootstrap回归、Switch构建与打包通过；照片中的其他视觉差异、其他周次/书目与Switch实机未验证，详见reports/porting.md。
 
 - 2026-09-23：整页信件及旧小说兼容路径增加960×720独立字形/揭示层，原生遮罩与640×480原始像素不变；跟随原有core2呈现准备和文字纹理缓存。三档速度、逐行、隐藏恢复、清页退出、真实memo.mes四个存档的高清重建、实际SDL/GLES、ASan/UBSan、完整test-host及Switch构建通过。整屏淡化过程的高清叠层/CMesFadeSprite/普通旧档当前句仍未补齐，实机未验证；实现和性能边界见高清笔记第17节及porting.md。
+
+- 2026-09-23：880bf8d 的呈现层选中框（黑/黄/黑五层矩形）按用户要求收回范围，`controls_focus()` 只保留设置菜单（kind8）、原生CG鉴赏（kind22）、场景选择（kind20）三处，删除标题/普通选项/存档槽/确认对话6-18-19/音乐9/视频23六个分支；左黑边说明栏未改。新增前端范围断言（旧实现会被拦住）。主机完整回归、Switch构建与`package_sd.py`打包通过，主入口与兼容NRO SHA-256 `50076e53d6240826427df78784301c3433617e24d258b60e089f748a43127d4b`；外观最终由用户实机确认，详见reports/porting.md。
+
+- 2026-09-23：新增 `make-nsp.sh`（参照 `reference/kawa2-switch-runtime/make-nsp.sh`），把 `build-switch/kisaku-runtime.elf` 与 `交付/SD卡根目录/switch/kisaku/game/` 打成直装 NSP：数据进 RomFS 根、存档走 HOS SaveData。Title ID `01008B538DE50000`（用户指定），名称/作者 `鬼作`/`elf`，图标 `icon.png`→16 个语言槽 256×256 baseline JPEG；NACP 存档配额按每槽 1.53 MiB × 400 槽声明 640 MiB + 32 MiB journal（nacptool 默认 62 MiB 不够）。修正启动时对裸设备根 `save:` 调 `mkdir` 导致安装版直接退出的问题。主机完整回归、Switch 构建、SD 打包与成品 NACP 读回自检通过；NSP 3.37 GiB、SHA-256 `5953ccebce81bf3d61890c8035573590b2ae919a249352f002073b1507b16cc9`，NRO SHA-256 `2d85229fba48c2252206a8814d243239a0441b7b72b1e92284ad5a24092e9d15`；Switch 实机安装/启动/存档未验证，详见 reports/porting.md。

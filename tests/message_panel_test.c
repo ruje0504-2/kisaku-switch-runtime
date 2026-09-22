@@ -5,6 +5,57 @@
 #include <assert.h>
 #include <dirent.h>
 #include <unistd.h>
+/* Count presentation focus pixels outside the shared left-margin hint column.
+   The focus frame is scoped to the settings menu and the CG/scene galleries;
+   every other screen must leave the frame empty. */
+static unsigned overlay_frame_ink(SDL_Renderer *r,MessagePanel *p,SaveMenu *m,KBootstrap *b){
+    ControlsOverlay overlay={0};
+    SDL_SetRenderDrawColor(r,17,51,87,255);assert(!SDL_RenderClear(r));
+    controls_overlay_draw(&overlay,p,m,b,r);
+    uint8_t *pixels=malloc(1280u*720u*4u);assert(pixels);
+    assert(!SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_BGRA32,pixels,1280*4));
+    unsigned ink=0;
+    for(unsigned y=0;y<720;y++)for(unsigned x=0;x<1280;x++){
+        const uint8_t *q=pixels+(y*1280+x)*4;
+        if(q[0]==87&&q[1]==51&&q[2]==17)continue;
+        if(x>=8&&x<152&&y>=420&&y<584)continue; /* shared hints */
+        ink++;
+    }
+    free(pixels);SDL_DestroyTexture(overlay.texture);rmt_free(&overlay.image);
+    return ink;
+}
+static void overlay_scope_shot(SDL_Renderer *r,const char *name){
+    if(!getenv("KISAKU_OVERLAY_SHOTS"))return;
+    char path[256];snprintf(path,sizeof(path),"local/overlay-scope-%s.bmp",name);assert(!capture(r,path));
+}
+static void test_controls_overlay_scope(const char *root,const char *saves,SDL_Renderer *r){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    MessagePanel p={0};SaveMenu menu={0};
+    /* Title, normal choices, the save list and every other modal keep their
+       own native cursor: no presentation frame may be drawn there. */
+    b->title.active=1;b->title.selected=0;b->title.variant=0;
+    assert(overlay_frame_ink(r,&p,&menu,b)==0);overlay_scope_shot(r,"title");
+    b->title.active=0;b->choice_active=1;b->choice_count=3;b->choice_selected=1;
+    assert(overlay_frame_ink(r,&p,&menu,b)==0);overlay_scope_shot(r,"choice");
+    b->choice_active=0;
+    menu.active=1;menu.slot=1;menu.focus=0;
+    assert(overlay_frame_ink(r,&p,&menu,b)==0);overlay_scope_shot(r,"save");
+    menu.active=0;
+    for(unsigned kind=1;kind<=23;kind++){
+        if(kind==8||kind==20||kind==22)continue;
+        p.kind=kind;p.selected=0;p.viewing=0;
+        assert(overlay_frame_ink(r,&p,&menu,b)==0);
+    }
+    /* The settings menu keeps the frame; an unhovered page draws none. */
+    p.kind=8;p.setting_ready=0;settings_panel_init(&p,b);
+    for(unsigned i=0;i<KSET_COUNT;i++)p.setting_values[i]=bootstrap_setting_default(i);
+    assert(!config_assets(&p,b));config_page(&p,0);
+    p.selected=0;assert(overlay_frame_ink(r,&p,&menu,b)>0);overlay_scope_shot(r,"settings");
+    p.selected=~0u;assert(overlay_frame_ink(r,&p,&menu,b)==0);
+    for(unsigned i=0;i<5;i++)rmt_free(&p.config_art[i]);
+    bootstrap_destroy(b);
+    puts("Kisaku focus frame scope: settings menu and CG/scene galleries only, title/choices/save list untouched: PASS");
+}
 static void test_native_quit(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
@@ -801,6 +852,9 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
         assert(p.direct_artwork.pixels&&p.direct_artwork.width==496&&p.direct_parts.pixels);
         assert(p.direct_count==(mode?30:kscene_mode_total())&&p.direct_thumb.pixels);
         test_scene_clock();test_scene_motion(&p,b,r);test_scene_assets(b,r);
+        /* Scene selection is one of the two galleries that keep the frame. */
+        {int saved_focus=p.direct_focus;p.direct_focus=2;
+         assert(overlay_frame_ink(r,&p,&menu,b)>0);p.direct_focus=saved_focus;}
         scene_mode_tick(&p,b,p.direct_clock+(uint64_t)p.direct_steps*15);
         unsigned original_category,original_item;scene_mode_at(b,p.direct_selected,&original_category,&original_item);
         scene_test_action(&p,b,6);
@@ -938,6 +992,7 @@ int main(int argc,char **argv){
     message_dialog_pointer(&p,b,240,260,1);
     assert(p.kind==6&&p.status[0]&&!b->quit_requested); /* Failed progress flush keeps the dialog open. */
     test_native_quit(argv[1],argv[2]);
+    test_controls_overlay_scope(argv[1],argv[2],renderer);
     test_config(&p,b,renderer,argc==4?argv[3]:NULL);
     test_config_audio(argv[1],argv[2]);
     test_config_motion(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);

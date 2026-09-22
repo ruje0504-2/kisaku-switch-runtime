@@ -1018,3 +1018,23 @@ NRO SHA256（三份一致）：`c853368a80662e50fccb92ddea3b1021dcc8b6950cba7bbf
 - 前端夹具新增自动40ms、32帧双向回绕、摇杆死区、连续输入、反向、松手后不再自转、详情隔离及鼠标接管断言。
 
 最终结果：相关主机目标`-Werror`重建、完整前端（含旋转新增断言）、CG专项、硬解适配夹具、`git diff --check`及`./build-switch.sh`通过；`python3 tools/package_sd.py 鬼作`已同步。最终日志`local/controls-tests/frontend-final.log`、`local/controls-switch-final.log`、`local/controls-tests/package-final.log`。主入口及兼容名SHA-256一致：`801375b12b0f9d298aff0cf0c7a61c96b6896627d9fba5da9d912721c56c3b72`。没有Switch实机回归结果。
+
+## 2026-09-23：选定框收回到设置与两个鉴赏界面
+
+- 用户反馈：`880bf8d` 的呈现层选中框（黑/黄/黑五层矩形）除设置菜单外还画到了标题、普通选项、存档槽、确认对话、音乐、视频上，观感过重。本轮按用户要求收回范围。
+- `controls_overlay.inc` 的 `controls_focus()` 调用点只剩三处：`p->kind==8` 的设置菜单（沿用原 `config_motion`/`setting_page<4`/`selected<config_area_count` 条件）、`p->kind==22` 的原生CG鉴赏（`bootstrap_native_cg_focus`）、`p->kind==20` 的场景选择（网格/分类/页签/取消四类焦点）。删除标题、`choice_active`、`SaveMenu.active`、6/18/19 确认对话、`kind==9` 音乐、`kind==23` 视频六个分支。函数本身与渐变/纹理缓存未改。
+- 左黑边说明栏（`controls_text()`/`(8,420)` 144×164）**未改**：用户只要求收回黄框，且该栏位于1280×720呈现的左侧黑边内、不遮挡游戏画面。若后续也要求只保留在三处，只需给 `controls_text()` 加同样的 kind 白名单。
+- 说明：标题界面截图里那个黄条是原版标题MES自绘的选中美术（`runtime/title.c` 按 `t->selected` 选精灵），不是本次加的框；`bootstrap.c:2348` 初始 `title.selected=-1`，所以静止截图看不到旧框，玩家按方向键后才出现——这正是"主界面也变了"的来源。
+- 验证：`tests/message_panel_test.c` 新增 `test_controls_overlay_scope`：标题、`choice_active`、存档列表、kind 1..23（除8/20/22）在左侧说明栏以外必须零像素；设置菜单 `selected=0` 必须有框、未选中必须无框；场景选择在 `test_letter_exit` 两种模式下强制 `direct_focus=2` 断言有框。同一夹具对改动前的 `controls_overlay.inc`（`git show HEAD:`）编译运行会在标题断言处失败，证明断言能拦住旧行为。`KISAKU_OVERLAY_SHOTS=1` 可导出 `local/overlay-scope-*.bmp`（标题/选项/存档为0个黄色像素，设置为2100个，bbox x=744..1083 y=541..556）。
+- `./build-host.sh`、完整`./test-host.sh 鬼作`通过（日志`local/cursor-scope-build2.log`、`local/cursor-scope-host.log`）。未改动运行时/VM/存档逻辑，本轮不涉及原生接口。Switch实机与外观最终确认由用户完成。
+
+## 2026-09-23：直装 NSP（RomFS 数据 + HOS 存档）
+
+- 参照 `reference/kawa2-switch-runtime/make-nsp.sh` 新增 `make-nsp.sh`：`aarch64-none-elf-strip` + `elf2nso` 生成 exefs，`npdmtool` 写 npdm，`nacptool` 生成 NACP 后按 libnx 的 `NacpLanguageEntry` 交错布局（name@0x300*i、author@0x300*i+0x200）补齐 16 个语言槽，`hacbrewpack` 打包，最后用 `hactool` 从**产物的 Control NCA** 读回 `control.nacp` 自检。
+- Title ID `01008B538DE50000`（用户指定；与参考工程同形状的 `0100` 前缀 + `0000` 尾缀）。注意中段 `8B538DE5` 是用户给定值，鬼作在 CP932 下为 `8B53`(鬼)+`8DEC`(作)。该 ID 决定 HOS 存档归属，装完再改会读不到旧档。
+- 名称 `鬼作`、作者 `elf`、图标 `icon.png`（`sips` 转 256×256 baseline JPEG，写入全部 16 个语言图标槽；脚本另做 JPEG marker 扫描，拒绝 progressive 与非 256×256）。
+- RomFS 取 `交付/SD卡根目录/switch/kisaku/game/` 的内容（七个 ARC + AI6WIN.ini + 字体，3.4 GiB），在 RomFS **根**，与 `switch_hos_init()` 写入的 `romfs:` 前缀拼接方式一致（`romfs:/mes.arc`）。
+- 存档配额：每槽实测 `flag` 28,072 + `control` 12,160 + `preview` 338,704 + `scene` 1,228,808 = 1,607,744 B ≈ 1.53 MiB；4 个选择器 × 100 槽 = 400 槽 ≈ 613 MiB。`nacptool` 默认 62 MiB 存十几个槽即写失败，故声明 **640 MiB + 32 MiB journal**（0x28000000 / 0x02000000）。`save_runtime.inc` 每次便携存档都带 640×480 场景底图，是配额的主要来源。
+- 运行时修正：`tools/runtime_viewer.c` 启动时无条件 `mkdir(save_root)`，NSP 下 `save_root` 是裸设备前缀 `save:`，创建必然失败并直接退出。改为裸设备根（以 `:` 结尾）不做 mkdir，SD 卡路径仍保留失败即报错。审计确认所有存档类写入本来就走 `bootstrap_save_dir(b)`（即 `save:`），数据读取走 `b->root`（即 `romfs:`），散文件覆盖层只读不写。
+- 验证：自检从成品 Control NCA 读回 16 槽 `name='鬼作' author='elf'` 与 640 MiB 配额；`hactool` 确认三个 NCA 的 Title ID 均为 `01008b538de50000`、Control 内含 `control.nacp` + 16 个语言图标、RomFS 根为七个 ARC/ini/字体；NSP 3,620,372,184 B ≈ 3.37 GiB，小于 FAT32 单文件 4 GiB 上限。`./build-host.sh`、完整 `./test-host.sh 鬼作`、`./build-switch.sh`、`package_sd.py`、`git diff --check` 通过。日志 `local/nsp-*.log`。
+- 交付：`交付/鬼作-01008B538DE50000.nsp`（SHA-256 `5953ccebce81bf3d61890c8035573590b2ae919a249352f002073b1507b16cc9`）、`交付/鬼作-NSP-安装说明.txt`；NRO 重建后主入口与兼容名 SHA-256 均为 `2d85229fba48c2252206a8814d243239a0441b7b72b1e92284ad5a24092e9d15`。**未在 Switch 实机验证安装、启动与 HOS 存档写入。**

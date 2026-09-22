@@ -78,6 +78,28 @@ local/venv/bin/python tools/decompile_r2.py 鬼作/AI6WIN.exe \
 
 数据放在 `switch/kisaku/game/`，预览设置放在 `switch/kisaku/saves/`。用 HOME 菜单关闭；没有把 + 映射为退出。**本次未进行 Switch 实机测试。**
 
+## 直装 NSP（RomFS 数据 + HOS 存档）
+
+`./make-nsp.sh` 把 `build-switch/kisaku-runtime.elf` 与现有游戏数据打成可直装的 NSP；同一个二进制在 hbmenu（NRO）和已安装标题（NSP）两种形态下都能用，运行时按 `runtime/switch_hos.c` 自动切换存储位置。
+
+| 项 | 值 |
+|---|---|
+| Title ID | `01008B538DE50000`（用户指定；决定存档所在位置，装完再改会读不到旧存档） |
+| 名称 / 作者 | 鬼作 / elf（NACP 16 个语言槽，`NacpLanguageEntry` 交错排布：name@0x300*i、author@0x300*i+0x200） |
+| 图标 | `icon.png` → 256×256 baseline JPEG，写入 Control NCA 的全部 16 个语言槽 |
+| RomFS | `交付/SD卡根目录/switch/kisaku/game/` 的全部内容（七个 ARC + AI6WIN.ini + 字体，约 3.3 GB） |
+| 存档 | 由系统管理（HOS SaveData）；NACP 声明 640 MiB + 32 MiB journal |
+
+存档配额不是随手写的：每槽 `flag` 28,072 + `control` 12,160 + `preview` 338,704 + `scene` 1,228,808 ≈ 1.53 MiB，4 个选择器 × 100 槽 = 400 槽 ≈ 613 MiB；`nacptool` 默认的 62 MiB 存十几个槽就会写失败。
+
+前置：`/opt/devkitpro`、`~/.switch/prod.keys`、`~/bin/hacbrewpack`（v3.05），并先跑一次 `./build-switch.sh`。`ROMFS=<目录>` 可换成小数据冒烟打包，`TITLE_ID=` / `SAVE_SIZE=` 可覆盖默认值。打包完成后脚本会用 `hactool` 从产物的 Control NCA 里读回 `control.nacp`，逐语言槽核对名称与作者并校验存档配额，不一致直接失败退出。
+
+```sh
+./build-switch.sh && ./make-nsp.sh        # 输出 交付/鬼作-<TITLE_ID>.nsp
+```
+
+NSP 单文件约 3.4 GB，可以放进 FAT32 SD 卡（单文件需小于 4 GiB）。**未在 Switch 实机验证安装与存档。**
+
 ## 汉化补丁
 
 本阶段只实现日文原版，汉化补丁暂不处理。

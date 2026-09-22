@@ -48,16 +48,13 @@ static void controls_overlay_draw(ControlsOverlay *c,MessagePanel *p,SaveMenu *m
         }
         if(c->texture){SDL_Rect dst={8,420,144,164};SDL_RenderCopy(r,c->texture,NULL,&dst);}
     }
-    if(m->active){
-        if(!m->loading&&!m->character_detail&&!m->param_detail&&!m->overwrite&&!m->confirm_load){
-            if(!m->focus&&m->slot>0)controls_focus(r,276,28+(m->slot-1)%10*36,364,36);
-            else if(m->focus==2)controls_focus(r,510,448,130,32);
-        }
-        return;
-    }
+    /* The presentation-layer focus frame is only wanted where the native
+       cursor is hard to see: the settings menu and the two gallery
+       interfaces (CG images and scene selection).  Every other screen keeps
+       its own native cursor, so no frame is drawn there. */
     if(p->kind==8&&!p->config_motion&&p->setting_page<4&&p->selected<p->config_area_count[p->setting_page]){
         const ConfigArea *a=&p->config_areas[p->setting_page][p->selected];controls_focus(r,a->x0,a->y0,a->x1-a->x0,a->y1-a->y0);
-    }else if((p->kind==6||p->kind==18||p->kind==19)&&p->selected<2)controls_focus(r,p->selected?230:314,256,96,20);
+    }
     else if(p->kind==22){int a[4];if(bootstrap_native_cg_focus(b,a))controls_focus(r,a[0],a[1],a[2],a[3]);}
     else if(p->kind==20&&!p->direct_motion){
         int f=p->direct_focus,x,y;unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);
@@ -65,17 +62,5 @@ static void controls_overlay_draw(ControlsOverlay *c,MessagePanel *p,SaveMenu *m
         else if(f>=0x100&&f<0x200)controls_focus(r,0,172+(f-0x100)*28,112,20);
         else if(f==0x300)controls_focus(r,528,448,112,32);
         else if(f>=0x200&&f<0x300){unsigned pages=(scene_mode_items(b,cat)+8)/9;int hage=scene_mode_hage(b);controls_focus(r,(hage?460:498)+(f-0x200+(hage?4:3)-(int)pages)*38,0,48,20);}
-    }else if(p->kind==9){unsigned row=0;for(unsigned i=0;i<bootstrap_music_count();i++)if(bootstrap_music_unlocked(b,i)){if(i==p->selected){controls_focus(r,156+(int)row*10,56+(int)row*36,238,32);break;}row++;}}
-    else if(p->kind==23)controls_focus(r,34+(int)(p->selected%39)*15,8+(int)(p->selected/39)*115,15,115);
-    else if(!p->kind&&b->choice_active&&b->choice_selected>=0){
-        unsigned page=(unsigned)b->choice_selected/4,count=b->choice_count-page*4;if(count>4)count=4;
-        unsigned rows=b->choice_normal?(b->choice_count<4?b->choice_count:4):count;
-        controls_focus(r,72,(480-(int)rows*52)/2+(b->choice_selected%4)*52,496,52);
-    }
-    else if(!p->kind&&b->title.active&&b->title.selected>=0){
-        KTitle *t=&b->title;int i=t->selected;
-        if(t->variant==4)controls_focus(r,452,260+i*36,188,32);
-        else if(t->variant==3){int y=280;for(int j=0;j<i;j++)y+=(t->extra_ids[j]==2?48:36)+12;controls_focus(r,176,y,288,t->extra_ids[i]==2?48:36);}
-        else controls_focus(r,t->variant==2?176:48,(t->variant==2?280:208)+i*48,288,36);
     }
 }

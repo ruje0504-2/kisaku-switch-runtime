@@ -81,7 +81,13 @@ int main(int argc,char **argv){
         else if(!strcmp(argv[i],"--screenshot"))shot=argv[++i];else return 2;
     }
 #endif
-    if(mkdir(save_root,0777)&&errno!=EEXIST){perror(save_root);return 1;}
+    /* An installed title writes into the HOS SaveData root, whose path is the
+       bare device prefix "save:": it already exists and cannot be created, so
+       never treat that as a setup failure.  Real SD-card paths still must be
+       creatable. */
+    size_t save_len=strlen(save_root);
+    int device_root=save_len&&save_root[save_len-1]==':';
+    if(!device_root&&mkdir(save_root,0777)&&errno!=EEXIST){perror(save_root);return 1;}
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS,"0");
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_GAMECONTROLLER))return 1;
     SDL_AudioDeviceID audio=0;unsigned serial=0,audio_rate=0,audio_channels=0;size_t audio_queued=0;

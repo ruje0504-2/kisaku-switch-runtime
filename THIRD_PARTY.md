@@ -11,7 +11,7 @@
 
 音视频依赖 FFmpeg（libavformat、libavcodec、libswscale、libswresample），通过 devkitPro / 主机安装的版本链接。分发二进制时应同时提供相应依赖的许可及可获得的对应源码；实际启用组件和许可证以构建所用 FFmpeg 配置为准。SDL2 / SDL2_test 用于前端显示和音频输出。
 
-FreeType用于字体栅格化，按其GPLv2许可选项与本工程链接。系统字体由运行设备提供，不包含在本工程或NRO中。CP932/GBK码点映射由 `tools/generate_codepages.py` 使用Python标准编解码器生成，未复制Python编解码器实现。
+FreeType用于字体栅格化，按其GPLv2许可选项与本工程链接。Switch 上的系统界面文字由运行设备的 HOS 共享字体提供；剧情对白/选项使用的 `assets/arshanghaisonggbpro_lt.otf` 随本仓库分发（打包时复制到 SD 卡与 NSP 的 `game/` 数据目录），来源与许可见 `assets/README-font.md`：思源宋体（Source Han Serif / Noto Serif CJK，Adobe 与 Google）的第三方重导出文件，适用 SIL Open Font License 1.1，许可全文见 `assets/LICENSE-OFL-1.1.txt`。CP932/GBK码点映射由 `tools/generate_codepages.py` 使用Python标准编解码器生成，未复制Python编解码器实现。
 
 GARbro 相关版权与许可：
 
