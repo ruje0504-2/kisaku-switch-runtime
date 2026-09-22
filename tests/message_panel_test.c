@@ -107,6 +107,11 @@ static void test_name_editor(const char *root,const char *saves,SDL_Renderer *re
     message_panel_action(&p,b,2);assert(p.name_focus==1);
     p.name_cursor=0;message_panel_action(&p,b,0);assert(name_utf8_count(p.name)==3);
     p.name_focus=0;message_panel_action(&p,b,0);assert(p.name_confirm&&p.selected==0);
+    /* The confirmation choices are laid out horizontally.  Left/right must
+       move the focus just like the original PC dialog; up/down remain
+       accepted as a compatibility alias for keyboard/controller users. */
+    message_panel_action(&p,b,5);assert(p.name_confirm&&p.selected==1);
+    message_panel_action(&p,b,4);assert(p.name_confirm&&p.selected==0);
     message_panel_action(&p,b,0);assert(!p.kind&&!b->extra_active&&b->vm->bytes[1950]!=0);
     assert(!b->error[0]&&b->vm->status==KVM_READY);
     /* Action 1 is ignored while CName is active; cleanup here is direct so

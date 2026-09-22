@@ -1009,18 +1009,18 @@ static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
             b->vm->bytes[8100]==0&&b->vm->bytes[2000+b->choice_values[item]]?0xffb400:0xffffff;
         if(!choice_enabled(b,item))color=0x808080;
         for(size_t j=0;j<n;j++){
-            if(kfont_draw(b->font,&b->choice_text,chars[j].codepoint,x,top+(int)i*52+(b->choice_normal?17:18),16,16,color))return error(b,"choice glyph unavailable");
+            if(kfont_draw_outline(b->font,&b->choice_text,chars[j].codepoint,x,top+(int)i*52+(b->choice_normal?17:18),16,16,color))return error(b,"choice glyph unavailable");
             x+=chars[j].columns*8;
         }
     }
     if(b->choice_normal){
         /* 523d64/523d68: native CP932 ▲ / ▼, centered in 496x34 rows. */
-        if(page&&kfont_draw(b->font,&b->choice_text,0x25b2,312,top-34+8,16,16,0xffffff))return error(b,"choice previous-page glyph unavailable");
-        if(page*4+4<b->choice_count&&kfont_draw(b->font,&b->choice_text,0x25bc,312,top+208+8,16,16,0xffffff))return error(b,"choice next-page glyph unavailable");
+        if(page&&kfont_draw_outline(b->font,&b->choice_text,0x25b2,312,top-34+8,16,16,0xffffff))return error(b,"choice previous-page glyph unavailable");
+        if(page*4+4<b->choice_count&&kfont_draw_outline(b->font,&b->choice_text,0x25bc,312,top+208+8,16,16,0xffffff))return error(b,"choice next-page glyph unavailable");
     }else if(b->choice_count>4){
         char label[48];snprintf(label,sizeof(label),"<    %u / %u    >",page+1,(b->choice_count+3)/4);
         int x=(640-(int)strlen(label)*8)/2;
-        for(unsigned i=0;label[i];i++)if(kfont_draw(b->font,&b->choice_text,(unsigned char)label[i],x+(int)i*8,448,16,16,0xffffff))return error(b,"choice page glyph unavailable");
+        for(unsigned i=0;label[i];i++)if(kfont_draw_outline(b->font,&b->choice_text,(unsigned char)label[i],x+(int)i*8,448,16,16,0xffffff))return error(b,"choice page glyph unavailable");
     }
     b->choice_rendered_page=page;return 0;
 }
@@ -2895,7 +2895,7 @@ static int draw_text(KBootstrap *b){
         if(b->novel_font)active_font=b->novel_font;
     }
     for(size_t i=0;i<count;i++){
-        if(kfont_draw(active_font,dst,chars[i].codepoint,positions[i].x,positions[i].y,(unsigned)b->font_width,(unsigned)b->font_height,(uint32_t)v->globals[0][33].number))return error(b,"glyph unavailable");
+        if(kfont_draw_outline(active_font,dst,chars[i].codepoint,positions[i].x,positions[i].y,(unsigned)b->font_width,(unsigned)b->font_height,(uint32_t)v->globals[0][33].number))return error(b,"glyph unavailable");
     }
     if(record_text(b))return -1;
     /* A displayed line may contain several TEXT opcodes, a substituted name,

@@ -221,7 +221,12 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
     }
     if(p->kind==14){
         if(p->name_confirm){
-            if(action==2||action==3)p->selected=action==2?0:1;
+            /* The original confirmation box is a horizontal Yes/No pair.
+               Keep vertical input as a compatibility alias, but the native
+               D-pad left/right actions (4/5) are the primary way to switch
+               between the two choices. */
+            if(action==2||action==4)p->selected=0;
+            else if(action==3||action==5)p->selected=1;
             if(action==1)return;
             if(!action){
                 if(p->selected==0){

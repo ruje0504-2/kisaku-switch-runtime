@@ -778,3 +778,10 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - `CASStrength` 缺失时按设计返回 0，因此新安装的 Switch 交付包默认走 raw 路径；要启用请在 `sdmc:/switch/kisaku/saves/kisaku-runtime.ini` 的 `[Display]` 下加入 `CASStrength=50`，想要更明显可用 `100`，设为 `0` 可关闭。主机在 `CASStrength=100` 与 `--raw` 的 100 帧截图之间检测到 50,935 个字节差异。
 - 修正后 `./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check` 通过；构建与 SD 交付入口 SHA-256 均为 `bf1a76e5c680137543aa799b39c6b5b079fab4e755e04cd98fae1cbcb939670c`。
 - Switch 实机是否实际选择 SDL GLES2 renderer、GLES2 shader 的设备画面效果仍未验证；没有设备条件时不能把交叉编译称为实机通过。
+
+## 2026-09-22 姓名确认导航与剧情字体描边
+
+- CName 确认框现在响应原生左右动作：左键选择左侧「はい」，右键选择右侧「いいえ」；上下键兼容保留。新增 SDL dummy 左右切换断言。
+- 提供的剧情字体现在统一使用一像素黑色外轮廓后再绘制原色，覆盖对白、剧情选择、翻页箭头和页码；HOS 系统字体的历史、设置和姓名面板保持原有绘制方式。
+- `./build-host.sh`、`./test-host.sh 鬼作`、SDL dummy CName 专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过；构建与 SD 交付入口 SHA-256 均为 `f68f3bfd714414f6745d4a063ec762700a091966a5d6445acda7647ccae59849`。
+- Switch 实机输入和字体显示仍未验证。

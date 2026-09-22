@@ -103,3 +103,9 @@ int kfont_draw(KFont *f,KImage *dst,uint32_t cp,int x,int y,unsigned width,unsig
     }
     return 0;
 }
+int kfont_draw_outline(KFont *f,KImage *dst,uint32_t cp,int x,int y,unsigned width,unsigned height,uint32_t rgb){
+    static const int offsets[][2]={{-1,-1},{0,-1},{1,-1},{-1,0},{1,0},{-1,1},{0,1},{1,1}};
+    for(unsigned i=0;i<sizeof(offsets)/sizeof(*offsets);i++)
+        if(kfont_draw(f,dst,cp,x+offsets[i][0],y+offsets[i][1],width,height,0x000000))return -1;
+    return kfont_draw(f,dst,cp,x,y,width,height,rgb);
+}
