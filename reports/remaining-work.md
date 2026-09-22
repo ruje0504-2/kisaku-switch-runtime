@@ -41,3 +41,5 @@
 ## 验证入口
 
 `./build-host.sh`、`./test-host.sh 鬼作`、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`。保龄球专项包含score/player/throw/motion/contact/world/cpu-throw/session/projection/rack/draw/turn/game；真实MES与模态测试位于tests/kisaku_bootstrap_test.c。最终结果和NRO哈希见reports/porting.md最新节。
+
+- **CG鉴赏已接通**：31/310普通/秃作分类、锁定、变体、大图脚本隔离播放与返回已实现并通过主机专项；完整逐槽实机回放仍未验证。附录音乐31/340、视频31/70仍未实现。

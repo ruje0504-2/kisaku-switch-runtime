@@ -120,8 +120,8 @@ int main(int argc,char **argv){
             else if(held&&now>=ui_repeat_at){buttons|=held;ui_repeat_at=now+90;}
         }else{ui_held_previous=0;}
         if(panel.kind){
-            if((panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_L))message_panel_action(&panel,b,8);
-            if((panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_R))message_panel_action(&panel,b,9);
+            if((panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_L))message_panel_action(&panel,b,8);
+            if((panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_R))message_panel_action(&panel,b,9);
             if((buttons&HidNpadButton_X)&&(panel.kind==4||panel.kind==10||panel.kind==11||panel.kind==8||panel.kind==14))message_panel_action(&panel,b,7);
             if(buttons&HidNpadButton_A)message_panel_action(&panel,b,0);
             if((buttons&HidNpadButton_Y)&&(panel.kind==5||panel.kind==16||panel.kind==14||panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==9||panel.kind==11))message_panel_action(&panel,b,6);
@@ -247,8 +247,12 @@ int main(int argc,char **argv){
                 if(panel.kind==20&&(e.type==SDL_MOUSEMOTION||e.type==SDL_MOUSEBUTTONDOWN)){
                     int click=e.type==SDL_MOUSEMOTION?0:e.button.button==SDL_BUTTON_LEFT?1:e.button.button==SDL_BUTTON_RIGHT?2:0;
                     scene_mode_pointer(&panel,b,cursor.x,cursor.y,click);
+                }else if(panel.kind==22&&(e.type==SDL_MOUSEMOTION||e.type==SDL_MOUSEBUTTONDOWN)){
+                    int click=e.type==SDL_MOUSEMOTION?0:e.button.button==SDL_BUTTON_LEFT?1:e.button.button==SDL_BUTTON_RIGHT?2:0;
+                    if(bootstrap_native_cg_pointer(b,cursor.x,cursor.y,click))snprintf(panel.status,sizeof(panel.status),"CGを表示できませんでした");
+                    if(!b->native_cg)panel.kind=0;
                 }
-                if(e.type==SDL_KEYDOWN){SDL_Keycode key=e.key.keysym.sym;int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_PAGEUP&&(panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?8:key==SDLK_PAGEDOWN&&(panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?9:(key==SDLK_r||key==SDLK_g)&&(panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==11)?7:-1;if(action>=0)message_panel_action(&panel,b,action);}
+                if(e.type==SDL_KEYDOWN){SDL_Keycode key=e.key.keysym.sym;int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_PAGEUP&&(panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?8:key==SDLK_PAGEDOWN&&(panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?9:(key==SDLK_r||key==SDLK_g)&&(panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==11)?7:-1;if(action>=0)message_panel_action(&panel,b,action);}
                 continue;
             }
             if(e.type==SDL_KEYDOWN&&e.key.keysym.sym==SDLK_s){save_menu_open(&menu,b,0);continue;}

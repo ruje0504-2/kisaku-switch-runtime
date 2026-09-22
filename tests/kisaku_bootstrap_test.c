@@ -1474,7 +1474,32 @@ static void test_title_paths(const char *root,const char *saves){
     assert(bootstrap_dispatch(b)<0&&b->vm->sp==2&&b->raw_variables==raw&&b->vm->globals[0][18].number==before);
     bootstrap_destroy(b);puts("Title load/cancel, reset No/Yes, mode round trip, Hage first dialogue and invalid FLAG preservation: PASS");
 }
+static void test_native_cg(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);title_path_until(b,0);
+    b->vm->bytes[4005]=1;b->title.selected=2;bootstrap_confirm(b);title_path_until(b,0);
+    b->title.selected=0;bootstrap_confirm(b);
+    for(unsigned i=0;!b->native_cg;i++){assert(i<10000);int rc=bootstrap_run(b,100000);if(rc<0)fprintf(stderr,"CG entry: %s\n",b->error);assert(rc>=0);bootstrap_frame(b);}
+    assert(b->message_request==22);b->message_request=0;
+    const KImage *im=bootstrap_native_cg_image(b);assert(im&&im->width==640&&im->height==480);
+    uint8_t *locked=malloc(640*480*4);assert(locked);memcpy(locked,im->pixels,640*480*4);
+    assert(!bootstrap_native_cg_pointer(b,170,70,1));assert(!memcmp(locked,im->pixels,640*480*4));
+    b->vm->bytes[5000]=1;assert(!bootstrap_native_cg_pointer(b,170,70,1));
+    assert(memcmp(locked,im->pixels,640*480*4));size_t ip=b->vm->ip,sp=b->vm->sp;
+    int rc=bootstrap_native_cg_action(b,0);fprintf(stderr,"CG full image rc=%d\n",rc);assert(!rc);
+    assert(b->vm->ip==ip&&b->vm->sp==sp&&b->vm->bytes[5000]==1);
+    for(unsigned i=0;i<30;i++)bootstrap_frame(b);
+    assert(!bootstrap_native_cg_action(b,1)&&!bootstrap_native_cg_action(b,1)&&!bootstrap_native_cg_action(b,1));
+    assert(!b->native_cg);title_path_until(b,0);assert(b->title.native_ids[0]==6);
+    b->vm->globals[1][61].number=1;b->vm->bytes[3501]=1;
+    b->title.active=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;assert(!kvm_push(b->vm,(KValue){310,NULL}));
+    assert(!bootstrap_dispatch(b)&&b->native_cg);b->message_request=0;
+    assert(!bootstrap_native_cg_pointer(b,60,70,1));rc=bootstrap_native_cg_action(b,0);fprintf(stderr,"Hage CG full image rc=%d\n",rc);assert(!rc);
+    assert(!bootstrap_native_cg_action(b,1)&&!bootstrap_native_cg_action(b,1)&&!bootstrap_native_cg_action(b,1));
+    assert(b->vm->sp==1&&b->vm->stack[0].number==-1);
+    free(locked);bootstrap_destroy(b);puts("Native CG: original script entry, lock, variants, isolated normal/Hage full image and appendix return: PASS");
+}
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--native-cg")){test_native_cg(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--calendar")){test_week(argv[1],argv[2]);test_calendar_persistence(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}

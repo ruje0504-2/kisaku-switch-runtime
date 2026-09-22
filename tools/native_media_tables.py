@@ -80,6 +80,26 @@ def extract(path):
             row.append(resource)
         details.append(row)
     tables.append(details)
+    # CKisakuCGMode 49b2e0, CHageCGMode 4a9de0, 132-byte records.
+    cg = []
+    counts = struct.unpack('<10I', read(0x5882ec,40))
+    starts = struct.unpack('<10I', read(0x588314,40))
+    if counts != (22,26,23,41,35,25,23,30,53,29) or starts != (0,22,48,71,112,147,172,195,225,278):
+        raise ValueError('CG category layout mismatch')
+    for address, count in ((0x597f20,307),(0x5a5e78,27)):
+        rows=[]
+        for i in range(count):
+            row=list(struct.unpack('<33i',read(address+i*132,132)))
+            if row[0]==-1:
+                rows.append([-1,'','']+[-1]*30);continue
+            if row[0]<0 or row[0]>=9192: raise ValueError('Invalid CG flag')
+            row[1]=name(row[1]);row[2]=name(row[2])
+            if not row[1].endswith('.MES') or not row[2].endswith('.AKB'):raise ValueError('Invalid CG resource')
+            if any(v < -1 or v >= 9192 for v in row[3:]):raise ValueError('Invalid CG variant flag')
+            rows.append(row)
+        cg.append(rows)
+    tables.append(cg)
+    tables.append(list(struct.unpack('<20i',read(0x535040,80))))
     return tables
 
 def render(tables):
@@ -103,6 +123,12 @@ def render(tables):
     for row in tables[4]:
         lines.append('{' + ','.join(json.dumps(value) for value in row) + '},')
     lines.append('};')
+    for symbol,rows in zip(('kisaku_cg_records','hage_cg_records'),tables[5]):
+        lines.append('static const KCGRecord '+symbol+'[]={')
+        for flag,script,atlas,*variants in rows:
+            lines.append('{'+str(flag)+','+json.dumps(script)+','+json.dumps(atlas)+',{'+','.join(map(str,variants))+'}},')
+        lines.append('};')
+    lines.append('static const int kisaku_cg_tabs[10][2]={'+','.join('{'+str(tables[6][i])+','+str(tables[6][i+1])+'}' for i in range(0,20,2))+'};')
     return '\n'.join(lines) + '\n'
 
 def main():

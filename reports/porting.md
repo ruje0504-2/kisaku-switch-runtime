@@ -675,3 +675,10 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - `./build-host.sh`、保存专项ASan/UBSan（ASAN_OPTIONS=detect_leaks=0、UBSAN_OPTIONS=halt_on_error=1）、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`通过。日志local/backlog-save-{build,focused,sanitized,switch,package}.log。
 - 构建与SD交付主入口/兼容名SHA-256均为`aedeea431e28ce9d49374e93342aef1de553707041f673a316592abbebbe265b`。Switch实机、全路线与全部回看命令未验证；跨记录文字状态、23/5/7引用及其他未知重放调用仍未实现，文字阴影按用户要求不实现。
 - 最终`./test-host.sh 鬼作`完整回归及`git diff --check`通过，日志local/backlog-save-tests.log。
+
+## 2026-09-22 CG鉴赏入口与秃作CG
+
+- 按 `4f9dc0 -> 4fb090/49b2e0/49c5d0`、`4aba10/4ab220` 静态核对，接通31/310：普通CG 10个分类、307条目录，秃作CG 27条目录；使用各自 `kisaku_cg_*.mes` / `hage_cg_*.mes`、`kisaku_DL_CGmode_p.akb` / `hage_DL_CGmode_p.akb` 和原版缩略图/变体资源。此前面板沿用参考目录，现已移除该错误路径。
+- 增加分类、页签、锁定状态、变体页、数字完成数、普通/秃作切换和返回标题。查看已解锁项目时创建隔离运行时执行对应CG脚本，播放期间不改主剧情VM、栈或进度；退出释放隔离运行时并回到附录标题。
+- 专项覆盖普通/秃作入口、未解锁拒绝、解锁后缩略图、变体查看、隔离脚本播放、连续帧刷新及返回；专项ASan/UBSan通过。完整主机回归、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。日志 `local/native-cg-{focused,sanitized,tests,switch,package}.log`。
+- 当前NRO及交付两个入口SHA-256均为 `f50415f0fc77916a30f4687455718a768814ac455d96ab3f8429e82188a30f34`。CG全目录逐槽实机、Switch设备、全路线仍未验证；音乐/视频附录接口仍待实现。

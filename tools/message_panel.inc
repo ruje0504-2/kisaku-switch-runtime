@@ -45,6 +45,7 @@ static unsigned scene_replay_slots(MessagePanel *p,KBootstrap *b,unsigned slots[
 }
 #include "navigation_panel.inc"
 static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
+    if(p->kind==22){if(bootstrap_native_cg_action(b,action))snprintf(p->status,sizeof(p->status),"CGを表示できませんでした");if(!b->native_cg)p->kind=0;return;}
     if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){
         if(action==1){
             if(p->kind==21&&bootstrap_title_reset_close(b,0))return;
@@ -219,6 +220,7 @@ static void message_dialog_pointer(MessagePanel *p,KBootstrap *b,int x,int y,int
     else if(click==1&&hit>=0)message_panel_action(p,b,0);
 }
 static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
+    if(p->kind==22){const KImage *image=bootstrap_native_cg_image(b);if(image){SDL_Texture *t=kimage_texture(r,image);if(t){SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,t,NULL,&dst);SDL_DestroyTexture(t);}}if(p->status[0])panel_text(r,208,690,p->status);return;}
     if(p->kind!=5&&p->kind!=8){p->native_kind=0;p->native_key=0;}
     if(p->kind==16){navigation_panel_draw(p,b,r);return;}
     if(p->kind==8){settings_panel_draw(p,b,r);return;}

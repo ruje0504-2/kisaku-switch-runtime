@@ -65,6 +65,7 @@ static void gallery_touch(MessagePanel *p,KBootstrap *b,int x,int y){
     }
 }
 static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int y){
+    if(p->kind==22){if(bootstrap_native_cg_pointer(b,x,y,1))snprintf(p->status,sizeof(p->status),"CGを表示できませんでした");if(!b->native_cg)p->kind=0;return;}
     if(p->kind==20){scene_mode_pointer(p,b,x,y,1);return;}
     if(p->kind==8){settings_touch(p,b,touch,x,y);return;}
     if(p->kind==5){backlog_touch(p,b,touch,x,y);return;}

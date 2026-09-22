@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+typedef struct {int32_t flag;const char *script,*atlas;int32_t variants[30];} KCGRecord;
 typedef struct {int32_t flag;const char *name;int32_t conditions[8];} KMediaRecord;
 typedef struct {const char *name;int32_t flag,related_flag;} KMediaLink;
 typedef struct {
