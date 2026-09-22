@@ -7,7 +7,13 @@ SDL_Texture *kimage_texture(SDL_Renderer *r,const KImage *im) {
     /* The game canvas and AKB artwork are authored in integer pixels.  The
        viewer presents the 640x480 canvas at 1.5x, so linear filtering would
        blend every edge and make the supplied font look fuzzy. */
-    if(SDL_UpdateTexture(t,NULL,im->pixels,(int)im->stride)||SDL_SetTextureBlendMode(t,SDL_BLENDMODE_BLEND)||SDL_SetTextureScaleMode(t,SDL_ScaleModeNearest)){SDL_DestroyTexture(t);return NULL;}
+    if(SDL_UpdateTexture(t,NULL,im->pixels,(int)im->stride)||SDL_SetTextureBlendMode(t,SDL_BLENDMODE_BLEND)){SDL_DestroyTexture(t);return NULL;}
+#ifndef __SWITCH__
+    /* The desktop SDL backend supports per-texture nearest filtering.  The
+       Switch port's renderer has a known black-frame failure when this hint
+       is applied to static textures, so leave its native sampler untouched. */
+    (void)SDL_SetTextureScaleMode(t,SDL_ScaleModeNearest);
+#endif
     return t;
 }
 SDL_Rect kimage_fit(uint32_t w,uint32_t h,SDL_Rect area) {

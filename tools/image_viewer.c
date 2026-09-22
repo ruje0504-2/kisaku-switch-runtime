@@ -94,7 +94,9 @@ int main(int argc,char **argv) {
                 SDL_RenderFillRect(r,&tile);
             }
             SDL_SetTextureBlendMode(texture,alpha?SDL_BLENDMODE_BLEND:SDL_BLENDMODE_NONE);
+#ifndef __SWITCH__
             SDL_SetTextureScaleMode(texture,SDL_ScaleModeNearest);
+#endif
             if(SDL_RenderCopy(r,texture,NULL,&dst))goto done;
             char info[512];snprintf(info,sizeof(info),"%u/%u  %.260s  %ux%u  origin=(%d,%d)  alpha=%s",selected+1,arc.count,arc.entries[selected].name,im.width,im.height,im.x,im.y,alpha?"on":"off");
             SDL_SetRenderDrawColor(r,220,225,235,255);SDLTest_DrawString(r,24,634,info);

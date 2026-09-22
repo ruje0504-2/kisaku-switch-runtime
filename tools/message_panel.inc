@@ -16,7 +16,7 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
     SDL_Texture *cg_textures[3];unsigned cg_cached,cg_group,cg_page,cg_count;
     unsigned replay_key,replay_from,replay_to,replay_alpha;uint64_t replay_next;
     KNawaPanel *nawa;
-    KImage name_artwork,dialog_artwork,dialog_body;
+    KImage name_artwork,name_grid_cache,dialog_artwork,dialog_body;unsigned name_grid_mode,name_grid_page,name_grid_valid;
     KImage nav_artwork,nav_scene,nav_previews[4];unsigned nav_catalog_ready,nav_catalog[100];unsigned nav_id,nav_mode,nav_count,nav_slots[100],nav_page_key,nav_load_request;int64_t nav_dates[4];
     KImage history_artwork,settings_artwork,sidebar_artwork;
     /* Native appendix atlases.  Music/video use AKB layers directly; keeping
@@ -96,6 +96,21 @@ static int name_append_value(MessagePanel *p,uint16_t raw){
     unsigned cursor=p->name_text_cursor>count?count:p->name_text_cursor;
     size_t pos=offsets[cursor],m=strlen(add),n=strlen(p->name);if(n+m>=sizeof(p->name))return -1;
     memmove(p->name+pos+m,p->name+pos,n-pos+1);memcpy(p->name+pos,add,m);p->name_text_cursor=cursor+1;p->status[0]=0;return 0;
+}
+/* The CName grid is static between page/category changes. Rendering all 216
+   glyphs through FreeType every frame made the modal visibly stutter on the
+   Switch; cache that static atlas and keep the cursor highlight dynamic. */
+static int name_grid_prepare(MessagePanel *p,KBootstrap *b){
+    if(p->name_grid_valid&&p->name_grid_mode==p->name_mode&&p->name_grid_page==p->name_page)return 0;
+    rmt_free(&p->name_grid_cache);
+    p->name_grid_cache=(KImage){0,0,432,288,1728,calloc(432u*288u,4)};
+    if(!p->name_grid_cache.pixels)return -1;
+    unsigned rows=p->name_mode==2?6:12;
+    for(unsigned row=0;row<rows;row++)for(unsigned col=0;col<18;col++){
+        int x=(int)col*24,y=(int)row*24;ui_fill(&p->name_grid_cache,x,y,24,24,0x181c24);
+        uint16_t raw=name_table_value(p,row,col);if(raw!=0xffff){char label[8];if(!name_cp932_utf8(raw,label)&&ui_text(b,&p->name_grid_cache,label,x+3,y+3,18,18,0xffffff,0))return -1;}
+    }
+    p->name_grid_mode=p->name_mode;p->name_grid_page=p->name_page;p->name_grid_valid=1;return 0;
 }
 #include "history_voice.inc"
 #include "gallery_panel.inc"
@@ -395,12 +410,11 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
            (128,32).  Draw its CP932 labels from the recovered CName tables;
            the atlas supplies the same gold frame and the selected cell is
            kept separate so movement never changes the story VM. */
-        unsigned rows=p->name_mode==2?6:12;
-        for(unsigned row=0;row<rows;row++)for(unsigned col=0;col<18;col++){
-            int x=128+(int)col*24,y=32+(int)row*24;uint16_t raw=name_table_value(p,row,col);
-            if(p->name_focus==1&&p->name_cursor==row*18+col)ui_fill(&p->image,x,y,24,24,0x806020);
-            else ui_fill(&p->image,x,y,24,24,0x181c24);
-            if(raw!=0xffff){char label[8];if(!name_cp932_utf8(raw,label))ui_text(b,&p->image,label,x+3,y+3,18,18,0xffffff,0);}
+        if(name_grid_prepare(p,b))return;
+        for(unsigned row=0;row<12;row++)memcpy(p->image.pixels+(32+row*24)*p->image.stride+128*4,
+            p->name_grid_cache.pixels+row*p->name_grid_cache.stride,432*4);
+        if(p->name_focus==1){unsigned row=p->name_cursor/18,col=p->name_cursor%18;
+            if(row<(p->name_mode==2?6:12))ui_fill(&p->image,128+(int)col*24,32+(int)row*24,24,24,0x806020);
         }
         /* CName's kanji page bar is a separate set of hit areas at y=328:
            ten kana-row jumps and one-step previous/next buttons.  The
@@ -534,7 +548,9 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(b->history_count&&!bootstrap_history_draw(b,p->back,&p->image)){
         if(!p->texture){
             p->texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+#ifndef __SWITCH__
             if(p->texture)SDL_SetTextureScaleMode(p->texture,SDL_ScaleModeNearest);
+#endif
         }
         if(p->texture){SDL_UpdateTexture(p->texture,NULL,p->image.pixels,(int)p->image.stride);SDL_Rect dst={224,80,832,544};SDL_RenderCopy(r,p->texture,NULL,&dst);}
     }

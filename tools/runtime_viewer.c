@@ -88,7 +88,10 @@ int main(int argc,char **argv){
     SDL_SetTextureBlendMode(texture,SDL_BLENDMODE_NONE);SDL_SetTextureBlendMode(fade,SDL_BLENDMODE_BLEND);
     /* Keep the authored 640x480 pixels crisp at the 960x720 presentation
        size; SDL's default linear sampler causes visible colour halos. */
-    if(SDL_SetTextureScaleMode(texture,SDL_ScaleModeNearest)||SDL_SetTextureScaleMode(fade,SDL_ScaleModeNearest))goto done;
+#ifndef __SWITCH__
+    (void)SDL_SetTextureScaleMode(texture,SDL_ScaleModeNearest);
+    (void)SDL_SetTextureScaleMode(fade,SDL_ScaleModeNearest);
+#endif
     b=bootstrap_create_split(root,save_root);if(!b)goto done;
     char cursor_path[4096];snprintf(cursor_path,sizeof(cursor_path),"%s/kisaku-cursors.bin",root);
     if(cursor_load(&cursor,r,cursor_path)){
@@ -437,7 +440,21 @@ int main(int argc,char **argv){
         if(menu.active)save_menu_draw(&menu,b,r);
         if(panel.kind)message_panel_draw(&panel,b,r);
         if(limit&&++ticks>=limit){if(shot&&capture(r,shot))goto done;running=0;}
-        if(cursor_draw(&cursor,b,r,menu.active||(panel.kind&&!b->bonus52_active),SDL_GetTicks64()))goto done;
+        /* CName is a native mouse modal; keep its software cursor visible
+           while the story canvas remains covered by the panel. */
+        int cursor_covered=menu.active||(panel.kind&&panel.kind!=14&&!b->bonus52_active);
+        /* Development packages may omit KACUR01.  CName still uses the
+           native mouse path, so leave SDL's hardware cursor enabled as the
+           fallback instead of making the modal appear mouse-blind. */
+        if(panel.kind==14&&!cursor.texture){
+            /* cursor_draw() tracks whether it hid SDL's pointer.  Reset that
+               bookkeeping before the hardware fallback, otherwise opening
+               CName after a software-cursor panel would immediately hide it
+               again on the same frame. */
+            cursor.hidden=0;
+            SDL_ShowCursor(SDL_ENABLE);
+        }
+        if(cursor_draw(&cursor,b,r,cursor_covered,SDL_GetTicks64()))goto done;
         SDL_RenderPresent(r);
         remainder+=frequency;deadline+=remainder/60;remainder%=60;
         uint64_t now=SDL_GetPerformanceCounter();
@@ -456,7 +473,7 @@ int main(int argc,char **argv){
     rmt_free(&panel.settings_artwork);rmt_free(&panel.sidebar_artwork);
     for(unsigned i=0;i<5;i++)rmt_free(&panel.config_art[i]);
     rmt_free(&panel.dialog_artwork);rmt_free(&panel.dialog_body);
-    rmt_free(&panel.name_artwork);rmt_free(&panel.nav_artwork);rmt_free(&panel.nav_scene);for(unsigned i=0;i<4;i++)rmt_free(&panel.nav_previews[i]);rmt_free(&panel.history_artwork);
+    rmt_free(&panel.name_artwork);rmt_free(&panel.name_grid_cache);rmt_free(&panel.nav_artwork);rmt_free(&panel.nav_scene);for(unsigned i=0;i<4;i++)rmt_free(&panel.nav_previews[i]);rmt_free(&panel.history_artwork);
     rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);
     rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
     rmt_free(&panel.image);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);

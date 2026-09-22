@@ -23,7 +23,9 @@ static int cursor_load(CursorPanel *p,SDL_Renderer *r,const char *path){
     SDL_Texture *texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,32,32);
     if(!texture){free(images);return -1;}
     SDL_SetTextureBlendMode(texture,SDL_BLENDMODE_BLEND);
+#ifndef __SWITCH__
     SDL_SetTextureScaleMode(texture,SDL_ScaleModeNearest);
+#endif
     cursor_clear(p);p->images=images;p->count=49;p->texture=texture;p->focused=1;return 0;
 }
 /* Both sticks drive the same pointer. Use the stronger stick rather than
@@ -87,9 +89,28 @@ static void cursor_pixels(const NativeCursor *c,const KBootstrap *b,int x,int y,
 static int cursor_draw(CursorPanel *p,KBootstrap *b,SDL_Renderer *r,int covered,uint64_t now){
     if(p->last_stick&&now-p->last_stick>=5000)p->auto_hidden=1;
     int area=b->area_active&&b->area_selected>=0;
-    int show=p->texture&&p->focused&&!covered&&!p->auto_hidden&&(area||p->valid);
     int x=area?b->area_x:p->x,y=area?b->area_y:p->y;
+    int show=p->focused&&!covered&&!p->auto_hidden&&(area||p->valid);
     show=show&&x>=0&&x<640&&y>=0&&y<480;
+    /* The PE cursor resources are optional generated data.  A development
+       checkout (and a freshly packaged Switch card) can therefore have no
+       KACUR01 file yet.  Keep the pointer usable in the CName mouse modal
+       instead of silently hiding SDL's pointer: draw a small native-looking
+       arrow over the 640x480 canvas and hide the platform pointer only while
+       that fallback is active.  This also avoids the apparent "no mouse"
+       failure when the modal is the first screen that accepts a pointer. */
+    if(!p->texture){
+        int fallback=show;
+        if(fallback!=p->hidden){SDL_ShowCursor(fallback?SDL_DISABLE:SDL_ENABLE);p->hidden=fallback;}
+        if(!fallback)return 0;
+        int sx=160+x*3/2,sy=y*3/2;
+        SDL_Point outline[]={{sx,sy},{sx,sy+26},{sx+7,sy+19},{sx+14,sy+31},{sx+19,sy+28},{sx+12,sy+16},{sx+26,sy+16},{sx,sy}};
+        SDL_SetRenderDrawColor(r,0,0,0,255);SDL_RenderDrawLines(r,outline,(int)(sizeof(outline)/sizeof(*outline)));
+        SDL_Point arrow[]={{sx+1,sy+2},{sx+1,sy+22},{sx+8,sy+16},{sx+15,sy+28},{sx+17,sy+26},{sx+10,sy+14},{sx+22,sy+14},{sx+1,sy+2}};
+        SDL_SetRenderDrawColor(r,255,255,255,255);SDL_RenderDrawLines(r,arrow,(int)(sizeof(arrow)/sizeof(*arrow)));
+        return 0;
+    }
+    show=show&&p->texture;
     /* Keep the platform pointer enabled on menu panels as a reliable
        fallback; the software cursor remains the game-accurate overlay. */
     if(show!=p->hidden){SDL_ShowCursor(show?SDL_ENABLE:SDL_DISABLE);p->hidden=show;}
