@@ -122,8 +122,14 @@ int main(int argc,char **argv){
         if(navigation.phase==3&&(buttons&HidNpadButton_ZL))navigation.cancel=1;
         int opened_menu=0;
         if((buttons&HidNpadButton_L)&&!bootstrap_bowling_active(b)&&!panel.kind&&!menu.active&&!b->scene_replay){save_menu_open(&menu,b,0);opened_menu=1;}
+        /* ZL opens load directly during story play. Replay owns ZL as
+           cancel; do not also toggle auto-advance on this button. */
+        if((buttons&HidNpadButton_ZL)&&navigation.phase!=3&&!b->title.active&&
+           !b->param_animation_active&&!bootstrap_bowling_active(b)&&
+           !panel.kind&&!menu.active&&!b->scene_replay){
+            save_menu_open(&menu,b,1);opened_menu=1;
+        }
         if(!panel.kind&&!menu.active&&b->message_active&&!b->choice_active&&!b->area_active&&!b->extra_active){
-            if(navigation.phase!=3&&(buttons&HidNpadButton_ZL))bootstrap_message_action(b,0);
             if(buttons&HidNpadButton_ZR)bootstrap_message_action(b,1);
         }
         if(menu.active||panel.kind){

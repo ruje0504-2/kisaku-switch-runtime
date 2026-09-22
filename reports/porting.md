@@ -900,3 +900,9 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 `tools/test_present_gles.sh`通过（local/fsr80-gles.log）：强度80的EASU/RCAS参考误差均≤1/255，旧模式恢复、纯黑白、高清文字及六类SDL菜单回归通过。仅修改默认参数及夹具，未重复全路线/完整test-host.sh；实机噪点改善待实际运行，不能报成实机已验证。高清笔记第16节记录反馈原因和当前默认值，覆盖第15节的增强版默认90。
 
 `./build-switch.sh`通过（local/fsr80-switch.log），最终主入口SHA256 `c82aba87fe75990713b549abb8d7b061b4d9abe772198069776ad5a5548037c9`；交付使用此重新构建的80默认版本。
+
+## 2026-09-23：剧情ZL读档快捷键
+
+L存档保持原入口，新增ZL以load=1打开原读档界面；撤除剧情ZL原自动播放映射，Y自动播放保留。菜单/面板已打开、标题、保龄球、参数演出、场景回放均不新开读档；回放navigation.phase==3时仍用ZL取消回放。按下沿触发，不按住连续重开。
+
+`./build-switch.sh`通过（local/zl-load-switch.log），`git diff --check`通过；此轮只改输入映射，未重复渲染/完整主机测试。Switch实机按键交互未验证。主入口SHA256 `7922d93e3c65e40d3bd623ebed207d09208f8da8b1745afb3f0f6f14f2333d6b`。README已补按键说明。
