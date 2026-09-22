@@ -771,3 +771,10 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - 回看重放在目标记录的首条指令前把光标恢复到原生 `42/43` 起点，同时保留该记录自己的显式 `46/47` 定位；颜色、字号等跨记录状态继续继承。新增重复回放像素一致性和长文本起点回归。
 - 最终主机命令 `./build-host.sh`、`./test-host.sh 鬼作`、SDL dummy CName 专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check` 全部通过；`build-switch/kisaku.nro` 与 SD 交付入口 SHA-256 均为 `8492df23fb2c547f9189ea6d8781f7d53b29ede88a07efb6183f2f761260adbc`。
 - Switch 实机 GLES2 着色器、姓名输入实机操作、完整路线和逐屏 PC 对照仍未验证；没有启动 PC 原版程序。
+
+## 2026-09-22 Switch CAS 启用说明与 GLES2 修正
+
+- Switch NRO 已编入 `runtime/present_filter.c`、`tools/present_gles.inc` 和 GLES2 链接；NRO 内可见 `u_strength`、`u_texel` 及 OpenGLES2 着色器字符串。GLES2 pass 的邻域步长已按上传的 640×480 源纹理修正为 `1/640, 1/480`，并显式固定纹理单元后再读取/恢复采样器状态。
+- `CASStrength` 缺失时按设计返回 0，因此新安装的 Switch 交付包默认走 raw 路径；要启用请在 `sdmc:/switch/kisaku/saves/kisaku-runtime.ini` 的 `[Display]` 下加入 `CASStrength=50`，想要更明显可用 `100`，设为 `0` 可关闭。主机在 `CASStrength=100` 与 `--raw` 的 100 帧截图之间检测到 50,935 个字节差异。
+- 修正后 `./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check` 通过；构建与 SD 交付入口 SHA-256 均为 `bf1a76e5c680137543aa799b39c6b5b079fab4e755e04cd98fae1cbcb939670c`。
+- Switch 实机是否实际选择 SDL GLES2 renderer、GLES2 shader 的设备画面效果仍未验证；没有设备条件时不能把交叉编译称为实机通过。

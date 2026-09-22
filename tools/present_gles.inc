@@ -55,9 +55,15 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,SDL_Texture 
     int vy=(int)((float)(oh-720*scale)*0.5f+0.5f);
     int vw=(int)(960.0f*scale+0.5f),vh=(int)(720.0f*scale+0.5f);
     if(vw<=0||vh<=0){SDL_GL_UnbindTexture(texture);return -1;}
+    /* SDL_GL_BindTexture leaves the source texture bound on texture unit 0
+       on current SDL, but make that contract explicit before reading and
+       changing its sampler state.  The source is the authored 640x480
+       surface; the viewport is 960x720 (or aspect-fitted), so a one-source
+       texel is 1/640,1/480 rather than one/output-pixel. */
+    glActiveTexture(GL_TEXTURE0);
     GLint source_min=GL_LINEAR,source_mag=GL_LINEAR;glGetTexParameteriv(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,&source_min);glGetTexParameteriv(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,&source_mag);
-    glDisable(GL_BLEND);glViewport(vx,oh-(vy+vh),vw,vh);glUseProgram(p->program);glActiveTexture(GL_TEXTURE0);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glUniform1i(p->tex,0);glUniform2f(p->texel,1.0f/(float)vw,1.0f/(float)vh);glUniform1f(p->strength,(float)strength/100.0f);
+    glDisable(GL_BLEND);glViewport(vx,oh-(vy+vh),vw,vh);glUseProgram(p->program);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glUniform1i(p->tex,0);glUniform2f(p->texel,1.0f/640.0f,1.0f/480.0f);glUniform1f(p->strength,(float)strength/100.0f);
     static const GLfloat pos[]={-1,-1,1,-1,-1,1,1,1},uv[]={0,1,1,1,0,0,1,0};glEnableVertexAttribArray((GLuint)p->pos);glEnableVertexAttribArray((GLuint)p->uv);glVertexAttribPointer((GLuint)p->pos,2,GL_FLOAT,GL_FALSE,0,pos);glVertexAttribPointer((GLuint)p->uv,2,GL_FLOAT,GL_FALSE,0,uv);glDrawArrays(GL_TRIANGLE_STRIP,0,4);glDisableVertexAttribArray((GLuint)p->pos);glDisableVertexAttribArray((GLuint)p->uv);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,source_min);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,source_mag);glUseProgram((GLuint)old_program);glActiveTexture(GL_TEXTURE0);SDL_GL_UnbindTexture(texture);glActiveTexture((GLenum)old_active);glBindTexture(GL_TEXTURE_2D,(GLuint)old_texture);glViewport(old_viewport[0],old_viewport[1],old_viewport[2],old_viewport[3]);if(blend)glEnable(GL_BLEND);return 0;
 }
