@@ -9,7 +9,7 @@ static void novel_region(KBootstrap *b){
     b->font_width=b->font_height=24;
     memset(b->layers[1].pixels,0,640*480*4);
     b->message_pending_size=0;b->message_pending[0]=0;
-    b->novel_start_x=b->novel_start_y=32;
+    b->novel_start_x=b->novel_start_y=32;present_page_reset(b);
 }
 static void novel_fade_frame(KBootstrap *b){
     if(b->novel_text_reveal&&b->novel_step<255){
@@ -27,6 +27,14 @@ static void novel_fade_frame(KBootstrap *b){
                 for(unsigned c=0;c<3;c++)b->layers[0].pixels[i+c]=(uint8_t)((b->layers[1].pixels[i+c]*a+b->novel_from.pixels[i+c]*(255-a))/255);
             }
         }
+        if(b->present_page_valid){
+            for(int y=b->novel_start_y;y<b->novel_end_y;y+=26){
+                int x=y==b->novel_start_y?b->novel_start_x:0;
+                present_page_line(b,x,y,26,y<b->novel_reveal_y?NULL:b->novel_mask,
+                    y>b->novel_reveal_y?0:(int)b->novel_mask_phase,128);
+            }
+            present_page_snapshot(b);
+        }
         return;
     }
     unsigned alpha=b->novel_step;
@@ -35,7 +43,10 @@ static void novel_fade_frame(KBootstrap *b){
         for(unsigned c=0;c<3;c++)b->layers[0].pixels[i+c]=(uint8_t)(b->novel_from.pixels[i+c]*(255-alpha)/255+b->novel_target.pixels[i+c]*alpha/255);
         b->layers[0].pixels[i+3]=b->novel_target.pixels[i+3];
     }
-    if(alpha==255){b->novel_transition=0;b->novel_text_reveal=0;b->message_revealing=0;}
+    if(alpha==255){
+        if(b->novel_mode){present_page_background(b,&b->novel_background);present_page_all(b);}
+        else present_page_free(b);
+        b->novel_transition=0;b->novel_text_reveal=0;b->message_revealing=0;}
 }
 static void novel_fade(KBootstrap *b,unsigned text){
     memcpy(b->novel_from.pixels,b->layers[0].pixels,640*480*4);

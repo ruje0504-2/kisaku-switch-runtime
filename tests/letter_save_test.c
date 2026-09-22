@@ -17,13 +17,22 @@ static void dialogue(KBootstrap *b){
     }
     assert(!"dialogue timeout");
 }
-static void compare(const KBootstrap *a,const KBootstrap *b){
+static void compare(KBootstrap *a,KBootstrap *b){
     assert(a->message_read_id==b->message_read_id&&a->letter_active==b->letter_active);
     assert(a->vm->globals[0][48].number==b->vm->globals[0][48].number);
     assert(a->vm->globals[0][46].number==b->vm->globals[0][46].number&&a->vm->globals[0][47].number==b->vm->globals[0][47].number);
     unsigned diffs=0;
     for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++)if(memcmp(a->layers[0].pixels+y*a->layers[0].stride+x*4,b->layers[0].pixels+y*b->layers[0].stride+x*4,3))diffs++;
     fprintf(stderr,"letter read=%d checkpoint=%d RGB differences=%u\n",a->message_read_id,a->vm->globals[0][48].number,diffs);assert(!diffs);
+    if(a->letter_active){
+        const KImage *oa=NULL,*ob=NULL;
+        const KImage *ca=bootstrap_present_layers(a,&oa),*cb=bootstrap_present_layers(b,&ob);
+        assert(oa&&ob&&ca!=&a->layers[0]&&cb!=&b->layers[0]);
+        assert(!memcmp(oa->pixels,ob->pixels,960*720*4));
+        unsigned ink=0;for(unsigned i=0;i<960*720;i++)ink+=oa->pixels[i*4+3]!=0;
+        assert(ink>100);
+        for(unsigned i=0;i<640*480;i++)assert(!memcmp(ca->pixels+i*4,cb->pixels+i*4,3));
+    }
     assert(a->history_count==b->history_count);
     for(unsigned i=0;i<a->history_count;i++){
         unsigned ai=(a->history_next+63-i)%64,bi=(b->history_next+63-i)%64;
@@ -31,7 +40,7 @@ static void compare(const KBootstrap *a,const KBootstrap *b){
     }
 }
 int main(int argc,char **argv){
-    assert(argc==3);KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);title(b);
+    assert(argc==3);KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);b->present_hires=1;title(b);
     bootstrap_title_move(b,1);bootstrap_confirm(b);dialogue(b);bootstrap_confirm(b);
     /* Use an unmodified original script with its real checkpoint table,
        library calls, page clearing and native load preamble. This fixture
@@ -48,7 +57,7 @@ int main(int argc,char **argv){
         unsigned found=0;for(unsigned i=0;i<s->count;i++)if(s->records[i].type==0xfffe){
             assert(s->records[i].count==3&&s->records[i].values[0].number==1&&s->records[i].values[1].number==b->message_read_id&&s->records[i].values[2].number==2);found++;
         }assert(found==1);kflags_free(f);kcontrol_free(s);
-        KBootstrap *loaded=bootstrap_create_split(argv[1],argv[2]);assert(loaded);title(loaded);
+        KBootstrap *loaded=bootstrap_create_split(argv[1],argv[2]);assert(loaded);loaded->present_hires=1;title(loaded);
         assert(!bootstrap_load_slot(loaded,0,slot));dialogue(loaded);compare(b,loaded);
         bootstrap_confirm(b);bootstrap_confirm(loaded);dialogue(b);dialogue(loaded);compare(b,loaded);
         if(prompt==3)last_loaded=loaded;else bootstrap_destroy(loaded);
@@ -68,5 +77,5 @@ int main(int argc,char **argv){
     /* Both paths leave the final paragraph through the unmodified script. */
     bootstrap_confirm(b);bootstrap_confirm(last_loaded);dialogue(b);dialogue(last_loaded);
     assert(!b->letter_mode&&!last_loaded->letter_mode);compare(b,last_loaded);bootstrap_destroy(last_loaded);
-    bootstrap_destroy(b);puts("Kisaku letter save: actual memo.mes paragraphs, page reconstruction, RGB/history/next prompt and unsafe-state rejection: PASS");return 0;
+    bootstrap_destroy(b);puts("Kisaku letter save: actual memo.mes paragraphs, page reconstruction, 960x720 glyph equality, RGB/history/next prompt and unsafe-state rejection: PASS");return 0;
 }

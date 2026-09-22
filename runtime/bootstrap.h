@@ -126,6 +126,8 @@ typedef struct {
     KImage message_text,fade_surface,helper_surfaces[3];
     /* Optional presentation companions; never saved or used by script reads. */
     unsigned present_hires,present_text_valid;
+    unsigned present_page_valid,present_page_active;
+    KImage present_page_source,present_page_text,present_page_shadow,present_page_base,present_page_reference;
     KImage present_source_text,present_message_text,present_choice_text;
     KImage present_shadow,present_clean,present_reference,present_overlay;
     /* CFuncExec 31/526 keeps a separate two-surface working pair.  It is

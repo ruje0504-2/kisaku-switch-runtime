@@ -936,3 +936,12 @@ L存档保持原入口，新增ZL以load=1打开原读档界面；撤除剧情ZL
 - 该分支是书目菜单，并非角色簿。测试的起点为标题初始化后装入周末MES与必要参数窗，不是从新游戏走完一周。此前照片中的全部视觉异常、其他周次/全部书目、Switch实机仍未验证。未运行PC原版；高清呈现、FSR80与字体配置不变。
 - 验证：`sh local/weekend-test-build.sh` 主机编译通过（取自build-host.sh的原始bootstrap测试编译命令）；`build/kisaku-bootstrap-test 鬼作 local/weekend-probe-save --weekend` 及不带专项参数的完整bootstrap运行时回归通过，日志 `local/weekend-after.log` / `local/weekend-bootstrap-full.log`。`./build-switch.sh` 通过（-Werror），`python3 tools/package_sd.py 鬼作` 通过。未重跑完整test-host.sh，也未做Switch实机验证。
 - 交付主入口与build-switch/kisaku.nro一致，SHA-256：`266c0211bc4566ce37f9300926bb52594c5ae4d2376fb8f0888b762c50cda695`。
+
+## 2026-09-23 整页文字的960×720伴随层
+
+- 新增present_page.inc，不改原始640×480图层；信件/旧小说兼容模式使用原有字体以1.5倍字形尺寸绘制到独立透明层，同步原有遮罩、逐行显示、隐藏恢复、清页与退出。原生合成后的快照用于保留随后覆盖的精灵。退出释放约8.8MiB整页缓冲，前端沿用core2准备、现有纹理变化行上传及FSR80。详细复用约定见高清笔记第17节。
+- 新增`--page-hires`并接入默认bootstrap回归，覆盖两模式×三档速度、原生像素完全不变、遮罩进度、线程输出、后画精灵、隐藏/恢复、清页/退出及外部改写失配保护。旧小说夹具提供其要求的640×480文字表面；《鬼作》真实层是640×960，真实剧情证据由CLetter/memo.mes测试提供，不混称小说路线已验证。
+- letter-save-test启用高清，真实memo.mes四个检查点从新标题恢复后的960×720文字层逐字节一致，原始RGB差异0，下一段及退出到普通对话通过。SDL/GLES运行时信件页2585个字形像素、12次合成仅1次纹理上传，和独立整面上传像素一致。
+- 整屏隐藏/清页/退出淡化中的高清文字叠层、CMesFadeSprite及普通旧档当前句的高清重建仍未实现；本轮不是全流程高清完成。其他路线、Switch实机效果/负载/长时内存未验证。
+- 最终验证：`./build-host.sh`、`./test-host.sh 鬼作`、`tools/test_present_gles.sh`、`./build-switch.sh`与`python3 tools/package_sd.py 鬼作`全部通过。ASan/UBSan：`sh local/page-hd-asan-build.sh` 后以 `DYLD_LIBRARY_PATH=/opt/homebrew/opt/sdl3/lib ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 build/page-hd-asan 鬼作 local/weekend-probe-save --page-hires` 通过。日志前缀local/page-hd-*，git diff --check通过。
+- 最新交付主入口/兼容入口与build-switch产物同源，主入口SHA-256：`0156ac82435cd361f17efce6a5e2ac062239362a3ecf8477b5146ea6ab755906`。未运行PC原版程序，未做Switch实机验证。

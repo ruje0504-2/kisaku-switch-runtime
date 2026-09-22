@@ -1665,6 +1665,78 @@ static void test_hires_present(const char *root,const char *saves){
     puts("960x720 text: real startup reveal, clean backing, immutable raw and modified-layer fallback: PASS");
 }
 
+static void page_hires_text(KBootstrap *b){
+    static const uint8_t text[]={0,0,0,0,0x0a,0x93,0xfa,0x96,0x7b,'A',0,0x1b,0,0x0a,0x95,0xb6,0x8e,0x9a,'B',0,0};
+    int id=kvm_add_module(b->vm,"page-hires-text",text,sizeof(text));assert(id>=0);
+    assert(!kvm_start(b->vm,id));int rc=bootstrap_run(b,1000);
+    if(rc<0)fprintf(stderr,"page glyph: %s\n",b->error);
+    assert(!rc);
+}
+static void test_page_hires(const char *root,const char *saves){
+    for(unsigned novel=0;novel<2;novel++)for(unsigned speed=0;speed<3;speed++){
+        KBootstrap *pair[2];
+        for(unsigned high=0;high<2;high++){
+            KBootstrap *b=pair[high]=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);
+            b->title.active=0;b->present_hires=high;b->vm->globals[0][50].number=0;
+            /* Legacy novel API requires a 640x480 text surface; Kisaku CLetter accepts the native taller layer. */
+            if(novel)b->layers[1].height=480;
+            for(unsigned i=0;i<640*480;i++){uint8_t *p=b->layers[0].pixels+i*4;p[0]=200;p[1]=160;p[2]=120;p[3]=255;}
+            test_setting(b,"Display","EffectSpeed","2");
+            test_setting(b,"Msg","IsAutoMes","0");test_setting(b,"Msg","IsOneMes","0");
+            int entry=call(b,novel?18:525,0);if(entry)fprintf(stderr,"page entry mode=%u: %s; layer1 %ux%u\n",novel,b->error,b->layers[1].width,b->layers[1].height);assert(!entry);assert(!b->letter_transition&&!b->novel_transition);
+            page_hires_text(b);
+            char value[2]={(char)('0'+speed),0};test_setting(b,"Display","EffectSpeed",value);
+            KValue show[]={{123,NULL},{1,NULL},{novel?18:525,NULL}};
+            assert(!call_anime520(b,show,3));
+        }
+        KBootstrap *b=pair[1];unsigned observed=0;uint64_t previous=0;
+        KPresentWorker worker={0};assert(!present_worker_create(&worker));
+        uint8_t *prepared=malloc((640*480+960*720)*4);assert(prepared);
+        for(unsigned frame=0;frame<120;frame++){
+            assert(!memcmp(pair[0]->layers[0].pixels,b->layers[0].pixels,640*480*4));
+            assert(!memcmp(pair[0]->layers[1].pixels,b->layers[1].pixels,640*480*4));
+            const KImage *overlay=NULL,*base=bootstrap_present_layers(b,&overlay);
+            assert(base!=&b->layers[0]&&overlay&&overlay->width==960&&overlay->height==720);
+            uint64_t alpha=0;for(unsigned i=0;i<960*720;i++)alpha+=overlay->pixels[i*4+3];
+            assert(alpha>=previous);previous=alpha;observed+=alpha!=0;
+            assert(base->pixels[0]==110&&base->pixels[1]==70&&base->pixels[2]==30);
+            memcpy(prepared,base->pixels,640*480*4);memcpy(prepared+640*480*4,overlay->pixels,960*720*4);
+            assert(!present_worker_submit(&worker,b));const KImage *thread_overlay=NULL;
+            assert(present_worker_finish(&worker,&thread_overlay)==base&&thread_overlay==overlay);
+            assert(!memcmp(prepared,base->pixels,640*480*4)&&!memcmp(prepared+640*480*4,overlay->pixels,960*720*4));
+            assert(!memcmp(pair[0]->layers[0].pixels,b->layers[0].pixels,640*480*4));
+            if(!b->message_revealing)break;
+            bootstrap_frame(pair[0]);bootstrap_frame(b);
+        }
+        assert(observed&&!b->message_revealing);
+        /* Native line rectangles can clip the last glyph outline until confirmation. */
+        /* Native pixels drawn later must mask the corresponding HD pixels. */
+        unsigned at=0;while(at<960*720&&!b->present_page_text.pixels[at*4+3])at++;
+        assert(at<960*720);unsigned x=(at%960)*2/3,y=(at/960)*2/3;
+        uint8_t *pixel=b->layers[0].pixels+y*2560+x*4;pixel[0]^=0x7f;
+        const KImage *overlay=NULL,*base=bootstrap_present_layers(b,&overlay);
+        assert(base->pixels[y*2560+x*4]==pixel[0]&&!overlay->pixels[at*4+3]);pixel[0]^=0x7f;
+        bootstrap_cancel(b);while(b->letter_transition)bootstrap_frame(b);
+        assert(b->message_user_hidden&&bootstrap_present_layers(b,&overlay)==&b->layers[0]&&!overlay);
+        if(novel)bootstrap_confirm(b);else bootstrap_cancel(b);
+        while(b->letter_transition)bootstrap_frame(b);
+        assert(!b->message_user_hidden&&bootstrap_present_layers(b,&overlay)!=&b->layers[0]&&overlay);
+        bootstrap_confirm(b);assert(!b->message_active);
+        /* Clear must discard the previous page, including HD glyphs. */
+        test_setting(b,"Display","EffectSpeed","2");assert(!call(b,novel?18:525,3));
+        bootstrap_present_layers(b,&overlay);assert(overlay);
+        for(unsigned i=0;i<960*720;i++)assert(!overlay->pixels[i*4+3]);
+        page_hires_text(b);KValue show[]={{124,NULL},{1,NULL},{novel?18:525,NULL}};
+        assert(!call_anime520(b,show,3));
+        b->layers[1].pixels[0]^=1;
+        assert(bootstrap_present_layers(b,&overlay)==&b->layers[0]&&!overlay); /* Unknown script drawing. */
+        b->layers[1].pixels[0]^=1;bootstrap_confirm(b);
+        assert(!call(b,novel?18:525,2)&&!b->present_page_valid);
+        present_worker_clear(&worker);free(prepared);bootstrap_destroy(pair[0]);bootstrap_destroy(b);
+    }
+    puts("Full-page HD: letter/novel, three speeds, native pixel equality, mask reveal, worker, occlusion, hide/restore, clear and exit: PASS");
+}
+
 /* Original Saturday script, not a synthetic replacement of its menu bodies. */
 static void weekend_wait_choice(KBootstrap *b){
     for(unsigned f=0;f<10000;f++){
@@ -1731,6 +1803,7 @@ static void test_weekend_books(const char *root,const char *saves){
     puts("Weekend original MES: locked/unlocked book lists, HD labels, cancel=0, parent return, book playback and parameter completion: PASS");
 }
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--page-hires")){test_page_hires(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--weekend")){test_weekend_books(argv[1],argv[2]);return 0;}
 
     if(argc==4&&!strcmp(argv[3],"--hires")){test_hires_present(argv[1],argv[2]);return 0;}
@@ -1743,6 +1816,7 @@ int main(int argc,char **argv){
         test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
     }
     if(argc!=3)return 2;
+    test_page_hires(argv[1],argv[2]);
     test_weekend_books(argv[1],argv[2]);
     test_title_appendix(argv[1],argv[2]);
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);

@@ -9,6 +9,33 @@ static void read_pixels(SDL_Renderer *r,uint8_t *out){
     SDL_Rect area={160,0,960,720};
     assert(!SDL_RenderReadPixels(r,&area,SDL_PIXELFORMAT_BGRA32,out,960*4));
 }
+static void page_upload(SDL_Renderer *r,KPresentGles *pass,const SDL_Rect *dst,const char *root,const char *saves,uint8_t *expected,uint8_t *actual){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);b->present_hires=1;
+    for(unsigned i=0;!b->title.active||b->title.age<64;i++){assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+    b->title.active=0;b->vm->globals[0][50].number=0;
+    bootstrap_message_setting(b,8,2-bootstrap_message_setting(b,8,0));
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){525,NULL})&&!bootstrap_dispatch(b));
+    static const uint8_t script[]={0,0,0,0,0x0a,0x93,0xfa,0x96,0x7b,0x8c,0xea,0,0};
+    int id=kvm_add_module(b->vm,"page-upload",script,sizeof(script));assert(id>=0);
+    assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,1000));
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){123,NULL})&&!kvm_push(b->vm,(KValue){1,NULL})&&!kvm_push(b->vm,(KValue){525,NULL})&&!bootstrap_dispatch(b));
+    const KImage *overlay=NULL,*base=bootstrap_present_layers(b,&overlay);assert(overlay&&base!=&b->layers[0]);
+    unsigned ink=0;for(unsigned i=0;i<960*720;i++)ink+=overlay->pixels[i*4+3]!=0;assert(ink>200);
+    SDL_Texture *full=kimage_texture(r,overlay);assert(full);
+    assert(!present_gles_draw(pass,r,base,dst,0)&&!SDL_RenderCopy(r,full,NULL,dst));read_pixels(r,expected);
+    KTextureCache cache={0};
+    for(unsigned i=0;i<12;i++){
+        base=bootstrap_present_layers(b,&overlay);
+        assert(!texture_cache_update(&cache,r,overlay,SDL_BLENDMODE_BLEND));
+        assert(!present_gles_draw(pass,r,base,dst,0)&&!SDL_RenderCopy(r,cache.texture,NULL,dst));read_pixels(r,actual);
+        assert(!memcmp(expected,actual,960*720*4));
+    }
+    assert(cache.uploads==1);
+    printf("Letter HD runtime: %u ink pixels, 12 actual SDL/GLES compositions, one upload: PASS\n",ink);
+    texture_cache_clear(&cache);SDL_DestroyTexture(full);bootstrap_destroy(b);
+}
 int main(int argc,char **argv){
     assert(argc==4);assert(!SDL_Init(SDL_INIT_VIDEO));
     SDL_Window *w=SDL_CreateWindow("GLES panel regression",0,0,1280,720,SDL_WINDOW_HIDDEN);assert(w);
@@ -94,6 +121,7 @@ int main(int argc,char **argv){
     assert(!memcmp(expected,actual,960*720*4));SDL_DestroyTexture(full);
     puts("HQ partial upload: changed row, erased glyph and bottom row match full GPU upload: PASS");
 
+    page_upload(r,&pass,&dst,argv[1],argv[2],expected,actual);
     texture_cache_clear(&hq);SDL_DestroyTexture(background);rmt_free(&letters);kfont_close(font);
     present_gles_clear(&pass);free(source.pixels);free(expected);free(actual);bootstrap_destroy(b);
     SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return 0;

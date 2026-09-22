@@ -23,7 +23,7 @@ static void letter_region(KBootstrap *b){
     for(unsigned y=0;y<480;y++)memset(b->layers[1].pixels+y*b->layers[1].stride,0,2560);
     b->message_pending_size=0;b->message_pending[0]=0;
     b->message_cursor_x=0;b->message_cursor_y=12;b->message_initialized=1;
-    b->letter_cursor_x=0;b->letter_cursor_y=12;
+    b->letter_cursor_x=0;b->letter_cursor_y=12;present_page_reset(b);
 }
 static void letter_darken(KImage *to,const KImage *from){
     /* 48cb10 -> 48b130: saturating subtraction of 90, leaving target Alpha. */
@@ -42,6 +42,10 @@ static int letter_finish(KBootstrap *b){
     else if(transition==4){b->message_user_hidden=1;if(b->letter_backlog)b->message_request=5;}
     else if(transition==5)b->message_user_hidden=0;
     else if(transition==3)memcpy(b->letter_surfaces[0].pixels,b->letter_surfaces[2].pixels,480*2560);
+    if(transition==1)present_page_free(b);
+    else if(transition==2||transition==3){present_page_background(b,&b->layers[0]);present_page_snapshot(b);}
+    else if(transition==4)b->present_page_active=0;
+    else if(transition==5)present_page_all(b);
     return 0;
 }
 static int letter_render(KBootstrap *b){
@@ -112,6 +116,8 @@ static void letter_text_line(KBootstrap *b,int complete){
         if(!complete){int ramp=(int)b->letter_phase-b->letter_mask[y*640+x];if(ramp<0)ramp=0;if(alpha>ramp)alpha=ramp;}
         for(unsigned c=0;c<3;c++)dst[c]=(uint8_t)(src[c]*alpha/255+bg[c]*(255-alpha)/255);
     }
+    present_page_line(b,b->letter_reveal_x,b->letter_reveal_y,line,complete?NULL:b->letter_mask,(int)b->letter_phase,255);
+    present_page_snapshot(b);
 }
 static void letter_text_all(KBootstrap *b){
     KImage *screen=&b->layers[0],*base=&b->letter_surfaces[1],*text=&b->layers[1];
@@ -120,7 +126,7 @@ static void letter_text_all(KBootstrap *b){
         uint8_t *dst=screen->pixels+y*screen->stride+x*4;unsigned alpha=src[3];
         for(unsigned c=0;c<3;c++)dst[c]=(uint8_t)(src[c]*alpha/255+bg[c]*(255-alpha)/255);
     }
-    b->message_revealing=0;
+    b->message_revealing=0;present_page_all(b);
 }
 static void letter_text_confirm(KBootstrap *b){
     if(b->letter_transition||b->letter_exit_pending||!b->letter_active||b->message_user_hidden)return;
