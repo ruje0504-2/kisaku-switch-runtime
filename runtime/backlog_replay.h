@@ -95,6 +95,13 @@ static inline int kbacklog_replay_sequence(const KBacklogReplayRecord *records,u
                 if(v->sp<3||!v->stack[v->sp-2].string||v->stack[v->sp-3].string||v->stack[v->sp-3].number)goto bad;
                 if(v->instruction_ip>=target_ip&&kbacklog_voice_add(&staged,v->stack[v->sp-2].string))goto bad;
                 v->sp-=3;
+            }else if(v->syscall==23&&action==8){
+                /* CFuncBackLog::virtual_0(8) only queries the outer slot
+                   vector count and discards the result.  The native call
+                   has no operand or VM return value; consume the action
+                   while retaining any values belonging to the recorded
+                   caller. */
+                v->sp--;
             }else if(v->syscall==10&&action==0){
                 if(v->sp<3||v->stack[v->sp-2].string||v->stack[v->sp-3].string)goto bad;
                 int w=v->stack[v->sp-2].number,h=v->stack[v->sp-3].number;

@@ -727,3 +727,14 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 ## 2026-09-22 角色簿状态条分支校正
 
 静态复核鬼作 `004ac3b0` 后修正 `CGirlStatus` 当前状态条的角色分支：Momo/Nadeshiko（role3/4）的完成状态来自 `statfr.akb` 的 `0x2b0` 行，Aoi（role7）来自 `0x290` 行；普通、进度、特殊状态及其他角色的 `0x230/0x250/0x270` 行保持原版映射。此前通用完成状态误用 `0x250`，会让这三个角色在详情页显示普通状态图。新增三角色完成态专项断言，主机角色簿前端专项通过。Switch实机和完整路线仍未验证。
+
+## 2026-09-22 附录音乐/视频原版图层与命中
+
+- 音乐面板现在直接解码鬼作 `kisaku_DL_music_p.akb`，按 `CMusicMode` 的三列四状态图块合成十首曲目，并使用 `music_mode.area` 的停止/返回按钮范围；视频面板使用 `kisaku_DL_video_p.akb` 底图与 `kisaku_DL_video_p2.akb` 卡带图层，按 `CVideoMode` 的 39×2、15×115 热区绘制已解锁槽。
+- 指针点击与方向/确认仍沿用既有解锁字节和 VM 返回 ABI；图集切换会释放旧资源，避免音乐图集被复用为视频底图。新增 SDL dummy 专项覆盖两套 AKB 资源、原生 AREA 命中及选择返回。
+- `./build-host.sh`、`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/message-panel-test 鬼作 <临时目录>`、`./build-switch.sh` 和 `git diff --check` 通过。Switch 实机、完整视频槽回放、全路线及 PC 实时画面对照仍未验证。
+
+## 2026-09-22 画面缩放采样
+
+- 640×480 游戏画布输出到 960×720 视口时统一使用 SDL 最近邻采样，包含主画面、淡入淡出、菜单图层、回看和图片查看器；1.5 倍缩放不再在线性过滤下混合相邻像素，字体边缘和立绘轮廓保持原始像素边界。
+- 这项调整消除采样插值造成的模糊，不改变原版 640×480 资源分辨率；Switch 实机显示效果仍未验证。

@@ -86,6 +86,9 @@ int main(int argc,char **argv){
     fade=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,640,480);
     if(!texture||!fade)goto done;
     SDL_SetTextureBlendMode(texture,SDL_BLENDMODE_NONE);SDL_SetTextureBlendMode(fade,SDL_BLENDMODE_BLEND);
+    /* Keep the authored 640x480 pixels crisp at the 960x720 presentation
+       size; SDL's default linear sampler causes visible colour halos. */
+    if(SDL_SetTextureScaleMode(texture,SDL_ScaleModeNearest)||SDL_SetTextureScaleMode(fade,SDL_ScaleModeNearest))goto done;
     b=bootstrap_create_split(root,save_root);if(!b)goto done;
     char cursor_path[4096];snprintf(cursor_path,sizeof(cursor_path),"%s/kisaku-cursors.bin",root);
     if(cursor_load(&cursor,r,cursor_path)){
@@ -455,6 +458,7 @@ int main(int argc,char **argv){
     rmt_free(&panel.dialog_artwork);rmt_free(&panel.dialog_body);
     rmt_free(&panel.name_artwork);rmt_free(&panel.nav_artwork);rmt_free(&panel.nav_scene);for(unsigned i=0;i<4;i++)rmt_free(&panel.nav_previews[i]);rmt_free(&panel.history_artwork);
     rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);
+    rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
     rmt_free(&panel.image);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
     if(audio)SDL_CloseAudioDevice(audio);
     bootstrap_destroy(navigation.next);bootstrap_destroy(navigation.owner);bootstrap_destroy(menu.next);bootstrap_destroy(b);SDL_DestroyTexture(fade);SDL_DestroyTexture(texture);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return rc;

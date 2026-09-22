@@ -68,6 +68,24 @@ static void test_name_editor(const char *root,const char *saves,SDL_Renderer *re
     SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.name_artwork);bootstrap_destroy(b);
     puts("Kisaku CName modal: namepart atlas, 18x12 CP932 grid, five-character limit and confirm flow: PASS");
 }
+static void test_appendix_media(const char *root,const char *saves,SDL_Renderer *renderer){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    MessagePanel p={.kind=9,.selected=0};
+    b->vm->bytes[3260]=1; /* one unlocked track is enough to exercise state 0/1 */
+    message_panel_draw(&p,b,renderer);
+    assert(p.appendix_artwork.pixels&&p.appendix_artwork.width==714&&p.appendix_artwork.height==540);
+    /* music_mode.area stop and return buttons are kept in their native 640x480 coordinates. */
+    b->extra_active=1;b->extra_kind=b->extra_request=9;b->music_active=1;
+    panel_touch(&p,b,NULL,450,460);assert(!b->music_active&&b->extra_active);
+    b->vm->sp=0;panel_touch(&p,b,NULL,580,460);assert(!p.kind&&!b->extra_active&&b->vm->sp==1&&b->vm->stack[0].number==0);
+    p.kind=23;p.selected=0;p.status[0]=0;b->vm->sp=0;b->vm->bytes[3600]=1;b->extra_active=1;b->extra_kind=b->extra_request=23;
+    message_panel_draw(&p,b,renderer);
+    assert(p.appendix_artwork.pixels&&p.appendix_artwork.width==640&&p.appendix_parts.pixels&&p.appendix_parts.width==585);
+    /* videomode.area slot 0 is (34,8)-(49,123). */
+    panel_touch(&p,b,NULL,35,9);assert(!p.kind&&!b->extra_active&&b->vm->sp==1&&b->vm->stack[0].number==0);
+    rmt_free(&p.image);rmt_free(&p.appendix_artwork);rmt_free(&p.appendix_parts);SDL_DestroyTexture(p.texture);bootstrap_destroy(b);
+    puts("Kisaku appendix media: music/video AKB atlases, native AREA hit boxes and selector returns: PASS");
+}
 static void test_saved_parameters(SaveMenu *m,KBootstrap *b,SDL_Renderer *r,const char *shot){
     KFlags *saved=m->states[0];assert(saved&&saved->word_count==600);
     uint16_t words[600];memcpy(words,saved->words,sizeof(words));
@@ -680,9 +698,11 @@ int main(int argc,char **argv){
     test_save_menu(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_letter_exit(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_name_editor(argv[1],argv[2],renderer);
+    test_appendix_media(argv[1],argv[2],renderer);
     for(unsigned i=0;i<5;i++)rmt_free(&p.config_art[i]);
     kconfig_audio_clear(&p.config_audio);
     SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.dialog_artwork);rmt_free(&p.dialog_body);
+    rmt_free(&p.appendix_artwork);rmt_free(&p.appendix_parts);
     bootstrap_destroy(b);SDL_DestroyRenderer(renderer);SDL_FreeSurface(surface);SDL_Quit();
     puts("Kisaku frontend confirmation: native render, keyboard/mouse/touch, modal ownership and failed-flush handling: PASS");
     return 0;

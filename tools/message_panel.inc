@@ -18,7 +18,11 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
     KNawaPanel *nawa;
     KImage name_artwork,dialog_artwork,dialog_body;
     KImage nav_artwork,nav_scene,nav_previews[4];unsigned nav_catalog_ready,nav_catalog[100];unsigned nav_id,nav_mode,nav_count,nav_slots[100],nav_page_key,nav_load_request;int64_t nav_dates[4];
-    KImage history_artwork,settings_artwork,sidebar_artwork;uint64_t native_key;unsigned native_kind;int setting_values[KSET_COUNT],setting_ready;unsigned setting_page,return_title,dismiss_menus,animation_request;
+    KImage history_artwork,settings_artwork,sidebar_artwork;
+    /* Native appendix atlases.  Music/video use AKB layers directly; keeping
+       them on the panel avoids decoding 345 KiB/583 KiB every frame. */
+    KImage appendix_artwork,appendix_parts;
+    uint64_t native_key;unsigned native_kind;int setting_values[KSET_COUNT],setting_ready;unsigned setting_page,return_title,dismiss_menus,animation_request;
     KImage config_art[5];ConfigArea config_areas[4][68];unsigned config_area_count[4],config_mouse_drag;int config_hover,config_voice_snapshot[33];
     ConfigArea backlog_areas[9];unsigned backlog_area_count,backlog_offset,backlog_mouse_drag;int backlog_hover;
     KBacklogVoices voice_sequence;unsigned voice_next;KBootstrap *voice_runtime;
@@ -336,6 +340,19 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind==8){settings_panel_draw(p,b,r);return;}
     if(p->kind==5){backlog_panel_draw(p,b,r);return;}
     if(p->kind==23){
+        if(!appendix_assets(p,b,1)&&ui_canvas(&p->image)){
+            ui_scale(&p->image,&p->appendix_artwork,0,0,640,480);
+            /* 45c130/45c2f0 copy 15x115 cells from p2 into the two native
+               rows. Locked cells remain the base background; unlocked cells
+               retain the original numbered cassette artwork. */
+            for(unsigned i=0;i<bootstrap_video_count();i++)if(bootstrap_video_unlocked(b,i)){
+                int col=(int)(i%39),row=(int)(i/39);
+                appendix_blit(&p->image,&p->appendix_parts,col*15,row*115,15,115,34+col*15,8+row*115);
+            }
+            appendix_rect(&p->image,34+(int)(p->selected%39)*15,8+(int)(p->selected/39)*115,15,115,0xf0d060);
+            if(p->status[0])ui_text(b,&p->image,p->status,16,452,608,20,0xffd070,0);
+            ui_present(r,&p->image,&p->texture);return;
+        }
         SDL_SetRenderDrawColor(r,16,20,28,255);SDL_Rect box={208,64,864,592};SDL_RenderFillRect(r,&box);
         panel_text(r,272,108,"VIDEO");unsigned first=p->selected/10*10;
         for(unsigned i=first;i<bootstrap_video_count()&&i<first+10;i++){char line[120];snprintf(line,sizeof(line),"%s %02u  %.60s  %s",i==p->selected?">":" ",i+1,bootstrap_video_preview_name(i),bootstrap_video_unlocked(b,i)?"Available":"Locked");panel_text(r,280,160+(int)(i%10)*36,line);}
@@ -515,7 +532,10 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     }
     if(p->image.pixels&&(p->image.width!=640||p->image.height!=480)){rmt_free(&p->image);SDL_DestroyTexture(p->texture);p->texture=NULL;}
     if(b->history_count&&!bootstrap_history_draw(b,p->back,&p->image)){
-        if(!p->texture)p->texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+        if(!p->texture){
+            p->texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+            if(p->texture)SDL_SetTextureScaleMode(p->texture,SDL_ScaleModeNearest);
+        }
         if(p->texture){SDL_UpdateTexture(p->texture,NULL,p->image.pixels,(int)p->image.stride);SDL_Rect dst={224,80,832,544};SDL_RenderCopy(r,p->texture,NULL,&dst);}
     }
     char line[100];snprintf(line,sizeof(line),"HISTORY %u / %u",b->history_count?p->back+1:0,b->history_count);panel_text(r,272,108,line);

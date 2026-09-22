@@ -1011,7 +1011,11 @@ static void test_backlog_replay(const char *root,const char *saves){
     code[at++]=0x1b;code[at++]=0;
     replay_voice(code,&at,"z09578.ogg");
     replay_number(code,&at,0x00ff00);replay_number(code,&at,33);code[at++]=0x0e;
-    code[at++]=0x0b;code[at++]='B';code[at++]=0;code[at++]=0;
+    code[at++]=0x0b;code[at++]='B';code[at++]=0;
+    /* 23/8 is a count query whose native result is intentionally discarded;
+       replay must consume only the action and leave the caller stack intact. */
+    replay_number(code,&at,8);replay_number(code,&at,23);code[at++]=0x18;
+    code[at++]=0;
     KMessageRecord *record=&b->messages[0];record->data=malloc(at);assert(record->data);memcpy(record->data,code,at);record->size=record->capacity=at;record->flag=1;
     KImage row={0,0,640,54,2560,calloc(640*54,4)};assert(row.pixels);
     for(unsigned i=0;i<640*54;i++)row.pixels[i*4+3]=255;

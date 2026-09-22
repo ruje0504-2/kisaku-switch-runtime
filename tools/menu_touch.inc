@@ -109,12 +109,16 @@ static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int
     if(p->kind==15){if(y>=336&&y<370)message_panel_action(p,b,x<320?0:1);return;}
     if(p->kind==14){name_panel_pointer(p,b,x,y,1);return;}
     if(p->kind==9){
-        if(x>=24&&x<256&&y>=20&&y<468){unsigned i=(unsigned)(y-20)/28;if((y-20)%28<20&&i<bootstrap_music_count()){p->selected=i;message_panel_action(p,b,0);}}
-        if(y>=420&&y<448){if(x>=340&&x<460)message_panel_action(p,b,6);else if(x>=484&&x<556)message_panel_action(p,b,1);}return;
+        /* music_mode.area records are (id,left,top,right,bottom):
+           stop=(418,448)-(538,480), back=(538,448)-(640,480). */
+        if(y>=448&&y<480){if(x>=418&&x<538)message_panel_action(p,b,6);else if(x>=538&&x<640)message_panel_action(p,b,1);}
+        /* Track tiles are composed in a 3x4 grid by the AKB atlas. */
+        if(x>=0&&x<639&&y>=20&&y<340){unsigned col=(unsigned)x/213,row=(unsigned)(y-20)/72;if(col<3&&row<4){unsigned i=row*3+col;if(i<bootstrap_music_count()){p->selected=i;message_panel_action(p,b,0);}}}return;
     }
     if(p->kind==23){
-        if(x>=240&&x<620&&y>=140&&y<520){unsigned i=(unsigned)(y-140)/36;if((y-140)%36<30&&i<10){p->selected=(p->selected/10)*10+i;message_panel_action(p,b,0);}}
-        if(y>=580&&y<640&&x>=480&&x<620)message_panel_action(p,b,1);
+        /* videomode.area is a 39x2 grid of 15x115 cells at (34,8). */
+        if(x>=34&&x<619&&y>=8&&y<238){unsigned col=(unsigned)(x-34)/15,row=(unsigned)(y-8)/115;if(col<39&&row<2){p->selected=row*39+col;message_panel_action(p,b,0);}}
+        if(y>=420&&y<480&&x>=528)message_panel_action(p,b,1);
         return;
     }
     if(p->kind==12){if(y>=236&&y<264&&((x>=236&&x<308)||(x>=340&&x<412))){p->selected=x>=340;message_panel_action(p,b,0);}return;}

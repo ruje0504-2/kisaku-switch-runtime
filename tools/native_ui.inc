@@ -67,7 +67,10 @@ static inline uint64_t ui_hash(uint64_t hash,const void *data,size_t size){
 }
 static inline void ui_present(SDL_Renderer *r,KImage *image,SDL_Texture **texture){
     if(*texture){int w,h;SDL_QueryTexture(*texture,NULL,NULL,&w,&h);if(w!=640||h!=480){SDL_DestroyTexture(*texture);*texture=NULL;}}
-    if(!*texture)*texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+    if(!*texture){
+        *texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+        if(*texture)SDL_SetTextureScaleMode(*texture,SDL_ScaleModeNearest);
+    }
     if(*texture){SDL_UpdateTexture(*texture,NULL,image->pixels,(int)image->stride);SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,*texture,NULL,&dst);}
 }
 
