@@ -157,6 +157,47 @@ static void test_save_menu(const char *root,const char *saves,SDL_Renderer *r,co
     closedir(dir);assert(!rmdir(folder));
     puts("Kisaku native save UI: 100 slots, actual AREA/page overlap, note/Yes/No, controller/mouse, and confirmed asynchronous restore: PASS");
 }
+static void backlog_test_number(uint8_t *code,size_t *at,int value){
+    code[(*at)++]=0x32;for(int i=3;i>=0;i--)code[(*at)++]=(uint8_t)((unsigned)value>>(i*8));
+}
+static void test_native_backlog(const char *root,const char *saves,SDL_Renderer *renderer){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    assert(bootstrap_run(b,100000)>=0&&b->layers[0].pixels);
+    for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);
+    b->messages=calloc(1,sizeof(*b->messages));assert(b->messages);b->message_count=1;b->message_index=0;
+    uint8_t code[256];size_t at=0;const char *names[]={"z09577.ogg","z09578.ogg"};
+    for(unsigned i=0;i<2;i++){
+        backlog_test_number(code,&at,0);code[at++]=0x33;memcpy(code+at,names[i],strlen(names[i])+1);at+=strlen(names[i])+1;
+        backlog_test_number(code,&at,5);backlog_test_number(code,&at,17);code[at++]=0x18;
+        code[at++]=0x0a;code[at++]='A'+(uint8_t)i;code[at++]=0;
+    }
+    code[at++]=0;b->messages[0].data=malloc(at);assert(b->messages[0].data);memcpy(b->messages[0].data,code,at);
+    b->messages[0].size=b->messages[0].capacity=at;b->messages[0].flag=1;
+    MessagePanel p={.kind=5};backlog_panel_draw(&p,b,renderer);assert(!p.status[0]&&backlog_row_back(&p,b,5)==0);
+    backlog_pointer(&p,b,100,440,1);assert(p.voice_loading&&p.voice_sequence.count==2&&p.voice_next==1);
+    int ready=0;for(unsigned i=0;i<1000&&!ready;i++){ready=kvoice_worker_poll(p.voice_worker,&p.voice_pcm,&p.voice_size);if(!ready)SDL_Delay(5);}
+    assert(ready==1&&p.voice_pcm&&p.voice_size);p.voice_loading=0;p.voice_at=p.voice_size;
+    /* A completed first PCM and empty output queue must advance to the
+       second real archive voice, without restarting or touching gameplay. */
+    assert(!SDL_InitSubSystem(SDL_INIT_AUDIO));SDL_AudioSpec spec={0};spec.freq=44100;spec.format=AUDIO_S16LSB;spec.channels=2;spec.samples=512;
+    SDL_AudioDeviceID device=SDL_OpenAudioDevice(NULL,0,&spec,NULL,0);assert(device);
+    KHistoryAudio saved={0};unsigned serial=0;
+    assert(!history_voice_audio(&p,&saved,device,44100,2,&serial));
+    assert(p.voice_loading&&p.voice_next==2&&p.voice_sequence.count==2&&!b->voice_active&&!b->voice_loading);
+    uint8_t *pcm=NULL;size_t bytes=0;ready=0;
+    for(unsigned i=0;i<1000&&!ready;i++){ready=kvoice_worker_poll(p.voice_worker,&pcm,&bytes);if(!ready)SDL_Delay(5);}
+    assert(ready==1&&pcm&&bytes);free(pcm);
+    backlog_pointer(&p,b,0,0,2);assert(!p.voice_loading&&!p.voice_sequence.count&&!p.voice_runtime&&p.kind==5);
+    backlog_close(&p,b);assert(!history_voice_audio(&p,&saved,device,44100,2,&serial)&&!saved.suspended);
+    KMessageRecord *grown=realloc(b->messages,70*sizeof(*grown));assert(grown);b->messages=grown;
+    for(unsigned i=1;i<70;i++){b->messages[i]=(KMessageRecord){0};b->messages[i].data=malloc(at);assert(b->messages[i].data);memcpy(b->messages[i].data,code,at);b->messages[i].size=b->messages[i].capacity=at;b->messages[i].flag=1;}
+    b->message_count=70;b->history_count=64;p.kind=5;p.viewing=0;p.status[0]=0;
+    backlog_panel_draw(&p,b,renderer);assert(bootstrap_backlog_count(b)==70&&backlog_limit(b)==64);
+    backlog_drag(&p,b,0);assert(backlog_row_back(&p,b,0)==69);backlog_panel_draw(&p,b,renderer);assert(!p.status[0]);backlog_close(&p,b);
+    SDL_CloseAudioDevice(device);history_voice_stop(&p);kvoice_worker_destroy(p.voice_worker);
+    SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.history_artwork);bootstrap_destroy(b);
+    puts("Native backlog frontend: command row, two actual voice decodes, ordered advance and cancellation isolation: PASS");
+}
 static void test_backlog(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,const char *shot){
     p->kind=5;p->viewing=0;b->history_count=b->history_next=0;
     memset(b->history,0,sizeof(b->history));memset(b->history_voice,0,sizeof(b->history_voice));
@@ -545,6 +586,7 @@ int main(int argc,char **argv){
     test_config_audio(argv[1],argv[2]);
     test_config_motion(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_backlog(&p,b,renderer,argc==4?argv[3]:NULL);
+    test_native_backlog(argv[1],argv[2],renderer);
     test_save_menu(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_letter_exit(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     for(unsigned i=0;i<5;i++)rmt_free(&p.config_art[i]);

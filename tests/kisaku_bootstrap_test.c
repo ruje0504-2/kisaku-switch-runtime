@@ -71,7 +71,9 @@ static void test_backlog_records(const char *root,const char *saves){
     b->vm->status=KVM_SYSCALL;b->vm->sp=1;b->vm->stack[0]=(KValue){6,NULL};
     assert(bootstrap_dispatch(b)<0&&b->vm->sp==1);
     uint8_t *data=b->messages[1].data;char *text=b->messages[1].text;
+    b->history_count=b->history_next=1;strcpy(b->history[0],"stale fallback");strcpy(b->history_voice[0],"z09577.ogg");
     assert(!backlog_call(b,1,0,(KValue){0,NULL})&&b->vm->sp==1&&b->message_index==-1);
+    assert(!bootstrap_backlog_count(b)&&!b->history_count&&!b->history_next&&!b->history[0][0]&&!b->history_voice[0][0]);
     assert(b->message_count==5&&b->messages[1].data==data&&b->messages[1].text==text);
     assert(!b->messages[1].size&&!b->messages[1].flag&&!data[0]&&!text[0]);
     assert(!backlog_call(b,4,0,(KValue){0,NULL})&&b->vm->stack[1].number==0);
@@ -972,6 +974,71 @@ static void test_startup_native_ax(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("Kisaku startup AX: layer 8, RGB/keyed copy, Y wrap, enable flag and boundary timing: PASS");
 }
+static void replay_number(uint8_t *code,size_t *at,int32_t value){
+    code[(*at)++]=0x32;for(int i=3;i>=0;i--)code[(*at)++]=(uint8_t)((uint32_t)value>>(i*8));
+}
+static void replay_voice(uint8_t *code,size_t *at,const char *name){
+    replay_number(code,at,0);code[(*at)++]=0x33;
+    memcpy(code+*at,name,strlen(name)+1);*at+=strlen(name)+1;
+    replay_number(code,at,5);replay_number(code,at,17);code[(*at)++]=0x18;
+}
+static void test_backlog_replay(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    assert(!backlog_call(b,0,1,(KValue){1,NULL}));
+    uint8_t code[512];size_t at=0;
+    replay_voice(code,&at,"z09577.ogg");
+    replay_number(code,&at,0xff0000);replay_number(code,&at,33);code[at++]=0x0e;
+    code[at++]=0x0a;code[at++]='A';code[at++]=0;
+    code[at++]=0x1b;code[at++]=0;
+    replay_voice(code,&at,"z09578.ogg");
+    replay_number(code,&at,0x00ff00);replay_number(code,&at,33);code[at++]=0x0e;
+    code[at++]=0x0b;code[at++]='B';code[at++]=0;code[at++]=0;
+    KMessageRecord *record=&b->messages[0];record->data=malloc(at);assert(record->data);memcpy(record->data,code,at);record->size=record->capacity=at;record->flag=1;
+    KImage row={0,0,640,54,2560,calloc(640*54,4)};assert(row.pixels);
+    for(unsigned i=0;i<640*54;i++)row.pixels[i*4+3]=255;
+    KValue *globals=malloc(sizeof(b->vm->globals));assert(globals);memcpy(globals,b->vm->globals,sizeof(b->vm->globals));
+    KBacklogVoices voices={0};char why[256]={0};
+    assert(bootstrap_backlog_native(b)&&bootstrap_backlog_count(b)==1&&bootstrap_backlog_has_voice(b,0));
+    assert(!bootstrap_backlog_replay(b,0,&row,&voices,why));
+    assert(voices.count==2&&!strcmp(voices.names[0],"z09577.ogg")&&!strcmp(voices.names[1],"z09578.ogg"));
+    unsigned red=0,green=0;for(unsigned y=0;y<54;y++)for(unsigned x=0;x<640;x++){
+        uint8_t *p=row.pixels+y*row.stride+x*4;
+        if(p[2]&&!p[1]){assert(y<18);red++;}
+        if(p[1]&&!p[2]){assert(y>=18);green++;}
+    }
+    assert(red&&green&&!memcmp(globals,b->vm->globals,sizeof(b->vm->globals))&&!b->error[0]);
+    uint8_t *pixels=malloc(640*54*4);assert(pixels);memcpy(pixels,row.pixels,640*54*4);
+    at--;replay_number(code,&at,99);replay_number(code,&at,31);code[at++]=0x18;code[at++]=0;
+    free(record->data);record->data=malloc(at);assert(record->data);memcpy(record->data,code,at);record->size=record->capacity=at;
+    assert(bootstrap_backlog_replay(b,0,&row,&voices,why)<0&&strstr(why,"31/99"));
+    assert(!memcmp(pixels,row.pixels,640*54*4)&&voices.count==2&&!b->error[0]);
+    assert(!memcmp(globals,b->vm->globals,sizeof(b->vm->globals)));
+    free(pixels);free(globals);rmt_free(&row);kbacklog_voices_free(&voices);bootstrap_destroy(b);
+    puts("Native backlog replay: colors, newline, ordered voices, isolated VM and atomic unknown-call failure: PASS");
+}
+static void test_backlog_real_records(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    int rc=bootstrap_run(b,100000);
+    for(unsigned i=0;rc==1&&i<2000&&!(b->title.active&&b->title.age>=64);i++){bootstrap_frame(b);rc=bootstrap_run(b,100000);}
+    assert(rc==1&&b->title.active);bootstrap_title_move(b,1);bootstrap_confirm(b);rc=bootstrap_run(b,100000);
+    for(unsigned i=0;rc==1&&i<2000&&!(b->message_active&&b->text_count>=9);i++){
+        if(b->flag_dialog.active)bootstrap_pointer(b,300,350,1);
+        if(b->extra_active&&b->extra_kind==14)bootstrap_name_submit(b,"鬼作");
+        if((b->message_active&&!b->message_slide)||b->wait_input)bootstrap_confirm(b);
+        bootstrap_frame(b);rc=bootstrap_run(b,100000);
+    }
+    assert(rc==1&&!b->error[0]&&b->text_count>=9&&bootstrap_backlog_native(b));
+    KImage row={0,0,640,54,2560,calloc(640*54,4)};assert(row.pixels);
+    unsigned count=bootstrap_backlog_count(b),voiced=0;assert(count>2);
+    for(unsigned back=0;back<count;back++){
+        KBacklogVoices voices={0};char why[256]={0};memset(row.pixels,0,640*54*4);
+        int result=bootstrap_backlog_replay(b,back,&row,&voices,why);
+        if(result)fprintf(stderr,"Real backlog %u: %s\n",back,why);
+        assert(!result);voiced+=voices.count;kbacklog_voices_free(&voices);
+    }
+    assert(voiced>=3&&!b->error[0]);rmt_free(&row);bootstrap_destroy(b);
+    puts("Original opening MES: recorded commands, voice flags, state arithmetic and native-row replay: PASS");
+}
 static void test_choice_stack_isolation(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     /* Capturing commands in the live VM must not capture speculative choice
@@ -1278,7 +1345,7 @@ static void test_ui_and_logo(const char *root,const char *saves){
 }
 int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--backlog")){
-        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
+        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
     }
     if(argc!=3)return 2;
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);
@@ -1760,7 +1827,7 @@ int main(int argc,char **argv){
     test_backlog_records(argv[1],argv[2]);
     test_native_wait(argv[1],argv[2]);
     test_backlog_lifecycle(argv[1],argv[2]);
-    test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);
+    test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);
     test_native_tint(argv[1],argv[2]);
     assert(!call(b,1011,0));
     b->vm->bytes[3600]=b->vm->bytes[5038]=b->vm->bytes[4001]=b->vm->bytes[4004]=0;

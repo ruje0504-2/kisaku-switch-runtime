@@ -590,6 +590,7 @@ static int message_slide_skip(KBootstrap *b){
     return 1;
 }
 #include "message_history.inc"
+#include "backlog_runtime.inc"
 static int message_begin(KBootstrap *b,int id){
     KVM *v=b->vm;
 
@@ -1248,6 +1249,11 @@ int bootstrap_dispatch(KBootstrap *b){
                 if(r->data)r->data[0]=0;
                 if(r->text)r->text[0]=0;
             }
+            /* The portable fallback must not resurrect entries explicitly
+               cleared by the native backlog lifecycle. Restore metadata is
+               applied after the script reconstruction, as before. */
+            memset(b->history,0,sizeof(b->history));memset(b->history_voice,0,sizeof(b->history_voice));
+            b->history_count=b->history_next=0;
         }else if(sub==4){
             /* 4fe3b0 -> 500900 counts nonempty command vectors, not slots. */
             value=0;

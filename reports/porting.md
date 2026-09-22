@@ -629,3 +629,11 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 23/8按4fe060→40b470→406280核对：无额外参数，读取容器容量的EAX被分发器丢弃，不向脚本压值且不改记录。尚未实现的23/5、7指针返回及通用重放仍保留显式边界。
 - `./build-host.sh`、`./test-host.sh 鬼作`、回看/等待/选项隔离专项ASan/UBSan、`./build-switch.sh`、`git diff --check`通过；日志local/backlog-takeover-{build,full,sanitized,switch}.log。完整回归包括2191张AKB解码和资源审计。
 - 新NRO SHA-256：`9993778bb6ca2191bd4d96b4d54f723599da44d9c4961e38bf611642267d0785`。仅静态核对与主机/Switch交叉构建，未运行PC原版，Switch实机和全路线未验证；完整回看重放、多语音和前端/存档统一仍未完成。
+
+## 2026-09-22 实时回看重放与多语音
+
+- 新增隔离VM回看重放，前端六行改读原生命令；支持记录中的颜色、位置/换行、10/0字号和17/5多语音收集。命令/表面/语音先暂存，未知调用明确报错且不改剧情VM。旧存档扁平历史仍兼容，原生命令存档恢复未完成。
+- 顺序语音在前段PCM与SDL队列完成后进入下一段，角色静音/音量逐段生效，取消释放整队列。真实开场记录、两条真实语音解码及70条记录滚动已有专项，具体限制见backlog-native.md。
+- 完整主机回归通过（local/backlog-replay-full.log）；增加的真实开场记录测试与回看专项ASan/UBSan通过（local/backlog-replay-sanitized.log）。Switch构建修正错误提示字符串可能截断的-Werror警告后通过，日志local/backlog-replay-switch.log。
+- NRO SHA-256：`12018f35c3f1e160236d21167e5f06decbe6f9ba2c4adfbe8f35dae385220434`。完整回看仍缺存档统一、阴影/跨记录状态和部分调用；Switch实机、全路线未验证。
+- 最终清空旧历史修复后重新运行 `./build-host.sh`、`./test-host.sh 鬼作` 和 `./build-switch.sh` 均通过；日志local/backlog-replay-final-{build,tests,switch}.log。前端ASan/UBSan含70条记录和顺序语音专项通过，SDL3库路径设置见backlog-native.md。`git diff --check`通过。

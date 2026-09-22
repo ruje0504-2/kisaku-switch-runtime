@@ -5,7 +5,7 @@ static void backlog_panel_init(MessagePanel *p){
     p->viewing=1;p->backlog_offset=0;p->backlog_hover=-1;p->backlog_mouse_drag=0;
     p->native_kind=0;p->status[0]=0;
 }
-static unsigned backlog_limit(const KBootstrap *b){return b->history_count>6?b->history_count-6:0;}
+static unsigned backlog_limit(const KBootstrap *b){return bootstrap_backlog_count(b)>6?bootstrap_backlog_count(b)-6:0;}
 static int backlog_assets(MessagePanel *p,KBootstrap *b){
     if(ui_asset(b,"kisaku_DL_backlog_p.akb",&p->history_artwork)||p->history_artwork.width!=640||p->history_artwork.height!=480)return -1;
     if(p->backlog_area_count)return 0;
@@ -23,7 +23,7 @@ static int backlog_assets(MessagePanel *p,KBootstrap *b){
 static int backlog_row_back(const MessagePanel *p,const KBootstrap *b,int row){
     if(row<0||row>5)return -1;
     unsigned back=p->backlog_offset+5-(unsigned)row;
-    return back<b->history_count?(int)back:-1;
+    return back<bootstrap_backlog_count(b)?(int)back:-1;
 }
 static int backlog_hit(const MessagePanel *p,int x,int y){
     for(unsigned i=0;i<p->backlog_area_count;i++){
@@ -57,7 +57,7 @@ static void backlog_activate(MessagePanel *p,KBootstrap *b){
     int id=p->backlog_hover;
     if(id>=0&&id<6){
         int back=backlog_row_back(p,b,id);
-        if(back>=0&&bootstrap_history_voice(b,(unsigned)back)){p->back=(unsigned)back;history_voice_play(p,b);}
+        if(back>=0&&bootstrap_backlog_has_voice(b,(unsigned)back)){p->back=(unsigned)back;history_voice_play(p,b);}
     }else if(id==256)backlog_scroll(p,b,1,0);
     else if(id==257)backlog_scroll(p,b,-1,0);
 }
@@ -121,7 +121,7 @@ static void backlog_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         ui_text(b,&p->image,"履歴画面の素材を読み込めませんでした\nB / Esc：戻る",120,210,400,60,0xffffff,0);
         ui_present(r,&p->image,&p->texture);return;
     }
-    unsigned state[]={p->backlog_offset,(unsigned)p->backlog_hover,p->back,b->history_next,b->history_count,b->text_count,p->voice_loading,p->voice_pcm!=NULL,p->backlog_mouse_drag};
+    unsigned state[]={p->backlog_offset,(unsigned)p->backlog_hover,p->back,b->history_next,bootstrap_backlog_count(b),b->text_count,p->voice_loading,p->voice_pcm!=NULL,p->backlog_mouse_drag};
     uint64_t key=ui_hash(1469598103934665603ULL,state,sizeof(state));
     if(p->native_kind==5&&key==p->native_key&&p->texture){SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,p->texture,NULL,&dst);return;}
     KImage *d=&p->image,*art=&p->history_artwork;ui_scale(d,&b->layers[0],0,0,640,480);
@@ -133,10 +133,17 @@ static void backlog_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     int playing=p->voice_loading||p->voice_pcm;
     for(int row=0;row<6;row++){
         int back=backlog_row_back(p,b,row);if(back<0)continue;
-        int has_voice=bootstrap_history_voice(b,(unsigned)back)!=NULL;
+        int has_voice=bootstrap_backlog_has_voice(b,(unsigned)back);
         int selected=has_voice&&(playing?(unsigned)back==p->back:p->backlog_hover==row);
         if(selected)ui_blit(d,art,0,playing?84:4,616,80,0,row*80-1,1);
-        if(backlog_text(b,d,b->history[(b->history_next+63-(unsigned)back)%64],row*80+10)){
+        int failed;
+        if(bootstrap_backlog_native(b)){
+            KImage target={0,0,640,54,d->stride,d->pixels+(row*80+10)*d->stride};
+            KBacklogVoices voices={0};char why[256]={0};
+            failed=bootstrap_backlog_replay(b,(unsigned)back,&target,&voices,why);
+            kbacklog_voices_free(&voices);
+        }else failed=backlog_text(b,d,b->history[(b->history_next+63-(unsigned)back)%64],row*80+10);
+        if(failed){
             snprintf(p->status,sizeof(p->status),"履歴テキストを描画できませんでした");
             ui_text(b,d,p->status,32,row*80+10,560,54,0xffffff,0);
         }

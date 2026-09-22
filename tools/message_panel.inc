@@ -15,6 +15,7 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
     KImage history_artwork,settings_artwork,sidebar_artwork;uint64_t native_key;unsigned native_kind;int setting_values[KSET_COUNT],setting_ready;unsigned setting_page,return_title,dismiss_menus,animation_request;
     KImage config_art[5];ConfigArea config_areas[4][68];unsigned config_area_count[4],config_mouse_drag;int config_hover,config_voice_snapshot[33];
     ConfigArea backlog_areas[9];unsigned backlog_area_count,backlog_offset,backlog_mouse_drag;int backlog_hover;
+    KBacklogVoices voice_sequence;unsigned voice_next;KBootstrap *voice_runtime;
     KVoiceWorker *voice_worker;uint8_t *voice_pcm;size_t voice_size,voice_at;unsigned voice_loading,voice_serial;
     KConfigAudio config_audio;unsigned config_audio_serial;
     unsigned config_motion,config_steps,config_step,config_target,config_next_kind;

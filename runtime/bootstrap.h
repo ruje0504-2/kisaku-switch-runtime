@@ -3,6 +3,7 @@
 #include "voice_worker.h"
 #include "image_worker.h"
 #include "vm.h"
+#include "backlog_replay.h"
 #include "ai6arc.h"
 #include "rmt.h"
 #include "ax.h"
@@ -240,6 +241,10 @@ int bootstrap_scene_draw(KBootstrap *b,unsigned selected,unsigned overview,KImag
 /* Prepare a fresh title runtime from a live owner; copied string values are owned. */
 int bootstrap_scene_replay_begin(KBootstrap *b,const KBootstrap *owner,unsigned slot);
 int bootstrap_scene_replay_merge(KBootstrap *owner,KBootstrap *replay);
+unsigned bootstrap_backlog_count(const KBootstrap *b);
+int bootstrap_backlog_has_voice(const KBootstrap *b,unsigned back);
+int bootstrap_backlog_native(const KBootstrap *b);
+int bootstrap_backlog_replay(KBootstrap *b,unsigned back,KImage *row,KBacklogVoices *voices,char error[256]);
 int bootstrap_history_draw(KBootstrap *b,unsigned back,KImage *out);
 /* Encoding and font the UI must use for script bytes it renders itself
    (backlog, history page).  These follow the same auto-detected, sticky GBK
