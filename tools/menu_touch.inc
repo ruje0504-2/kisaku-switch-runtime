@@ -47,6 +47,40 @@ static void navigation_touch(MessagePanel *p,KBootstrap *b,int x,int y){
     else if(y>=38&&y<80){unsigned mode=y>=60;if(mode!=p->nav_mode)navigation_panel_action(p,b,6);}
     else if(y>=82&&y<104)navigation_panel_action(p,b,1);
 }
+/* The PC CName window is the one frontend modal whose controls are mouse
+   buttons.  Keep the pointer scoped to this panel; story clicks continue to
+   use the game's explicit AREA/choice handlers. */
+static void name_panel_pointer(MessagePanel *p,KBootstrap *b,int x,int y,int click){
+    if(p->kind!=14||!click)return;
+    if(p->name_confirm){
+        if(y>=248&&y<286){p->selected=x<320?0:1;message_panel_action(p,b,0);}
+        return;
+    }
+    if(y>=32&&y<320&&x>=128&&x<560){
+        unsigned col=(unsigned)(x-128)/24,row=(unsigned)(y-32)/24;
+        if(col<18&&row<(p->name_mode==2?6:12)){p->name_cursor=row*18+col;p->name_focus=1;message_panel_action(p,b,0);}return;
+    }
+    if(y>=368&&y<394){
+        if(x>=72&&x<288){p->name_mode=(unsigned)(x-72)/72;p->name_page=0;p->name_cursor=0;p->name_focus=1;p->status[0]=0;return;}
+        if(x>=288&&x<360){p->name_focus=0;message_panel_action(p,b,4);return;}
+        if(x>=360&&x<432){p->name_focus=0;message_panel_action(p,b,5);return;}
+        if(x>=432&&x<504){message_panel_action(p,b,7);return;}
+        if(x>=504&&x<576){if(p->name_focus==1)p->name_focus=0;message_panel_action(p,b,0);return;}
+    }
+    if(y>=400&&y<442&&x>=252&&x<388){
+        unsigned slot=x<260?0:(unsigned)(x-260)/24;
+        size_t offsets[6];unsigned count=name_offsets(p->name,offsets);p->name_focus=0;p->name_text_cursor=slot>count?count:slot;return;
+    }
+    /* The ten small controls above the grid are the original CName kanji
+       page jumps.  They only have meaning in the kanji table. */
+    if(p->name_mode==1&&y>=328&&y<352){
+        static const unsigned targets[]={0,14,58,104,129,136,160,167,173,184};
+        if(x>=80&&x<440&&((unsigned)(x-80)%36)<32){unsigned i=(unsigned)(x-80)/36;if(i<10)p->name_page=targets[i];}
+        else if(x>=460&&x<512){if(p->name_page)p->name_page--;}
+        else if(x>=512&&x<560&&p->name_page<184)p->name_page++;
+        return;
+    }
+}
 static void gallery_touch(MessagePanel *p,KBootstrap *b,int x,int y){
     if(p->viewing>=2){message_panel_action(p,b,0);return;}
     if(!p->viewing){
@@ -73,15 +107,7 @@ static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int
     if(p->kind==10){gallery_touch(p,b,x,y);return;}
     if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){int hit=kdialog_hit(x,y);if(hit>=0){p->selected=(unsigned)hit;p->viewing=1;message_panel_action(p,b,0);}return;}
     if(p->kind==15){if(y>=336&&y<370)message_panel_action(p,b,x<320?0:1);return;}
-    if(p->kind==14){
-        if(p->name_confirm){
-            if(y>=248&&y<286){p->selected=x<320?0:1;message_panel_action(p,b,0);}return;
-        }
-        if(y>=32&&y<320&&x>=128&&x<560){unsigned col=(unsigned)(x-128)/24,row=(unsigned)(y-32)/24;if(col<18&&row<(p->name_mode==2?6:12)){p->name_cursor=row*18+col;p->name_focus=1;message_panel_action(p,b,0);}return;}
-        if(y>=368&&y<394&&x>=144&&x<576){unsigned mode=(unsigned)(x-144)/72;p->name_mode=mode%3;p->name_page=0;p->name_cursor=0;p->name_focus=1;return;}
-        if(y>=400&&y<442&&x>=160&&x<512){p->name_focus=0;return;}
-        return;
-    }
+    if(p->kind==14){name_panel_pointer(p,b,x,y,1);return;}
     if(p->kind==9){
         if(x>=24&&x<256&&y>=20&&y<468){unsigned i=(unsigned)(y-20)/28;if((y-20)%28<20&&i<bootstrap_music_count()){p->selected=i;message_panel_action(p,b,0);}}
         if(y>=420&&y<448){if(x>=340&&x<460)message_panel_action(p,b,6);else if(x>=484&&x<556)message_panel_action(p,b,1);}return;

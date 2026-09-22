@@ -124,6 +124,10 @@ int main(int argc,char **argv){
             if((panel.kind==22||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)&&(buttons&HidNpadButton_R))message_panel_action(&panel,b,9);
             if((buttons&HidNpadButton_X)&&(panel.kind==4||panel.kind==10||panel.kind==11||panel.kind==23||panel.kind==8||panel.kind==14))message_panel_action(&panel,b,7);
             if(buttons&HidNpadButton_A)message_panel_action(&panel,b,0);
+            /* The original CName has a separate 決定 button.  Give the
+               controller a dedicated finish action instead of requiring the
+               user to move the character cursor back to the name field. */
+            if((buttons&HidNpadButton_ZR)&&panel.kind==14){panel.name_focus=0;message_panel_action(&panel,b,0);}
             if((buttons&HidNpadButton_Y)&&(panel.kind==5||panel.kind==16||panel.kind==14||panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==9||panel.kind==11||panel.kind==23))message_panel_action(&panel,b,6);
             if(buttons&HidNpadButton_B)message_panel_action(&panel,b,1);
             if(buttons&HidNpadButton_Up)message_panel_action(&panel,b,2);
@@ -209,7 +213,19 @@ int main(int argc,char **argv){
                 continue;
             }
             if(panel.kind==14){
-                if(e.type==SDL_TEXTINPUT){size_t n=strlen(panel.name),add=strlen(e.text.text);if(name_utf8_count(panel.name)<5&&n+add<sizeof(panel.name)){memcpy(panel.name+n,e.text.text,add+1);panel.status[0]=0;}else snprintf(panel.status,sizeof(panel.status),"名前は5文字まで入力できます");}
+                /* CName owns the pointer while its modal is open.  The game
+                   mouse path must not leak through to story hit testing. */
+                if(e.type==SDL_MOUSEBUTTONDOWN){
+                    if(e.button.button==SDL_BUTTON_RIGHT)message_panel_action(&panel,b,1);
+                    else if(e.button.button==SDL_BUTTON_LEFT)panel_touch(&panel,b,&touch,cursor.x,cursor.y);
+                    continue;
+                }
+            if(e.type==SDL_MOUSEBUTTONUP||e.type==SDL_MOUSEMOTION||e.type==SDL_MOUSEWHEEL)continue;
+                if(e.type==SDL_TEXTINPUT){
+                    if(name_insert_text(&panel,e.text.text))
+                        snprintf(panel.status,sizeof(panel.status),"名前は5文字まで入力できます");
+                    continue;
+                }
                 if(e.type==SDL_KEYDOWN){
                     SDL_Keycode key=e.key.keysym.sym;
                     if(key==SDLK_RETURN)message_panel_action(&panel,b,0);
@@ -314,7 +330,11 @@ int main(int argc,char **argv){
                 panel.back=0;
             }
         }
-        if(b->extra_request){panel.kind=b->extra_request;panel.selected=panel.back=panel.viewing=panel.variant=0;panel.status[0]=0;b->extra_request=0;if(panel.kind==14){snprintf(panel.name,sizeof(panel.name),"会員１号");panel.name_mode=panel.name_page=panel.name_cursor=panel.name_confirm=0;panel.name_focus=0;
+        if(b->extra_request){panel.kind=b->extra_request;panel.selected=panel.back=panel.viewing=panel.variant=0;panel.status[0]=0;b->extra_request=0;if(panel.kind==14){
+                /* CName starts with an empty five-slot buffer.  The old
+                   placeholder was treated as real input, so a normal user
+                   name could be rejected as over five characters. */
+                panel.name[0]=0;panel.name_mode=panel.name_page=panel.name_cursor=panel.name_confirm=panel.name_text_cursor=0;panel.name_focus=0;
 #ifndef __SWITCH__
                 SDL_StartTextInput();
 #endif

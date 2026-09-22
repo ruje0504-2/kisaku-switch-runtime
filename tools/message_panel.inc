@@ -9,7 +9,7 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
     /* CName (0047b380) keeps a five-character CP932 buffer and a separate
        grid/category cursor.  These fields mirror that transient state so the
        date/name modal does not fall back to the Switch system keyboard. */
-    unsigned name_mode,name_page,name_cursor,name_focus,name_confirm;
+    unsigned name_mode,name_page,name_cursor,name_focus,name_confirm,name_text_cursor;
     KImage image;SDL_Texture *texture;
     unsigned direct_scene,direct_selected,direct_page,direct_count;KImage direct_artwork,direct_parts;
     unsigned cg_scroll_active,cg_scroll_limit,cg_scroll_step,cg_movie_return;uint64_t cg_scroll_start;
@@ -34,8 +34,33 @@ static unsigned name_utf8_count(const char *text){
         unsigned more=c<0xe0?1:c<0xf0?2:3;for(unsigned i=0;i<more&&*p;i++)p++;count++;}
     return count;
 }
-static void name_delete_last(char *text){
-    size_t n=strlen(text);if(!n)return;n--;while(n&&((unsigned char)text[n]&0xc0)==0x80)n--;text[n]=0;
+static unsigned name_offsets(const char *text,size_t offsets[6]){
+    unsigned count=0;size_t n=0;offsets[0]=0;
+    while(text[n]&&count<5){unsigned char c=(unsigned char)text[n];size_t step=c<0x80?1:c<0xe0?2:c<0xf0?3:4;
+        if(!text[n+step-1])break;n+=step;offsets[++count]=n;
+    }
+    return count;
+}
+static int name_insert_text(MessagePanel *p,const char *text){
+    if(!text||!*text)return 0;
+    size_t offsets[6];unsigned count=name_offsets(p->name,offsets);
+    unsigned add_count=name_utf8_count(text);
+    size_t n=strlen(p->name),m=strlen(text);
+    if(!add_count||count+add_count>5||n+m>=sizeof(p->name))return -1;
+    unsigned cursor=p->name_text_cursor>count?count:p->name_text_cursor;
+    size_t pos=offsets[cursor];
+    memmove(p->name+pos+m,p->name+pos,n-pos+1);
+    memcpy(p->name+pos,text,m);
+    p->name_text_cursor=cursor+add_count;
+    p->status[0]=0;
+    return 0;
+}
+static void name_delete_at(MessagePanel *p){
+    size_t offsets[6];unsigned count=name_offsets(p->name,offsets);
+    unsigned cursor=p->name_text_cursor>count?count:p->name_text_cursor;
+    if(!cursor)return;
+    size_t begin=offsets[cursor-1],end=offsets[cursor];
+    memmove(p->name+begin,p->name+end,strlen(p->name)-end+1);p->name_text_cursor=cursor-1;p->status[0]=0;
 }
 static int name_cp932_utf8(uint16_t raw,char out[8]){
     if(raw==0xffff)return -1;
@@ -52,12 +77,20 @@ static uint16_t name_table_value(const MessagePanel *p,unsigned row,unsigned col
     if(row>=12||col>=18)return 0xffff;
     if(p->name_mode==0)return k_name_kana[row][col];
     if(p->name_mode==2)return row<6?k_name_symbol[row][col]:0xffff;
-    unsigned page=p->name_page<175?p->name_page:174;
+    /* The original page jump table reaches 0xb8 (184).  The final
+       page contains the last two recovered rows; cells below that are
+       sentinel blanks rather than reads past the static table. */
+    unsigned page=p->name_page<185?p->name_page:184;
+    if(page+row>=186)return 0xffff;
     return k_name_kanji[page+row][col];
 }
 static int name_append_value(MessagePanel *p,uint16_t raw){
-    char add[8];if(name_cp932_utf8(raw,add)||name_utf8_count(p->name)>=5)return -1;
-    size_t n=strlen(p->name),m=strlen(add);if(n+m>=sizeof(p->name))return -1;memcpy(p->name+n,add,m+1);p->status[0]=0;return 0;
+    char add[8];if(name_cp932_utf8(raw,add))return -1;
+    size_t offsets[6];unsigned count=name_offsets(p->name,offsets);
+    if(count>=5)return -1;
+    unsigned cursor=p->name_text_cursor>count?count:p->name_text_cursor;
+    size_t pos=offsets[cursor],m=strlen(add),n=strlen(p->name);if(n+m>=sizeof(p->name))return -1;
+    memmove(p->name+pos+m,p->name+pos,n-pos+1);memcpy(p->name+pos,add,m);p->name_text_cursor=cursor+1;p->status[0]=0;return 0;
 }
 #include "history_voice.inc"
 #include "gallery_panel.inc"
@@ -161,13 +194,19 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
             }
             return;
         }
-        if(action==7){name_delete_last(p->name);p->status[0]=0;return;}
+        if(action==7){name_delete_at(p);return;}
         if(action==1){bootstrap_name_submit(b,NULL);SDL_StopTextInput();p->kind=0;return;}
         /* Y cycles the three native CName tables.  It replaces the old
            Switch OS keyboard call: the original always stays in this modal. */
         if(action==6){p->name_mode=(p->name_mode+1)%3;p->name_page=0;p->name_cursor=0;p->name_focus=1;p->status[0]=0;return;}
         if(action>=2&&action<=5){
-            if(p->name_focus==0){if(action==2)p->name_focus=1;else if(action==3)p->name_focus=1;return;}
+            if(p->name_focus==0){
+                size_t offsets[6];unsigned count=name_offsets(p->name,offsets);
+                if(action==2||action==3){p->name_focus=1;return;}
+                if(action==4&&p->name_text_cursor)p->name_text_cursor--;
+                else if(action==5&&p->name_text_cursor<count)p->name_text_cursor++;
+                return;
+            }
             if(p->name_focus==1){
                 unsigned row=p->name_cursor/18,col=p->name_cursor%18;
                 if(action==2){if(row)p->name_cursor-=18;else p->name_focus=0;}
@@ -330,9 +369,10 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind==14){
         if(ui_canvas(&p->image)||ui_akb_asset(b,"namepart.akb",&p->name_artwork))return;
         ui_scale(&p->image,&b->layers[0],0,0,640,480);
-        /* CName's six category buttons are the first six 64x24 cells in the
-           namepart atlas.  The second row is the highlighted state. */
-        for(unsigned i=0;i<6;i++)ui_blit(&p->image,&p->name_artwork,(int)i*64,p->name_mode==i%3?24:0,64,24,144+(int)i*72,368,1);
+        /* CName's atlas has three category buttons followed by four command
+           buttons.  The PC positions are x=72,144,216 then 288..504. */
+        for(unsigned i=0;i<3;i++)ui_blit(&p->image,&p->name_artwork,(int)i*64,p->name_mode==i?0:24,64,24,72+(int)i*72,368,1);
+        for(unsigned i=0;i<4;i++)ui_blit(&p->image,&p->name_artwork,(int)(3+i)*64,24,64,24,288+(int)i*72,368,1);
         /* The native grid is 18 columns by 12 rows, 24 pixels per cell, at
            (128,32).  Draw its CP932 labels from the recovered CName tables;
            the atlas supplies the same gold frame and the selected cell is
@@ -344,10 +384,23 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             else ui_fill(&p->image,x,y,24,24,0x181c24);
             if(raw!=0xffff){char label[8];if(!name_cp932_utf8(raw,label))ui_text(b,&p->image,label,x+3,y+3,18,18,0xffffff,0);}
         }
+        /* CName's kanji page bar is a separate set of hit areas at y=328:
+           ten kana-row jumps and one-step previous/next buttons.  The
+           namepart atlas stores normal buttons at y=64 and pressed buttons
+           at y=48, matching the category controls above. */
+        if(p->name_mode==1){
+            static const unsigned targets[]={0,14,58,104,129,136,160,167,173,184};
+            unsigned active=0;
+            for(unsigned i=0;i<10;i++)if(p->name_page==targets[i]){active=i;break;}
+            for(unsigned i=0;i<10;i++)ui_blit(&p->image,&p->name_artwork,(int)i*32,active==i?48:64,32,16,80+(int)i*36,328,1);
+            ui_blit(&p->image,&p->name_artwork,320,p->name_page?48:64,48,16,460,328,1);
+            ui_blit(&p->image,&p->name_artwork,368,p->name_page<184?48:64,48,16,512,328,1);
+        }
         /* Native name slots are x=260+24*n, y=414. */
-        ui_fill(&p->image,160,400,352,40,0x080b12);ui_fill(&p->image,160,400,352,2,0xd0a83c);ui_fill(&p->image,160,438,352,2,0xd0a83c);
-        ui_text(b,&p->image,p->name,260,410,240,24,0xffffff,0);
-        if(p->name_focus==0)ui_fill(&p->image,256,408,4,28,0xf4d45a);
+        ui_fill(&p->image,256,406,128,30,0x080b12);ui_fill(&p->image,256,406,128,2,0xd0a83c);ui_fill(&p->image,256,434,128,2,0xd0a83c);
+        for(unsigned i=1;i<5;i++)ui_fill(&p->image,260+(int)i*24,408,1,24,0x5c4c20);
+        ui_text(b,&p->image,p->name,260,410,120,24,0xffffff,0);
+        if(p->name_focus==0)ui_fill(&p->image,259+(int)p->name_text_cursor*24,408,2,24,0xf4d45a);
         ui_text(b,&p->image,"方向キー:文字選択   A:入力   X:削除   Y:種類   B:戻る",128,452,384,20,0xffe9a0,0);
         if(p->status[0])ui_text(b,&p->image,p->status,128,8,384,20,0xff8a7a,0);
         if(p->name_confirm){

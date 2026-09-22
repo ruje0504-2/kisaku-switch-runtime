@@ -36,13 +36,35 @@ static void test_native_quit(const char *root,const char *saves){
 }
 static void test_name_editor(const char *root,const char *saves,SDL_Renderer *renderer){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
-    b->extra_active=1;b->extra_kind=b->extra_request=14;
-    MessagePanel p={.kind=14,.name_focus=0};snprintf(p.name,sizeof(p.name),"鬼作");
+    /* Exercise the real 31/810 dispatch before driving the frontend.  The
+       old test only toggled extra_active by hand and could not catch a VM
+       that stayed suspended after the name modal closed. */
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){810,NULL}));
+    assert(!bootstrap_dispatch(b)&&b->extra_active&&b->extra_kind==14&&b->vm->status==KVM_READY);
+    MessagePanel p={.kind=14,.name_focus=0};snprintf(p.name,sizeof(p.name),"鬼作");p.name_text_cursor=1;
+    assert(!name_insert_text(&p,"郎")&&!strcmp(p.name,"鬼郎作")&&p.name_text_cursor==2);
+    name_delete_at(&p);assert(!strcmp(p.name,"鬼作")&&p.name_text_cursor==1);
+    assert(name_insert_text(&p,"一二三四")<0&&!strcmp(p.name,"鬼作"));
     message_panel_draw(&p,b,renderer);assert(p.name_artwork.pixels&&p.name_artwork.width==640&&p.name_artwork.height==300);
+    /* The PC kanji bar has ten fixed jump points and one-step arrows.  The
+       final jump is 184; the renderer must blank cells past the recovered
+       186-row table instead of indexing beyond it. */
+    p.name_mode=1;name_panel_pointer(&p,b,116,336,1);assert(p.name_page==14);
+    name_panel_pointer(&p,b,512,336,1);assert(p.name_page==15);
+    name_panel_pointer(&p,b,460,336,1);assert(p.name_page==14);
+    name_panel_pointer(&p,b,404,336,1);assert(p.name_page==184);
+    message_panel_draw(&p,b,renderer);assert(!b->error[0]);
+    /* Backspace is the atlas button at x=432, while the two arrows move the
+       text cursor even though the grid currently has focus. */
+    p.name_mode=0;p.name_focus=0;p.name_text_cursor=2;
+    name_panel_pointer(&p,b,432,380,1);assert(!strcmp(p.name,"鬼"));
+    snprintf(p.name,sizeof(p.name),"鬼作");p.name_text_cursor=0;
     message_panel_action(&p,b,2);assert(p.name_focus==1);
     p.name_cursor=0;message_panel_action(&p,b,0);assert(name_utf8_count(p.name)==3);
     p.name_focus=0;message_panel_action(&p,b,0);assert(p.name_confirm&&p.selected==0);
     message_panel_action(&p,b,0);assert(!p.kind&&!b->extra_active&&b->vm->bytes[1950]!=0);
+    assert(!b->error[0]&&b->vm->status==KVM_READY);
     SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.name_artwork);bootstrap_destroy(b);
     puts("Kisaku CName modal: namepart atlas, 18x12 CP932 grid, five-character limit and confirm flow: PASS");
 }
