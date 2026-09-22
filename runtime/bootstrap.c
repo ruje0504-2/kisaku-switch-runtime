@@ -15,6 +15,7 @@
 #include <time.h>
 #include <sys/stat.h>
 static int record_newline(void *owner,unsigned operand);
+static int record_bytes(void *owner,const uint8_t *data,size_t count);
 static int error(KBootstrap *b,const char *s){
     const char *name=b->vm->module>=0?b->vm->modules[b->vm->module].name:"<none>";
     if(b->vm->status==KVM_TEXT)snprintf(b->error,sizeof(b->error),"%s @0x%zx text: %s",name,b->vm->instruction_ip,s);
@@ -149,7 +150,7 @@ KBootstrap *bootstrap_create(const char *root){
 KBootstrap *bootstrap_create_split(const char *root,const char *save_root){
     if(!root||!save_root||strlen(root)>1800||strlen(save_root)>1800)return NULL;
     KBootstrap *b=calloc(1,sizeof(*b));if(!b)return NULL;b->vm=kvm_create();if(!b->vm){free(b);return NULL;}
-    b->vm->record_newline=record_newline;b->vm->record_owner=b;
+    b->vm->record_bytes=record_bytes;b->vm->record_newline=record_newline;b->vm->record_owner=b;
     ax_reset(&b->ax);
     ax_reset(&b->ax_extra);
     for(unsigned i=0;i<320;i++)b->animation_status[i]=255;
@@ -286,8 +287,17 @@ static int record_append(KBootstrap *b,const uint8_t *data,size_t count){
     KMessageRecord *r=&b->messages[b->message_index];size_t prefix=r->size?r->size-1:0;
     if(count>262144||prefix>262144-count)return error(b,"message recording limit");
     size_t next=prefix+count+1;
-    if(next>r->capacity){uint8_t *p=realloc(r->data,next);if(!p)return error(b,"message recording allocation failed");r->data=p;r->capacity=next;}
+    if(next>r->capacity){
+        /* Generic capture appends one instruction at a time. Grow in chunks
+           instead of reallocating the entire record for every opcode. */
+        size_t capacity=r->capacity?r->capacity:64;
+        while(capacity<next){if(capacity>262145/2){capacity=262145;break;}capacity*=2;}
+        uint8_t *p=realloc(r->data,capacity);if(!p)return error(b,"message recording allocation failed");r->data=p;r->capacity=capacity;
+    }
     memcpy(r->data+prefix,data,count);r->data[next-1]=0;r->size=next;return 0;
+}
+static int record_bytes(void *owner,const uint8_t *data,size_t count){
+    return record_append(owner,data,count);
 }
 /* 4fe4a0 -> 500b30. Repeated begin calls belong to the same record. */
 static int record_begin(KBootstrap *b){
@@ -308,14 +318,17 @@ static int record_begin(KBootstrap *b){
 }
 /* 46f880 starts records for text; 505820 records the bytes including NUL.
    Retain the text opcode as well, so adjacent text commands remain distinct.
-   Other native instruction types still require separate recording support. */
+   Generic instruction capture is driven by the VM record_bytes callback. */
 static int record_text(KBootstrap *b){
     if(!(b->vm->globals[0][50].number&0x80))return 0;
     if(b->vm->text_size>4096)return error(b,"message recording text limit");
     if(record_begin(b))return -1;
-    uint8_t command[4098];command[0]=(uint8_t)b->vm->opcode;
-    memcpy(command+1,b->vm->text,b->vm->text_size+1);
-    return record_append(b,command,b->vm->text_size+2);
+    uint8_t command[4099];size_t prefix=1;command[0]=(uint8_t)b->vm->opcode;
+    /* 46f880 records the opcode, then 46f3f0 records it again when
+       generic capture is enabled. 505820 records the body only once. */
+    if(b->vm->globals[0][50].number&0x200)command[prefix++]=command[0];
+    memcpy(command+prefix,b->vm->text,b->vm->text_size+1);
+    return record_append(b,command,b->vm->text_size+prefix+1);
 }
 static int record_newline(void *owner,unsigned operand){
     KBootstrap *b=owner;
@@ -323,8 +336,8 @@ static int record_newline(void *owner,unsigned operand){
     if(record_begin(b))return -1;
     /* 46f880 starts a text record for 1b as well as 0a/0b. Preserve the
        zero operand separately from the record's trailing sentinel. */
-    uint8_t command[2]={0x1b,(uint8_t)operand};
-    return record_append(b,command,sizeof(command));
+    uint8_t command[4]={0x1b,(uint8_t)operand,0x1b,(uint8_t)operand};
+    return record_append(b,command,(b->vm->globals[0][50].number&0x200)?4:2);
 }
 static unsigned le16(const uint8_t *p){return (unsigned)p[0]|((unsigned)p[1]<<8);}
 static int mam_prepare(KBootstrap *b,const char *voice);
@@ -979,7 +992,11 @@ static int choice_begin(KBootstrap *b){
     KVM *eval=malloc(sizeof(*eval));if(!eval)return error(b,"choice evaluator allocation failed");
     const char *labels[64]={0};size_t lengths[64]={0};
     for(unsigned i=0;i<list->count;i++){
-        memcpy(eval,v,sizeof(*eval));eval->stack=NULL;eval->stack_capacity=0;eval->raw=NULL;eval->raw_size=0;eval->module=list->items[i].module;eval->ip=list->items[i].ip;eval->sp=eval->depth=eval->script_depth=0;eval->status=KVM_READY;
+        memcpy(eval,v,sizeof(*eval));
+        /* This speculative label evaluator must not append through callbacks
+           whose owner is the live runtime, including on rejected bodies. */
+        eval->record_bytes=NULL;eval->record_newline=NULL;eval->record_owner=NULL;
+        eval->stack=NULL;eval->stack_capacity=0;eval->raw=NULL;eval->raw_size=0;eval->module=list->items[i].module;eval->ip=list->items[i].ip;eval->sp=eval->depth=eval->script_depth=0;eval->status=KVM_READY;
         unsigned texts=0;KStatus state=KVM_READY;
         for(unsigned n=0;n<1000;n++){
             state=kvm_run(eval,1000);
@@ -1192,6 +1209,11 @@ int bootstrap_dispatch(KBootstrap *b){
     /* Peek first: unsupported handlers preserve their arguments for diagnostics. */
     if(!v->sp||v->stack[v->sp-1].string)return error(b,"missing integer subcall");
     sub=v->stack[v->sp-1].number;
+    if(main==23&&sub==8){
+        /* 4fe060 -> 40b470 -> 406280 reads the slot vector count.
+           4fe5f0 discards EAX: no extra operand, VM result or state change. */
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
     if(main==23&&(sub==2||sub==3)){
         /* Validate and finish any allocation before consuming the selector. */
         if(sub==2){if(record_begin(b))return -1;}

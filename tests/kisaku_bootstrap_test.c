@@ -58,6 +58,8 @@ static void test_backlog_records(const char *root,const char *saves){
     r->data=malloc(4);r->capacity=r->size=4;memcpy(r->data,"abc",4);
     r->text=malloc(4);r->text_capacity=4;memcpy(r->text,"xyz",4);r->flag=1;
     assert(!backlog_call(b,0,1,(KValue){2,NULL})&&b->message_count==5&&b->message_index==1);
+    assert(!backlog_call(b,8,0,(KValue){0,NULL})&&b->vm->sp==1);
+    assert(b->message_count==5&&b->message_index==1&&b->messages[1].size);
     assert(!backlog_call(b,4,0,(KValue){0,NULL})&&b->vm->sp==2&&b->vm->stack[1].number==1);
     assert(b->vm->stack[0].number==789);
     assert(!backlog_call(b,6,1,(KValue){1,NULL})&&b->vm->sp==2&&b->vm->stack[1].number==1);
@@ -155,6 +157,66 @@ static void test_backlog_newline(const char *root,const char *saves){
     assert(!kvm_start(b->vm,id)&&bootstrap_run(b,100)<0&&b->vm->globals[0][47].number==123);
     bootstrap_destroy(b);
     puts("Kisaku backlog newline: automatic begin, opcode/operand retention, measurement isolation, disabled recording and failure: PASS");
+}
+static void test_backlog_capture(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    assert(!backlog_call(b,0,1,(KValue){2,NULL}));
+    b->vm->globals[0][50].number=0x80;
+    assert(!backlog_call(b,2,0,(KValue){0,NULL}));
+    /* Jump over an unexecuted literal; capture the branch operand, not the
+       skipped bytes. String terminator and record sentinel are distinct. */
+    static const uint8_t script[]={0,0,0,0,0x32,0x12,0x34,0x56,0x78,
+        0x33,'V',0,0x15,0,0,0,18,0x32,0,0,0,99,0};
+    static const uint8_t expected[]={0x32,0x12,0x34,0x56,0x78,
+        0x33,'V',0,0x15,0,0,0,18,0,0};
+    int id=kvm_add_module(b->vm,"capture-branch",script,sizeof(script));assert(id>=0);
+    b->vm->globals[0][50].number=0x380;
+    assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,100));
+    assert(b->messages[0].size==sizeof(expected)&&!memcmp(b->messages[0].data,expected,sizeof(expected)));
+    assert(b->vm->sp==2&&b->vm->stack[0].number==0x12345678&&!strcmp(b->vm->stack[1].string,"V"));
+    for(unsigned flags=0;flags<3;flags++){
+        b->vm->globals[0][50].number=(int[]){0,0x80,0x200}[flags];
+        assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,100));
+        assert(b->messages[0].size==sizeof(expected));
+    }
+    /* Capture enable/disable is sampled before the assignment's effect. */
+    static const uint8_t disable[]={0,0,0,0,0x32,0,0,0,0x80,0x32,0,0,0,50,0x0e,0};
+    id=kvm_add_module(b->vm,"capture-disable",disable,sizeof(disable));assert(id>=0);
+    b->vm->globals[0][50].number=0x380;
+    assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,100));
+    assert(b->vm->globals[0][50].number==0x80);
+    assert(b->messages[0].size==sizeof(expected)+11);
+    assert(!memcmp(b->messages[0].data+sizeof(expected)-1,disable+4,11));
+    static const uint8_t text[]={0,0,0,0,0x0b,'A',0,0x1b,0,0};
+    static const uint8_t text_expected[]={0x0b,0x0b,'A',0,0x1b,0,0x1b,0,0,0};
+    id=kvm_add_module(b->vm,"capture-text",text,sizeof(text));assert(id>=0);
+    b->vm->globals[0][50].number=(int32_t)0x80000280u;
+    assert(!kvm_start(b->vm,id)&&!bootstrap_run(b,100));
+    assert(b->messages[1].size==sizeof(text_expected)&&!memcmp(b->messages[1].data,text_expected,sizeof(text_expected)));
+    bootstrap_destroy(b);
+    b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    id=kvm_add_module(b->vm,"capture-no-slot",script,sizeof(script));assert(id>=0);
+    b->vm->globals[0][50].number=0x280;
+    assert(!kvm_start(b->vm,id)&&bootstrap_run(b,100)<0);
+    assert(b->vm->sp==0&&b->vm->ip==0&&b->message_index==-1);
+    bootstrap_destroy(b);
+    b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    assert(!backlog_call(b,0,1,(KValue){1,NULL}));
+    b->vm->globals[0][50].number=0x80;
+    assert(!backlog_call(b,2,0,(KValue){0,NULL}));
+    uint8_t *fill=malloc(262140);assert(fill);memset(fill,0x5a,262140);
+    assert(!b->vm->record_bytes(b,fill,262140));free(fill);
+    id=kvm_add_module(b->vm,"capture-full",script,sizeof(script));assert(id>=0);
+    b->vm->globals[0][50].number=0x380;
+    assert(!kvm_start(b->vm,id)&&bootstrap_run(b,100)<0);
+    assert(b->vm->sp==0&&b->vm->ip==0&&b->messages[0].size==262141);
+    assert(b->messages[0].data[262139]==0x5a&&!b->messages[0].data[262140]);
+    static const uint8_t tail[]={1,2,3,4};
+    assert(!b->vm->record_bytes(b,tail,sizeof(tail))&&b->messages[0].size==262145);
+    assert(!memcmp(b->messages[0].data+262140,tail,sizeof(tail))&&!b->messages[0].data[262144]);
+    assert(b->vm->record_bytes(b,tail,1)<0&&b->messages[0].size==262145);
+    bootstrap_destroy(b);
+    puts("Kisaku backlog capture: exact operands, strings, executed branch, flag transitions, text overlap, missing-slot/size-limit isolation: PASS");
 }
 static void bowling_free(void *p){bowling_released++;free(p);}
 static int call(KBootstrap *b,int sub,int action){
@@ -912,6 +974,15 @@ static void test_startup_native_ax(const char *root,const char *saves){
 }
 static void test_choice_stack_isolation(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* Capturing commands in the live VM must not capture speculative choice
+       evaluation, even when the body is rejected after growing its stack. */
+    assert(!backlog_call(b,0,1,(KValue){1,NULL}));
+    b->vm->globals[0][50].number=0x280;
+    assert(!backlog_call(b,2,0,(KValue){0,NULL}));b->vm->sp=0;
+    b->messages[0].data=malloc(2);assert(b->messages[0].data);
+    b->messages[0].data[0]=0x7e;b->messages[0].data[1]=0;
+    b->messages[0].size=b->messages[0].capacity=2;
+    uint8_t *record=b->messages[0].data;
     /* An unsupported choice body still executes its isolated evaluator first.
        Force multiple reallocations; the caller's borrowed string must survive. */
     uint8_t code[4+200*5+1]={0};unsigned at=4;
@@ -924,6 +995,9 @@ static void test_choice_stack_isolation(const char *root,const char *saves){
     assert(bootstrap_dispatch(b)<0&&strstr(b->error,"choice body unsupported"));
     assert(b->vm->stack==original&&b->vm->stack_capacity==capacity&&b->vm->sp==1);
     assert(b->vm->stack[0].number==123&&b->vm->stack[0].string==sentinel);
+    assert(b->messages[0].data==record&&b->messages[0].size==2&&b->messages[0].capacity==2);
+    assert(record[0]==0x7e&&!record[1]&&b->message_index==0);
+    assert(b->vm->globals[0][50].number==0x380);
     bootstrap_destroy(b);
     puts("Choice evaluation owns its stack: caller survives growth and rejected body: PASS");
 }
@@ -1204,7 +1278,7 @@ static void test_ui_and_logo(const char *root,const char *saves){
 }
 int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--backlog")){
-        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);return 0;
+        test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
     }
     if(argc!=3)return 2;
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);
@@ -1686,7 +1760,7 @@ int main(int argc,char **argv){
     test_backlog_records(argv[1],argv[2]);
     test_native_wait(argv[1],argv[2]);
     test_backlog_lifecycle(argv[1],argv[2]);
-    test_backlog_newline(argv[1],argv[2]);
+    test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);
     test_native_tint(argv[1],argv[2]);
     assert(!call(b,1011,0));
     b->vm->bytes[3600]=b->vm->bytes[5038]=b->vm->bytes[4001]=b->vm->bytes[4004]=0;

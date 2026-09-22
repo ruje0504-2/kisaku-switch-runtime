@@ -621,3 +621,11 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 验证全部exit 0：`./build-host.sh`、`./test-host.sh 鬼作`、`build/kisaku-bootstrap-test 鬼作 local/backlog-lifecycle-test-saves --backlog`、同专项ASan/UBSan（detect_leaks=0）、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`。日志local/backlog-newline-{build,focused,test-host,asan-build,asan,switch,package}.log。构建与交付主入口NRO SHA256一致：`d8807c889fb574e9c78752b252d96c87bba4470cdc1e6809af42ad683b99893a`。
 
 ①尚缺通用字节捕获、多语音、文字状态、23/5/7/8及前端/存档统一；29非零更新标志菜单泵仍未实现。实机、真实场景完整回放和PC逐帧对照仍未验证。继续①，不提前进入参数总审计或⑤。icon.png留作后续NRO/NSP打包，不混入本提交。
+
+## 2026-09-22 Codex接手：通用回看捕获与临时VM隔离
+
+- 保留并完成接手时未提交的flag0x200命令捕获批次；原版读取字节、分支跳过、开关变化及文字/换行双路径规则见backlog-native.md。
+- 修复choice_begin复制VM时沿用正式记录回调的问题：临时选项求值不再修改实际回看命令。回归同时断言正式栈和回看指针/容量/字节/索引/标志不变。
+- 23/8按4fe060→40b470→406280核对：无额外参数，读取容器容量的EAX被分发器丢弃，不向脚本压值且不改记录。尚未实现的23/5、7指针返回及通用重放仍保留显式边界。
+- `./build-host.sh`、`./test-host.sh 鬼作`、回看/等待/选项隔离专项ASan/UBSan、`./build-switch.sh`、`git diff --check`通过；日志local/backlog-takeover-{build,full,sanitized,switch}.log。完整回归包括2191张AKB解码和资源审计。
+- 新NRO SHA-256：`9993778bb6ca2191bd4d96b4d54f723599da44d9c4961e38bf611642267d0785`。仅静态核对与主机/Switch交叉构建，未运行PC原版，Switch实机和全路线未验证；完整回看重放、多语音和前端/存档统一仍未完成。

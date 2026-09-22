@@ -108,6 +108,17 @@ KStatus kvm_run(KVM *v,unsigned budget) {
         if(v->ip==m->size){return_frame(v);continue;}
         if(v->ip>m->size||!m->boundaries[v->ip]){fail(v,"invalid instruction pointer");break;}
         v->instruction_ip=v->ip;unsigned op=v->opcode=m->code[v->ip++];v->instructions++;
+        /* 46f3f0/46f5e0/507580: capture bytes as read, before effects or
+           jumps. Text/newline have an additional native recording path. */
+        if(op!=0x0a&&op!=0x0b&&op!=0x1b&&v->record_bytes&&
+           (v->globals[0][50].number&0x280)==0x280){
+            size_t count=1;
+            if(op==0x14||op==0x15||op==0x16||op==0x19||op==0x1a||op==0x32)count=5;
+            else if(op==0x33)count+=strlen((const char *)m->code+v->ip)+1;
+            if(v->record_bytes(v->record_owner,m->code+v->instruction_ip,count)){
+                v->ip=v->instruction_ip;fail(v,"command recording failed");break;
+            }
+        }
         int32_t index=0;KValue value;uint32_t target=0;
         if(op==0x14||op==0x15||op==0x16||op==0x19||op==0x1a||op==0x32){target=be32(m->code+v->ip);v->ip+=4;}
         switch(op) {
