@@ -138,6 +138,15 @@ static void test_saved_parameters(SaveMenu *m,KBootstrap *b,SDL_Renderer *r,cons
     assert(character_dynamic_source_y(saved,2)==560);
     memset(saved->bytes,0,saved->byte_count);saved->bytes[152]=1;saved->bytes[184]=1;
     assert(character_dynamic_source_y(saved,5)==560);
+    /* Momo/Nadeshiko and Aoi use distinct final-state strips in statfr.akb;
+       these are easy to miss when all roles are reduced to the common 0x250
+       row.  Cross-check the native 0x2b0/0x290 source offsets. */
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[182]=1;
+    assert(character_dynamic_source_y(saved,3)==688);
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[183]=1;
+    assert(character_dynamic_source_y(saved,4)==688);
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[186]=1;
+    assert(character_dynamic_source_y(saved,7)==656);
     memcpy(saved->bytes,original,saved->byte_count);free(original);
     m->detail_index=0;save_menu_action(m,b,1);m->detail_steps=0;character_detail_frame(m);
     assert(!m->character_detail&&m->active);

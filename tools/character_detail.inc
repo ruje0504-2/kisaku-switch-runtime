@@ -58,6 +58,28 @@ static unsigned character_dynamic_source_y(const KFlags *f,unsigned role){
         }
         return 592;
     }
+    /* The native CGirlStatus branches do not share one final-state row:
+       Momo/Nadeshiko use the lower 0x2b0 strip, while Aoi uses 0x290.
+       Collapsing every z==1 state to the common 0x250 row made those three
+       completed characters show the wrong (ordinary) status artwork. */
+    if(role==3||role==4){
+        if(p==1&&q==0&&z==0)return 560;
+        if(q==0||s!=0||z!=0){
+            if(s==1&&z==0)return 624;
+            if(z==1)return 688;
+            return 560;
+        }
+        return 592;
+    }
+    if(role==7){
+        if(p==1&&q==0&&z==0)return 560;
+        if(q==0||s!=0||z!=0){
+            if(s==1&&z==0)return 624;
+            if(z==1)return 656;
+            return 560;
+        }
+        return 592;
+    }
     /* Aya and Shou keep the native "opening" strip even when their final
        completion byte is already set; their 004ac3b0 branch tests only the
        primary and progress bytes. */
