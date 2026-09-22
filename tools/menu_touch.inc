@@ -75,7 +75,7 @@ static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int
     if(p->kind==15){if(y>=336&&y<370)message_panel_action(p,b,x<320?0:1);return;}
     if(p->kind==14){if(y>=242&&y<267&&x>=200&&x<443)message_panel_action(p,b,x<272?7:x<358?0:1);else if(y>=206&&y<232&&x>=186&&x<454)message_panel_action(p,b,6);return;}
     if(p->kind==9){
-        if(x>=24&&x<256&&y>=20&&y<468){unsigned i=(unsigned)(y-20)/28;if((y-20)%28<20&&i<16){p->selected=i;message_panel_action(p,b,0);}}
+        if(x>=24&&x<256&&y>=20&&y<468){unsigned i=(unsigned)(y-20)/28;if((y-20)%28<20&&i<bootstrap_music_count()){p->selected=i;message_panel_action(p,b,0);}}
         if(y>=420&&y<448){if(x>=340&&x<460)message_panel_action(p,b,6);else if(x>=484&&x<556)message_panel_action(p,b,1);}return;
     }
     if(p->kind==12){if(y>=236&&y<264&&((x>=236&&x<308)||(x>=340&&x<412))){p->selected=x>=340;message_panel_action(p,b,0);}return;}
