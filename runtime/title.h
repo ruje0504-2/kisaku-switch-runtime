@@ -6,6 +6,7 @@ typedef struct {
     unsigned count,age,active,variant;
     int selected,unlocked;
     int native_ids[6];
+    unsigned native_sources[6];
     unsigned extra,extra_ids[5],main_count;
 } KTitle;
 int ktitle_draw(const KTitle *t,KImage *screen);

@@ -13,9 +13,9 @@ int ktitle_draw(const KTitle *t,KImage *screen){
     if(!t||!screen||!screen->pixels||screen->width!=640||screen->height!=480||t->background.width<640||t->background.height<480||!t->background.pixels||!t->parts.pixels)return -1;
     for(unsigned y=0;y<480;y++)memcpy(screen->pixels+y*screen->stride,t->background.pixels+y*t->background.stride,640*4);
     if(t->variant==4){
-        if(t->count<5||t->count>6)return -1;
+        if(!t->count||t->count>6)return -1;
         for(unsigned i=0;i<t->count;i++){
-            int id=t->native_ids[i];unsigned source=id<0?(i==1?1:3):(unsigned)id;
+            int id=t->native_ids[i];unsigned source=id<0?t->native_sources[i]:(unsigned)id;
             unsigned sy=(source/3)*128+(id<0?96:t->selected==(int)i?32:0);
             if(blend(screen,&t->parts,452,260+(int)i*36,(source%3)*188,sy,188,32))return -1;
         }

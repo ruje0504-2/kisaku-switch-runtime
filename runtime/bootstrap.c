@@ -1389,8 +1389,8 @@ int bootstrap_dispatch(KBootstrap *b){
         v->sp-=count;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==110&&v->sp>=3&&!v->stack[v->sp-2].string&&!v->stack[v->sp-3].string&&
-       (v->stack[v->sp-2].number==0||v->stack[v->sp-2].number==1)&&v->stack[v->sp-3].number==0){
-        if(v->stack[v->sp-2].number==0?title_initial(b):title_open_native(b))return -1;
+       (v->stack[v->sp-2].number==0||v->stack[v->sp-2].number==1)&&v->stack[v->sp-3].number>=0&&v->stack[v->sp-3].number<=3){
+        if(v->stack[v->sp-2].number==0?title_initial(b,(unsigned)v->stack[v->sp-3].number):title_open_native(b,(unsigned)v->stack[v->sp-3].number))return -1;
         v->sp-=3;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==10&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==3){

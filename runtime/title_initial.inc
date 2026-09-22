@@ -1,25 +1,41 @@
-/* CTitle 4ed590, mode 0. Action 0 prepares layer 1; the script presents it. */
-static int title_initial(KBootstrap *b){
-    KVM *v=b->vm;KImage *dst=&b->layers[1],*bg=&b->layers[2],*parts=&b->layers[3];
-    if(!dst->pixels||!bg->pixels||!parts->pixels||dst->width<640||dst->height<480||
-       bg->width<640||bg->height<480||parts->width<564||parts->height<256||
-       v->global_count[1]<=60||v->globals[1][60].string||v->byte_count<=1058)
-        return error(b,"CTitle initial surfaces or progress invalid");
-    int unlocked=v->globals[1][60].number==1;
-    unsigned x[6]={0,188,376,0,188,376},y[6]={0,unlocked?0:96,0,unlocked?128:224,128,128};
-    unsigned count=v->bytes[1058]?6:5;
-    if(count==5){x[4]=376;y[4]=128;}
-    for(unsigned row=0;row<480;row++)memcpy(dst->pixels+row*dst->stride,bg->pixels+row*bg->stride,640*4);
-    for(unsigned i=0;i<count;i++)for(unsigned row=0;row<32;row++)for(unsigned col=0;col<188;col++){
-        const uint8_t *src=parts->pixels+(y[i]+row)*parts->stride+(x[i]+col)*4;
-        uint8_t *out=dst->pixels+(260+i*36+row)*dst->stride+(452+col)*4;
-        for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(out[c]*(255-src[3])/255+src[c]*src[3]/255);
+/* CTitle 4ed590: modes 0/2 main menus, modes 1/3 appendix menus.
+   Disabled entries retain their atlas cell but cannot return a selection. */
+static int title_layout_native(KBootstrap *b,unsigned mode,KTitle *t){
+    KVM *v=b->vm;
+    if(mode>3||v->global_count[1]<=60||v->globals[1][60].string||v->byte_count<=4009)
+        return error(b,"CTitle mode or progress invalid");
+    t->variant=4;t->selected=-1;t->unlocked=v->globals[1][60].number==1;
+    unsigned ids[6]={0,1,2,3,4,5};int enabled[6]={1,t->unlocked,1,t->unlocked,1,1};
+    t->count=6;
+    if(mode==0){if(!v->bytes[1058]){t->count=5;ids[4]=5;}}
+    else if(mode==1){
+        unsigned extra[]={6,7,8,9,13,10};memcpy(ids,extra,sizeof(ids));
+        unsigned flags[]={4005,4002,3290,4004};
+        for(unsigned i=0;i<4;i++)enabled[i]=v->bytes[flags[i]]==1;
+    }else if(mode==2){
+        enabled[2]=v->bytes[3600]!=0;t->count=3;
+        if(v->bytes[4009]==1){ids[t->count]=11;enabled[t->count++]=1;}
+        ids[t->count]=3;enabled[t->count++]=t->unlocked;
+        ids[t->count]=12;enabled[t->count++]=1;
+    }else{
+        t->count=3;ids[0]=6;ids[1]=8;ids[2]=10;
+        enabled[0]=v->bytes[3601]==1;enabled[1]=v->bytes[3290]==1;enabled[2]=1;
     }
+    for(unsigned i=0;i<t->count;i++){t->native_sources[i]=ids[i];t->native_ids[i]=enabled[i]?(int)ids[i]:-1;}
+    return 0;
+}
+static int title_initial(KBootstrap *b,unsigned mode){
+    KTitle t={0};if(title_layout_native(b,mode,&t))return -1;
+    t.background=b->layers[2];t.parts=b->layers[3];
+    KImage dst=b->layers[1];
+    if(dst.width<640||dst.height<480)return error(b,"CTitle initial surface too small");
+    dst.width=640;dst.height=480;
+    if(ktitle_draw(&t,&dst))return error(b,"CTitle initial surfaces invalid");
     return 0;
 }
 
-static int title_open_native(KBootstrap *b){
-    if(title_initial(b))return -1;
+static int title_open_native(KBootstrap *b,unsigned mode){
+    if(title_initial(b,mode))return -1;
     uint8_t *area=NULL;size_t size=0;
     if(read_named(&b->data,"title.area",&area,&size)||!size){free(area);return error(b,"CTitle area resource missing");}
     free(area);
@@ -31,10 +47,8 @@ static int title_open_native(KBootstrap *b){
         *dest[i]=(KImage){0,0,src->width,src->height,stride,pixels};
         for(unsigned y=0;y<src->height;y++)memcpy(pixels+y*stride,src->pixels+y*src->stride,stride);
     }
-    t.variant=4;t.active=1;t.age=64;t.selected=-1;t.unlocked=b->vm->globals[1][60].number==1;
-    t.count=b->vm->bytes[1058]?6:5;
-    int ids[]={0,t.unlocked?1:-1,2,t.unlocked?3:-1,4,5};
-    memcpy(t.native_ids,ids,sizeof(ids));if(t.count==5)t.native_ids[4]=5;
+    if(title_layout_native(b,mode,&t)){ktitle_free(&t);return -1;}
+    t.active=1;t.age=64;
     if(ktitle_draw(&t,&b->layers[0])){ktitle_free(&t);return error(b,"CTitle initial composition failed");}
     ktitle_free(&b->title);b->title=t;return 0;
 }

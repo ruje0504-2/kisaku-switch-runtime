@@ -1343,11 +1343,57 @@ static void test_ui_and_logo(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("Kisaku logo PCM gain/mixing, message margins/buttons and native choice rows/paging/disabled hits: PASS");
 }
+static void title_test_wait(KBootstrap *b){
+    for(unsigned i=0;i<3000;i++){
+        int rc=bootstrap_run(b,100000);
+        if(rc<0)fprintf(stderr,"title path: %s\n",b->error);
+        assert(rc>=0);if(b->title.active&&b->title.age>=64)return;bootstrap_frame(b);
+    }assert(!"title path timed out");
+}
+static int title_test_call(KBootstrap *b,int mode,int action){
+    b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;b->error[0]=0;
+    assert(!kvm_push(b->vm,(KValue){mode,NULL}));
+    assert(!kvm_push(b->vm,(KValue){action,NULL}));
+    assert(!kvm_push(b->vm,(KValue){110,NULL}));
+    return bootstrap_dispatch(b);
+}
+static void test_title_appendix(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);
+    /* Follow open.mes from the actual appendix button (return 2). */
+    b->title.selected=2;bootstrap_confirm(b);
+    title_test_wait(b);assert(b->title.count==6&&b->title.native_ids[5]==10);
+    b->title.selected=5;bootstrap_confirm(b);title_test_wait(b);
+    assert(b->title.native_ids[0]==0&&b->title.native_ids[b->title.count-1]==5);
+    const unsigned flags[]={4005,4002,3290,4004};
+    for(unsigned i=0;i<4;i++)b->vm->bytes[flags[i]]=0;
+    assert(!title_test_call(b,1,1));
+    for(unsigned i=0;i<4;i++)assert(b->title.native_ids[i]==-1&&b->title.native_sources[i]==6+i);
+    b->vm->globals[0][18].number=987;bootstrap_pointer(b,500,270,1);
+    assert(b->title.active&&b->vm->globals[0][18].number==987);
+    for(unsigned i=0;i<4;i++)b->vm->bytes[flags[i]]=1;
+    assert(!title_test_call(b,1,0));assert(!title_test_call(b,1,1));
+    const int expected[]={6,7,8,9,13,10};
+    for(unsigned i=0;i<6;i++)assert(b->title.native_ids[i]==expected[i]);
+    for(unsigned i=0;i<6;i++){
+        b->title.selected=(int)i;assert(!ktitle_draw(&b->title,&b->layers[0]));
+        bootstrap_confirm(b);assert(!b->title.active&&b->vm->globals[0][18].number==expected[i]);
+        assert(!title_test_call(b,1,1));
+    }
+    b->vm->bytes[3601]=1;assert(!title_test_call(b,3,1));
+    assert(b->title.count==3&&b->title.native_ids[0]==6&&b->title.native_ids[1]==8&&b->title.native_ids[2]==10);
+    b->vm->globals[1][60].number=1;
+    b->vm->bytes[4009]=1;b->vm->bytes[3600]=1;assert(!title_test_call(b,2,1));
+    assert(b->title.count==6&&b->title.native_ids[3]==11&&b->title.native_ids[5]==12);
+    assert(title_test_call(b,4,1)<0&&b->vm->sp==3);
+    bootstrap_destroy(b);puts("Kisaku main-to-appendix script round trip, four layouts, locks and returns: PASS");
+}
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--backlog")){
         test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
     }
     if(argc!=3)return 2;
+    test_title_appendix(argv[1],argv[2]);
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);
     int result=bootstrap_run(b,100000);
     for(unsigned frame=0;result==1&&frame<1000&&!(b->title.active&&b->title.age>=64);frame++){bootstrap_frame(b);result=bootstrap_run(b,100000);}

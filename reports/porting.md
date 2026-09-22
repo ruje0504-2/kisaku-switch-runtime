@@ -637,3 +637,12 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 完整主机回归通过（local/backlog-replay-full.log）；增加的真实开场记录测试与回看专项ASan/UBSan通过（local/backlog-replay-sanitized.log）。Switch构建修正错误提示字符串可能截断的-Werror警告后通过，日志local/backlog-replay-switch.log。
 - NRO SHA-256：`12018f35c3f1e160236d21167e5f06decbe6f9ba2c4adfbe8f35dae385220434`。完整回看仍缺存档统一、阴影/跨记录状态和部分调用；Switch实机、全路线未验证。
 - 最终清空旧历史修复后重新运行 `./build-host.sh`、`./test-host.sh 鬼作` 和 `./build-switch.sh` 均通过；日志local/backlog-replay-final-{build,tests,switch}.log。前端ASan/UBSan含70条记录和顺序语音专项通过，SDL3库路径设置见backlog-native.md。`git diff --check`通过。
+
+## 2026-09-22 附录标题入口补齐与真实脚本缺口核查
+
+- 原因：31/110 的分发条件只接受 mode0；原始 open.mes 的附录按钮返回2，随后使用 mode1，之前没有覆盖该路径。
+- 按 4fbc40/4ed590 及汇编补齐模式0..3的动作0/1：普通/秃作主菜单与附录布局，独立保存禁用项图集编号。附录四项解锁按 byte4005/4002/3290/4004 等于1，返回6/7/8/9/13/10；秃作附录按 byte3601/3290，返回6/8/10。原始进度保持不变，没有默认解锁。
+- 原始 open.mes 主菜单→附录→返回主菜单通过；全部四种布局、禁用点击、各项返回编号、非法模式保留参数专项通过。初始 layer1 允许大于640×480，仍仅绘制原版客户端矩形。
+- 进一步逐项探针明确暴露旧缺口：CG 31/300、音乐31/330、视频31/60、秃作切换14/12（参数201）仍报错；回想可进入场景选择模态。本轮不声称附录内容全部完成。详情见 remaining-work.md；本地诊断 local/title-children-probe.log。
+- 验证：`./build-host.sh`、`./test-host.sh 鬼作`、`build/kisaku-bootstrap-test 鬼作 <临时存档目录> --title`、对应 ASan/UBSan 专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。日志 local/title-appendix-{build,tests,sanitized,switch,package}.log。
+- NRO SHA-256：`5b40b3b17efe0f7f35b1a2f0fccd06ba609b50b6af3775208d3b9efdd9610abc`。Switch实机、附录各内容完整回放、全部路线未验证；未运行PC程序。
