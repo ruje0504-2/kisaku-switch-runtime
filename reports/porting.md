@@ -928,3 +928,11 @@ L存档保持原入口，新增ZL以load=1打开原读档界面；撤除剧情ZL
 - `./build-switch.sh`通过（local/scene-animation-switch.log）；草稿最初的3处misleading-indentation已修正，最终-Werror构建无告警。`git diff --check`通过。
 
 最终NRO SHA256：`284b33ffd0994559c02cf1ef946b3dde3d619f793f7fb662435115e964dcd1ee`。FSR80和L/ZL存读档保持。此轮未重复全部test-host.sh；全回想逐槽/全部进度组合、Win32精确时序、Switch实机动画/性能未验证。仍不能称整个移植完成，最新具体缺口见remaining-work.md。
+
+## 2026-09-23 周末书目子菜单原版取消返回
+
+- 静态核对 `004f1dd0`：CNormalSelect 的取消处理读取 byte1500；非零时设置模态返回值0并结束，`004fb260` 将返回值写入 sys18。移植版此前完全漏掉这条分支，导致周末书目菜单无法按脚本返回上层。现按原版设置 sys18=0、关闭选项并恢复底图，不向VM栈追加伪造值、不触发旧消息窗口隐藏。byte1500为0时不开放退出。汇编证据为 `local/weekend-cancel-asm.log`。
+- 新增 `kisaku-bootstrap-test --weekend`，同时接入默认完整运行时测试。使用真实 `sat01_2.mes` 从开头运行，在初始化正常参数窗后覆盖两本/三本书目录、960×720透明文字输出、取消返回后重建父列表、不可取消的父菜单，以及再次选择后 `book01_1.mes` 与参数演出完整结束。修复前断言失败见 `local/weekend-before.log`，修复后通过见 `local/weekend-after.log`。
+- 该分支是书目菜单，并非角色簿。测试的起点为标题初始化后装入周末MES与必要参数窗，不是从新游戏走完一周。此前照片中的全部视觉异常、其他周次/全部书目、Switch实机仍未验证。未运行PC原版；高清呈现、FSR80与字体配置不变。
+- 验证：`sh local/weekend-test-build.sh` 主机编译通过（取自build-host.sh的原始bootstrap测试编译命令）；`build/kisaku-bootstrap-test 鬼作 local/weekend-probe-save --weekend` 及不带专项参数的完整bootstrap运行时回归通过，日志 `local/weekend-after.log` / `local/weekend-bootstrap-full.log`。`./build-switch.sh` 通过（-Werror），`python3 tools/package_sd.py 鬼作` 通过。未重跑完整test-host.sh，也未做Switch实机验证。
+- 交付主入口与build-switch/kisaku.nro一致，SHA-256：`266c0211bc4566ce37f9300926bb52594c5ae4d2376fb8f0888b762c50cda695`。

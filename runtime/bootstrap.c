@@ -3366,6 +3366,15 @@ void bootstrap_cancel(KBootstrap *b){
     if(bootstrap_bowling_active(b))return;
     if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
+    /* CNormalSelect::virtual_112 (4f1dd0): byte1500 permits returning
+       zero. In particular, Saturday book submenus use this to rebuild
+       their parent menu. Do not route that cancel into a stale message. */
+    if(b->choice_active&&b->choice_normal&&b->vm->bytes[1500]){
+        b->vm->globals[0][18]=(KValue){0,NULL};
+        b->choice_normal=b->choice_active=0;
+        memcpy(b->layers[0].pixels,b->choice_base.pixels,640*480*4);
+        return;
+    }
     if(b->letter_transition||b->letter_exit_pending)return;
     if(b->letter_active){
         if(b->message_user_hidden&&b->vm->byte_count>4010&&b->vm->bytes[4010]){

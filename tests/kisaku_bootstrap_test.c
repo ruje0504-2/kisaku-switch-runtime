@@ -1665,7 +1665,74 @@ static void test_hires_present(const char *root,const char *saves){
     puts("960x720 text: real startup reveal, clean backing, immutable raw and modified-layer fallback: PASS");
 }
 
+/* Original Saturday script, not a synthetic replacement of its menu bodies. */
+static void weekend_wait_choice(KBootstrap *b){
+    for(unsigned f=0;f<10000;f++){
+        int rc=bootstrap_run(b,100000);
+        if(rc<0)fprintf(stderr,"weekend choice: %s\n",b->error);
+        assert(rc>=0&&!b->error[0]);
+        if(b->choice_active)return;
+        if(b->message_active||b->wait_input)bootstrap_confirm(b);
+        bootstrap_frame(b);
+    }
+    assert(!"weekend choice timed out");
+}
+static void test_weekend_books(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);
+    b->title.active=0;b->present_hires=1;
+    /* Normal game initializes the parameter window before the Saturday MES. */
+    b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    const int args[]={3,0,10,528};
+    for(unsigned i=0;i<4;i++)assert(!kvm_push(b->vm,(KValue){args[i],NULL}));
+    assert(!bootstrap_dispatch(b));
+    uint8_t *data=NULL;size_t size=0;
+    assert(!ai6_read_named(&b->scripts,"sat01_2.mes",&data,&size));
+    int id=kvm_add_module(b->vm,"sat01_2.mes",data,size);assert(id>=0);
+    b->module_data[id]=data;assert(!kvm_start(b->vm,id));
+    weekend_wait_choice(b);
+    for(unsigned pass=0;pass<2;pass++){
+        assert(b->choice_normal&&!b->vm->bytes[1500]);
+        unsigned outer=b->choice_count,sp=b->vm->sp;
+        bootstrap_cancel(b);assert(b->choice_active&&b->choice_count==outer&&b->vm->sp==sp);
+        b->choice_selected=-1;
+        for(unsigned i=0;i<outer;i++)if(b->choice_returns[i]==3)b->choice_selected=(int)i;
+        assert(b->choice_selected>=0);bootstrap_confirm(b);weekend_wait_choice(b);
+        assert(b->choice_normal&&b->vm->bytes[1500]&&b->choice_count==2+pass);
+        assert(b->choice_lengths[0]==26&&b->choice_lengths[1]==26);
+        const KImage *overlay=NULL;bootstrap_present_layers(b,&overlay);
+        assert(overlay&&overlay->width==960&&overlay->height==720);
+        unsigned ink=0;for(unsigned i=0;i<960*720;i++)ink+=overlay->pixels[i*4+3]!=0;
+        assert(ink>100); /* Both native labels must survive the HD compositor. */
+        sp=b->vm->sp;bootstrap_cancel(b);
+        assert(!b->choice_active&&!b->choice_normal&&b->vm->globals[0][18].number==0&&b->vm->sp==sp);
+        assert(!memcmp(b->layers[0].pixels,b->choice_base.pixels,640*480*4));
+        b->vm->bytes[674]=1; /* Unlock the third book before the next visit. */
+        weekend_wait_choice(b);assert(b->choice_count==outer&&!b->vm->bytes[1500]);
+    }
+    /* Confirm after returning twice: the real book script and parameter
+       animation must still finish, without a residual choice result. */
+    for(unsigned i=0;i<b->choice_count;i++)if(b->choice_returns[i]==3)b->choice_selected=(int)i;
+    bootstrap_confirm(b);weekend_wait_choice(b);
+    b->choice_selected=0;bootstrap_confirm(b);
+    unsigned animated=0,finished=0;
+    for(unsigned f=0;f<10000;f++){
+        int rc=bootstrap_run(b,100000);
+        if(rc<0)fprintf(stderr,"weekend book: %s\n",b->error);
+        assert(rc>=0&&!b->error[0]);animated|=b->param_animation_active;
+        if(!rc){finished=1;break;}
+        assert(!b->choice_active);
+        if(b->message_active||b->wait_input)bootstrap_confirm(b);
+        bootstrap_frame(b);
+    }
+    unsigned book=0;for(unsigned i=0;i<b->vm->module_count;i++)
+        if(!strcmp(b->vm->modules[i].name,"book01_1.mes"))book=1;
+    assert(finished&&book&&animated&&!b->param_animation_active&&!b->choice_active);
+    bootstrap_destroy(b);
+    puts("Weekend original MES: locked/unlocked book lists, HD labels, cancel=0, parent return, book playback and parameter completion: PASS");
+}
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--weekend")){test_weekend_books(argv[1],argv[2]);return 0;}
+
     if(argc==4&&!strcmp(argv[3],"--hires")){test_hires_present(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--native-cg")){test_native_cg(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--audio-overlap")){test_audio_overlap(argv[1],argv[2]);return 0;}
@@ -1676,6 +1743,7 @@ int main(int argc,char **argv){
         test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
     }
     if(argc!=3)return 2;
+    test_weekend_books(argv[1],argv[2]);
     test_title_appendix(argv[1],argv[2]);
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);
     int result=bootstrap_run(b,100000);
