@@ -432,14 +432,15 @@ int main(int argc,char **argv){
                 fprintf(stderr,"HQ text texture upload failed: %s\n",SDL_GetError());goto done;
             }
             unsigned cas_strength=raw_present?0u:(unsigned)bootstrap_cas_strength(b);
+            present_gles.fsr1=!raw_present&&bootstrap_fsr_enabled(b);
+            present_gles.fsr_strength=(unsigned)bootstrap_fsr_strength(b);
             present_gles.edge_strength=raw_present?0u:(unsigned)bootstrap_edge_strength(b);
             if(!raw_present){
-                /* The normal presentation path is always a filtered 1.5x
-                   reconstruction. GLES uses bounded Catmull-Rom sampling and the
-                   optional output-pixel edge pass (before HQ text); EdgeStrength=0
-                   restores the old CASStrength path. The CPU fallback retains its
-                   existing bilinear/RCAS equations.  --raw-present remains the
-                   explicit nearest-neighbour reference path. */
+                /* Presentation-only filters run before HQ text: FSR1 uses
+                   EASU then RCAS; PresentFilter=edge keeps the previous bounded
+                   cubic/edge path (EdgeStrength=0 keeps legacy CASStrength).
+                   CPU fallback remains bilinear/custom sharpening, while
+                   --raw-present is the explicit nearest reference. */
                 if(!present_gles_draw(&present_gles,r,source,&dst,cas_strength)){
                     /* GLES2 handled the full-screen pass. */
                 }else {

@@ -7,6 +7,7 @@
 #endif
 typedef struct {
     GLuint program,source,target,fbo;
+    unsigned fsr1,fsr_strength;
     unsigned edge_strength; /* 0 keeps the original single-pass filter. */
     int target_w,target_h;
     uint8_t *bgra;
@@ -32,7 +33,10 @@ static int present_gles_init(KPresentGles *p){
            swizzle. Luma-only detail avoids tint shifts. Smooth gating suppresses
            weak texture/noise; local bounds and 6/255 limit contain halos. */
         "float lum(vec3 c){return dot(c,vec3(.299,.587,.114));}"
-        "void main(){if(u_output_stage!=0){"
+        #include "fsr1_gles.inc"
+        "void main(){if(u_output_stage==2){gl_FragColor=vec4(fsrEasu(),1.);return;}"
+        "if(u_output_stage==3){gl_FragColor=vec4(fsrRcas(),1.);return;}"
+        "if(u_output_stage!=0){"
         "vec3 c=texture2D(u_tex,v_uv).rgb;float l=lum(c),lo=l,hi=l,sum=0.;"
         "for(int y=-1;y<=1;y++){for(int x=-1;x<=1;x++){"
         "float v=lum(texture2D(u_tex,v_uv+vec2(float(x),float(y))*u_texel).rgb);"
@@ -117,7 +121,7 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage
         glBindTexture(GL_TEXTURE_2D,p->source);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
         glTexSubImage2D(GL_TEXTURE_2D,0,0,0,640,480,GL_RGBA,GL_UNSIGNED_BYTE,p->bgra);
     }
-    if(p->edge_strength){
+    if(p->edge_strength||p->fsr1){
         if(!p->target||p->target_w!=vw||p->target_h!=vh){
             if(p->target)glDeleteTextures(1,&p->target);
             p->target=0;p->target_w=p->target_h=0;
@@ -138,20 +142,21 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage
     }
     glBindTexture(GL_TEXTURE_2D,p->source);
     glDisable(GL_BLEND);glDisable(GL_SCISSOR_TEST);glViewport(vx,oh-(vy+vh),vw,vh);glUseProgram(p->program);
-    if(p->edge_strength)glViewport(0,0,vw,vh);
-    glUniform1i(p->output_stage,0);glUniform1i(p->tex,0);glUniform2f(p->texel,1.0f/640.0f,1.0f/480.0f);glUniform1f(p->strength,p->edge_strength?0.f:(float)(strength>100?100:strength)/100.0f);
+    if(p->edge_strength||p->fsr1)glViewport(0,0,vw,vh);
+    glUniform1i(p->output_stage,p->fsr1?2:0);glUniform1i(p->tex,0);glUniform2f(p->texel,1.0f/640.0f,1.0f/480.0f);glUniform1f(p->strength,(p->edge_strength||p->fsr1)?0.f:(float)(strength>100?100:strength)/100.0f);
     static const GLfloat pos[]={-1,-1,1,-1,-1,1,1,1},uv[]={0,1,1,1,0,0,1,0};
     /* SDL may have a VBO bound and cache enabled attributes. Client pointers
        are only valid with ARRAY_BUFFER=0; restore both pointers and enables. */
     glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
     glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,pos);glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,0,uv);glDrawArrays(GL_TRIANGLE_STRIP,0,4);
-    if(p->edge_strength){
+    if(p->edge_strength||p->fsr1){
         /* Render-target Y is bottom-up, unlike the authored upload. */
         static const GLfloat target_uv[]={0,0,1,0,0,1,1,1};
         glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)framebuffer);
         glViewport(vx,oh-(vy+vh),vw,vh);glBindTexture(GL_TEXTURE_2D,p->target);
-        glUniform1i(p->output_stage,1);glUniform2f(p->texel,1.f/vw,1.f/vh);
-        glUniform1f(p->strength,(float)(p->edge_strength>100?100:p->edge_strength)/100.f);
+        glUniform1i(p->output_stage,p->fsr1?3:1);glUniform2f(p->texel,1.f/vw,1.f/vh);
+        unsigned sharp=p->fsr1?p->fsr_strength:p->edge_strength;
+        glUniform1f(p->strength,(float)(sharp>100?100:sharp)/100.f);
         glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,0,target_uv);glDrawArrays(GL_TRIANGLE_STRIP,0,4);
     }
  restore:
@@ -164,7 +169,7 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage
 static void present_gles_clear(KPresentGles *p){if(!p)return;if(p->fbo)glDeleteFramebuffers(1,&p->fbo);if(p->target)glDeleteTextures(1,&p->target);if(p->source)glDeleteTextures(1,&p->source);if(p->program)glDeleteProgram(p->program);free(p->bgra);memset(p,0,sizeof(*p));}
 
 #else
-typedef struct {unsigned edge_strength;} KPresentGles;
+typedef struct {unsigned edge_strength,fsr1,fsr_strength;} KPresentGles;
 static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage *image,const SDL_Rect *dst,unsigned strength){(void)p;(void)renderer;(void)image;(void)dst;(void)strength;return -1;}
 static void present_gles_clear(KPresentGles *p){(void)p;}
 #endif

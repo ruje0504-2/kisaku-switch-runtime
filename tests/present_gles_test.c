@@ -44,7 +44,7 @@ void glEnable(GLenum p){if(p==GL_BLEND)state.blend=1;else if(p==GL_SCISSOR_TEST)
 void glDisable(GLenum p){if(p==GL_BLEND)state.blend=0;else if(p==GL_SCISSOR_TEST)state.scissor=0;else assert(0);}
 void glViewport(GLint x,GLint y,GLsizei w,GLsizei h){state.viewport[0]=x;state.viewport[1]=y;state.viewport[2]=w;state.viewport[3]=h;}
 void glUseProgram(GLuint p){state.program=(GLint)p;}
-void glUniform1i(GLint p,GLint v){(void)p;assert(v==0||v==1);}
+void glUniform1i(GLint p,GLint v){(void)p;assert(v>=0&&v<=3);}
 void glUniform2f(GLint p,GLfloat x,GLfloat y){(void)p;assert(x>0&&y>0);}
 void glUniform1f(GLint p,GLfloat v){(void)p;assert(v>=0&&v<=1);}
 void glBindBuffer(GLenum p,GLuint b){assert(p==GL_ARRAY_BUFFER);state.array=(GLint)b;}
@@ -79,6 +79,7 @@ int main(void){
     assert(pass.target_w==960&&pass.target_h==720);
     fail_fbo=1;assert(present_gles_draw(&pass,&renderer,&source,&dst,100)<0&&!memcmp(&state,&original,sizeof(state)));fail_fbo=0;
     assert(!present_gles_draw(&pass,&renderer,&source,&dst,100)&&!memcmp(&state,&original,sizeof(state)));
+    pass.fsr1=1;pass.fsr_strength=80;assert(!present_gles_draw(&pass,&renderer,&source,&dst,100)&&!memcmp(&state,&original,sizeof(state)));
     present_gles_clear(&pass);fail_texture=1;
     assert(present_gles_draw(&pass,&renderer,&source,&dst,0)<0&&!memcmp(&state,&original,sizeof(state)));
     present_gles_clear(&pass);free(source.pixels);puts("GLES presentation: BGRA shader input, padded stride, 100 frames / 1 upload, SDL vertex/texture/scissor state and allocation failure restoration: PASS");return 0;

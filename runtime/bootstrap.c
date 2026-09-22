@@ -456,6 +456,22 @@ static int option(KBootstrap *b,const char *section,const char *key,int fallback
     for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,section)&&equal(b->settings[i].key,key))return atoi(b->settings[i].value);
     return fallback;
 }
+/* FSR is opt-out in the trial build; explicit unrecognised modes use edge. */
+int bootstrap_fsr_enabled(const KBootstrap *b){
+    if(b)for(unsigned i=0;i<b->setting_count;i++)
+        if(equal(b->settings[i].section,"Display")&&equal(b->settings[i].key,"PresentFilter"))
+            return equal(b->settings[i].value,"fsr1");
+    return 1;
+}
+int bootstrap_fsr_strength(const KBootstrap *b){
+    if(b)for(unsigned i=0;i<b->setting_count;i++)
+        if(equal(b->settings[i].section,"Display")&&equal(b->settings[i].key,"FSRSharpness")){
+            char *end=NULL;const char *value=b->settings[i].value;double n=strtod(value,&end);
+            if(end==value||*end||!isfinite(n)||n<0)return 90;
+            return n>=100?100:(int)(n+.5);
+        }
+    return 90;
+}
 /* Independent output-pixel sharpening; zero selects the previous filter. */
 int bootstrap_edge_strength(const KBootstrap *b){
     if(!b)return 55;

@@ -875,3 +875,20 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 产物主入口及交付主入口SHA-256：`50afeb4c852842693542467855b2dcb4d88612e010e90fe211649c8076415cc0`。GPU多一次pass和约2.64MiB中间目标，无新增CPU高清放大；驱动提交/等待仍有成本。Switch实机清晰度、GPU/CPU负载和60FPS稳定性未验证。复用细节补入 `reports/高清呈现与多核心移植笔记.md` 第14节。
 
 追加主机运行结果：`build/kisaku-bootstrap-test 鬼作 local/edge-setting-test` 与 `build/kisaku-bootstrap-test 鬼作 local/edge-hires-test --hires` 均完成；新增EdgeStrength默认/禁用/上限/无效配置断言及既有运行时、高清字层/工作线程回归通过。日志 `local/edge-bootstrap.log`、`local/edge-hires.log`。本轮未重复完整test-host.sh，未把这些检查当成实机或全路线验证。
+
+## 2026-09-23：FSR1 EASU/RCAS试用及可恢复交付
+
+用户要求改用FSR1试试并保留恢复能力。新增 `tools/fsr1_gles.inc`，按 AMD FSR1 v1.20210629 的12点EASU和五点RCAS公式适配GLES2。采用显式像素中心纹理采样与FP32除法/逆平方根替换gather/load及位近似，并保护零分母；不宣称AMD SDK位精确一致。版权/MIT声明在源文件及THIRD_PARTY.md，后者随打包交付。
+
+默认 `Display/PresentFilter=fsr1`、`FSRSharpness=90`（0.2 stops）；设 `PresentFilter=edge` 并重启可恢复afbc2d9的两阶段滤镜，原EdgeStrength/CASStrength保留。FSR只处理正常GLES底图，高质量文字独立叠加，不更改游戏表面/存档；原生独立模态图片和CPU后备仍为已有路径。
+
+修改前NRO已备份 `交付/恢复版本/afbc2d9/kisaku.nro`，哈希 `50afeb4c852842693542467855b2dcb4d88612e010e90fe211649c8076415cc0`，目录含恢复说明。直接替换SD同名NRO即可恢复，无需删除game/saves；从兼容名启动时覆盖相应入口。
+
+- GLES真实执行：EASU独立double标量参考最大误差1/255，RCAS完整输出参考最大误差1/255；测试图FSR相对edge改变1838252个通道，切回edge逐字节一致。
+- FSR纯黑/白稳定、源图不修改、HQ文字以及六类SDL菜单正常；旧bicubic/edge路径及GL状态恢复继续回归。新增极值夹具后，首次旧bicubic复验因夹具遗留edge_strength触发断言，已在夹具显式恢复模式后重跑，运行时代码未因此改动。
+- `./build-host.sh`、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`通过，日志 `local/fsr-host.log`、`local/fsr-switch.log`、`local/fsr-package.log`。
+- 已查看 `local/fsr-preview-fsr1.png` 与 `local/fsr-preview-edge.png`：方向、通道和布局正常，轮廓/图片文字更锐，细纹理也更显眼，不据此称所有素材画质更好。
+
+新NRO及交付主入口SHA256 `4693f20c582a86134e0c59a768a34d9da22b1acd376079cf25c20c8912b4e0ac`。核心分配/高清文字/60FPS目标不变，Switch实机画质、性能、发热仍未验证。设置、源码来源及适配边界补入高清呈现与多核心移植笔记第15节。
+
+最终强度按用户追加要求80→90（0.4→0.2 stops），无额外pass。`build/kisaku-bootstrap-test 鬼作 local/fsr90-settings-test`通过，含默认90、0/100和非法配置回退断言；此前 `build/kisaku-bootstrap-test 鬼作 local/fsr-hires-test --hires`通过，后续只调强度未改高清/线程实现。最终GLES强度90参考/切回旧模式/菜单检查通过，日志 `local/fsr-gles.log`、`local/fsr90-bootstrap.log`、`local/fsr-hires.log`；`git diff --check`通过。未重复完整test-host.sh，不宣称Switch实机通过。

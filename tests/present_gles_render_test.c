@@ -132,6 +132,7 @@ static void test_edges(KPresentGles *pass,SDL_Renderer *r,KImage *src,const SDL_
     assert(!memcmp(actual,base,1280u*720u*4u));
     puts("Weak 2/255 texture unchanged at maximum edge strength: PASS");
 }
+#include "fsr1_reference.inc"
 int main(int argc,char **argv){
     assert(argc==2);EGLDisplay d=eglGetDisplay(EGL_DEFAULT_DISPLAY);EGLint major,minor;assert(eglInitialize(d,&major,&minor));assert(eglBindAPI(EGL_OPENGL_ES_API));
     EGLint config_attrs[]={EGL_SURFACE_TYPE,EGL_PBUFFER_BIT,EGL_RENDERABLE_TYPE,EGL_OPENGL_ES2_BIT,EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,EGL_ALPHA_SIZE,8,EGL_NONE};EGLConfig config;EGLint n;assert(eglChooseConfig(d,config_attrs,&config,1,&n)&&n==1);
@@ -143,7 +144,7 @@ int main(int argc,char **argv){
     KFont *font=kfont_open(argv[1],0);assert(font);const uint32_t text[]={0x65e5,0x672c,0x8a9e,0x6587,0x5b57,0x5c65,0x6b74};
     for(unsigned i=0;i<7;i++)assert(!kfont_draw(font,&letters,text[i],48+(int)i*30,610,24,24,0xffffff));
     unsigned ink=0;for(unsigned i=0;i<960*720;i++)ink+=letters.pixels[i*4+3]!=0;assert(ink>200);
-    uint8_t *expected=malloc(1280*720*4),*actual=malloc(1280*720*4);assert(expected&&actual);KPresentGles pass={.edge_strength=55};SDL_Renderer renderer={0};SDL_Rect dst={160,0,960,720};
+    uint8_t *expected=malloc(1280*720*4),*actual=malloc(1280*720*4);assert(expected&&actual);KPresentGles pass={.edge_strength=55,.fsr1=1,.fsr_strength=80};SDL_Renderer renderer={0};SDL_Rect dst={160,0,960,720};
     for(unsigned art=0;art<2;art++){
         if(art)for(unsigned y=50;y<550;y++)for(unsigned x=200;x<850;x++){uint8_t *q=letters.pixels+y*letters.stride+x*4;q[0]=(uint8_t)(x%256);q[1]=(uint8_t)(y%256);q[2]=200;q[3]=255;}
         ui_upload(&source);glDrawArrays(GL_TRIANGLE_STRIP,0,4);ui_upload(&letters);glDrawArrays(GL_TRIANGLE_STRIP,0,4);read_frame(expected);
@@ -156,6 +157,9 @@ int main(int argc,char **argv){
         }
     }
     printf("Native 960x720 Japanese glyphs: %u ink pixels; 60 GLES story+text/menu frames match reference pixels exactly: PASS\n",ink);
+    pass.fsr1=0;pass.edge_strength=0;
+    test_cubic(&pass,&renderer,&source,&dst,actual);
+    test_fsr(&pass,&renderer,&source,&dst,actual,expected);
     pass.edge_strength=0;
     test_cubic(&pass,&renderer,&source,&dst,actual);
     test_edges(&pass,&renderer,&source,&dst,actual,expected);
