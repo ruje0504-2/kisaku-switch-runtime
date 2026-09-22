@@ -1221,7 +1221,8 @@ static void test_native_dialog(KBootstrap *b){
     free(data);assert(kdialog_hit(231,260)==-1&&kdialog_hit(412,260)==-1);
     uint8_t d[]={100,100,100,128},s[]={200,200,200,128};kdialog_pixel(d,s);
     assert(d[3]==191&&d[0]==166); /* straight-alpha intermediate composition */
-    assert(kdialog_draw(&out,&body,&b->layers[0],&atlas,2,0)<0);
+    assert(!kdialog_draw(&out,&body,&b->layers[0],&atlas,2,0));
+    assert(kdialog_draw(&out,&body,&b->layers[0],&atlas,3,0)<0);
     rmt_free(&atlas);rmt_free(&body);rmt_free(&out);
     puts("Kisaku native quit/title dialogs: actual alpha, straight BGRA composition and dialog.area hits: PASS");
 }
@@ -1428,7 +1429,53 @@ static void test_calendar_persistence(const char *root,const char *saves){
     assert(!call_overlay524(b,0,0,1));bootstrap_frame(b);assert(!b->overlay524_drawn);
     bootstrap_destroy(b);puts("Date badge: real image text, choice redraw persistence, suspend/resume and explicit hide: PASS");
 }
+static void title_path_until(KBootstrap *b,unsigned wanted){
+    for(unsigned i=0;i<10000;i++){
+        int rc=bootstrap_run(b,100000);
+        if(rc<0)fprintf(stderr,"menu path: %s\n",b->error);
+        assert(rc>=0);
+        if(wanted==1?b->file_modal:wanted==2?b->title_reset_modal:b->title.active&&b->title.age>=64)return;
+        bootstrap_frame(b);
+    }assert(!"menu path timed out");
+}
+static void test_title_paths(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);
+    b->vm->globals[1][60].number=1;assert(!title_test_call(b,0,1));
+    b->title.selected=1;bootstrap_confirm(b);title_path_until(b,1);
+    assert(b->message_request==3&&b->vm->sp==1);
+    size_t ip=b->vm->ip;assert(bootstrap_run(b,100000)==1&&b->vm->ip==ip);
+    b->message_request=b->file_modal=0;title_path_until(b,0);
+    b->title.selected=3;bootstrap_confirm(b);title_path_until(b,2);
+    assert(b->message_request==21);b->message_request=0;
+    assert(!bootstrap_title_reset_close(b,0));title_path_until(b,0);
+    assert(b->vm->globals[1][60].number==1);
+    /* Yes is exercised only against the caller's disposable test directory. */
+    b->title.selected=3;bootstrap_confirm(b);title_path_until(b,2);b->message_request=0;
+    assert(!bootstrap_title_reset_close(b,1));title_path_until(b,0);
+    assert(!b->vm->globals[1][60].number&&b->title.native_ids[1]==-1);
+    b->title.selected=2;bootstrap_confirm(b);title_path_until(b,0);
+    assert(b->title.native_ids[4]==13);b->title.selected=4;bootstrap_confirm(b);title_path_until(b,0);
+    assert(b->vm->globals[1][61].number==1&&b->title.native_ids[b->title.count-1]==12);
+    b->title.selected=(int)b->title.count-1;bootstrap_confirm(b);title_path_until(b,0);
+    assert(b->vm->globals[1][61].number==0&&b->title.native_ids[b->title.count-1]==5);
+    b->title.selected=2;bootstrap_confirm(b);title_path_until(b,0);
+    b->title.selected=4;bootstrap_confirm(b);title_path_until(b,0);
+    b->title.selected=0;bootstrap_confirm(b);
+    for(unsigned i=0;!b->message_active;i++){
+        int rc=bootstrap_run(b,100000);if(rc<0)fprintf(stderr,"hage start: %s\n",b->error);
+        assert(i<10000&&rc>=0);bootstrap_frame(b);
+    }
+    assert(b->text_count&&b->vm->globals[1][61].number==1);
+    KFlags *broken=kflags_read_slot(saves,0,201);assert(broken);broken->byte_count=8192;
+    assert(!kflags_write_slot(broken,saves,0,201));kflags_free(broken);
+    uint8_t *raw=b->raw_variables;int before=b->vm->globals[0][18].number;
+    b->vm->syscall=14;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){201,NULL})&&!kvm_push(b->vm,(KValue){12,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==2&&b->raw_variables==raw&&b->vm->globals[0][18].number==before);
+    bootstrap_destroy(b);puts("Title load/cancel, reset No/Yes, mode round trip, Hage first dialogue and invalid FLAG preservation: PASS");
+}
 int main(int argc,char **argv){
+    if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--calendar")){test_week(argv[1],argv[2]);test_calendar_persistence(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--backlog")){
@@ -1448,9 +1495,8 @@ int main(int argc,char **argv){
     assert(b->layers[7].width==640&&b->layers[7].height==400&&b->layers[7].stride==2560);
     assert(b->vm->globals[0][42].number==32&&b->vm->globals[0][43].number==8);
     assert(b->vm->globals[0][44].number==592&&b->vm->globals[0][45].number==62);
-    assert(!call_527(b)&&b->vm->sp==2&&b->vm->stack[0].number==0&&
-        b->vm->stack[1].number==0&&b->exec_status==0);
-    b->input_events=3;assert(!call_527(b)&&b->vm->sp==2&&b->exec_status==0x18&&b->input_events==0);
+    assert(!call_527(b)&&b->vm->sp==1&&b->vm->stack[0].number==0&&b->message_request==2&&b->file_modal);
+    b->message_request=b->file_modal=0;
     b->vm->sp=0;
     unsigned count=0;for(unsigned i=0;i<1024;i++)count+=b->vm->functions[i].valid;
     assert(count==51);assert(!bootstrap_can_save(b));

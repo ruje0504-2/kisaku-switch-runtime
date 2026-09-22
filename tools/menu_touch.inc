@@ -70,7 +70,7 @@ static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int
     if(p->kind==5){backlog_touch(p,b,touch,x,y);return;}
     if(p->kind==16){navigation_touch(p,b,x,y);return;}
     if(p->kind==10){gallery_touch(p,b,x,y);return;}
-    if(p->kind==6||p->kind==18||p->kind==19){int hit=kdialog_hit(x,y);if(hit>=0){p->selected=(unsigned)hit;p->viewing=1;message_panel_action(p,b,0);}return;}
+    if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){int hit=kdialog_hit(x,y);if(hit>=0){p->selected=(unsigned)hit;p->viewing=1;message_panel_action(p,b,0);}return;}
     if(p->kind==15){if(y>=336&&y<370)message_panel_action(p,b,x<320?0:1);return;}
     if(p->kind==14){if(y>=242&&y<267&&x>=200&&x<443)message_panel_action(p,b,x<272?7:x<358?0:1);else if(y>=206&&y<232&&x>=186&&x<454)message_panel_action(p,b,6);return;}
     if(p->kind==9){

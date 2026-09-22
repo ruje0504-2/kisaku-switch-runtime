@@ -305,7 +305,7 @@ int main(int argc,char **argv){
             }
         }
         if(b->extra_request){panel.kind=b->extra_request;panel.selected=panel.back=panel.viewing=panel.variant=0;panel.status[0]=0;b->extra_request=0;if(panel.kind==14){snprintf(panel.name,sizeof(panel.name),"会員１号");SDL_StartTextInput();}}
-        if(panel.dismiss_menus){menu.active=0;b->load_modal=0;panel.dismiss_menus=0;bootstrap_message_hide(b,0);}
+        if(panel.dismiss_menus){menu.active=0;b->load_modal=b->file_modal=0;panel.dismiss_menus=0;bootstrap_message_hide(b,0);}
         if(b->message_request){
             unsigned action=b->message_request;b->message_request=0;
             if(action==2||action==3)save_menu_open(&menu,b,action==3);

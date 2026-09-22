@@ -42,6 +42,7 @@ int main(int argc,char **argv){
         assert(f->raw[1000]==slot-1&&f->raw[1001]==0);
         kflags_free(f);kcontrol_free(controls);
         KBootstrap *loaded=bootstrap_create_split(argv[1],argv[2]);assert(loaded);title(loaded);
+        assert(loaded->title.native_ids[1]==1&&loaded->title.native_ids[3]==3);
         assert(!bootstrap_load_slot(loaded,0,slot));dialogue(loaded);
         fprintf(stderr,"loaded checkpoint=%d read=%d (expected %d)\n",loaded->vm->globals[0][48].number,loaded->message_read_id,read);
         assert(loaded->vm->globals[0][48].number==checkpoint&&loaded->message_read_id==read);

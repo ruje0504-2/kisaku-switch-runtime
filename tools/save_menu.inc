@@ -42,7 +42,7 @@ static void save_menu_action(SaveMenu *m,KBootstrap *b,int action){
     if(m->param_detail){if(SDL_GetTicks64()-m->param_started>=(uint64_t)m->param_steps*15&&(action==0||action==1))m->param_detail=0;return;}
     if(m->loading){if(action==1){bootstrap_destroy(m->next);m->next=NULL;m->loading=0;snprintf(m->status,sizeof(m->status),"Load cancelled");}return;}
     if(action==1&&(m->overwrite||m->confirm_load)){SDL_StopTextInput();m->overwrite=m->confirm_load=0;m->status[0]=0;return;}
-    if(action==1){m->active=0;m->overwrite=0;b->load_modal=0;bootstrap_message_hide(b,0);return;}
+    if(action==1){m->active=0;m->overwrite=0;b->load_modal=b->file_modal=0;bootstrap_message_hide(b,0);return;}
     if(m->overwrite||m->confirm_load){
         if(action==2||action==4)m->button=1;
         if(action==3||action==5)m->button=0;

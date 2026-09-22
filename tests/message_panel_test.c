@@ -149,6 +149,34 @@ static void test_save_menu(const char *root,const char *saves,SDL_Renderer *r,co
     int read=b->message_read_id;
     for(unsigned i=0;m.loading;i++){assert(i<10000);save_menu_step(&m,&b);SDL_Delay(1);}
     assert(!m.active&&b->message_read_id==read&&!b->error[0]);
+    save_menu_clear(&m);bootstrap_destroy(b);memset(&m,0,sizeof(m));
+    /* Old portable saves have a valid checkpoint but no catalog enable bit. */
+    KFlags *catalog=kflags_read_slot(folder,0,100);assert(catalog);
+    catalog->globals[1][60]=(KValue){0,NULL};assert(!kflags_write_slot(catalog,folder,0,100));kflags_free(catalog);
+    b=bootstrap_create_split(root,folder);assert(b);
+    for(unsigned i=0;!b->title.active;i++){assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+    assert(b->title.native_ids[1]==1&&b->title.native_ids[3]==3);
+    b->title.selected=3;bootstrap_confirm(b);
+    for(unsigned i=0;!b->title_reset_modal;i++){assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+    MessagePanel reset={.kind=21};b->message_request=0;
+    message_panel_draw(&reset,b,r);assert(reset.dialog_body.pixels);
+    message_panel_action(&reset,b,1);assert(!reset.kind&&!b->title_reset_modal);
+    rmt_free(&reset.image);rmt_free(&reset.dialog_body);rmt_free(&reset.dialog_artwork);SDL_DestroyTexture(reset.texture);
+    for(unsigned i=0;!b->title.active;i++){assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+    for(unsigned attempt=0;attempt<2;attempt++){
+        b->title.selected=1;bootstrap_confirm(b);
+        for(unsigned i=0;!b->file_modal;i++){assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+        assert(b->message_request==3);b->message_request=0;
+        save_menu_open(&m,b,1);save_menu_draw(&m,b,r);assert(m.active&&!m.save&&m.valid[0]);
+        if(!attempt){
+            save_menu_action(&m,b,1);assert(!m.active&&!b->file_modal);
+            for(unsigned i=0;!b->title.active;i++){assert(i<3000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+        }else{
+            save_menu_action(&m,b,0);save_menu_action(&m,b,4);save_menu_action(&m,b,0);assert(m.loading);
+            for(unsigned i=0;m.loading;i++){assert(i<10000);save_menu_step(&m,&b);SDL_Delay(1);}
+            assert(!m.active&&!b->file_modal&&b->message_read_id==read&&!b->error[0]);
+        }
+    }
     save_menu_clear(&m);bootstrap_destroy(b);
     DIR *dir=opendir(folder);assert(dir);struct dirent *entry;
     while((entry=readdir(dir)))if(strcmp(entry->d_name,".")&&strcmp(entry->d_name,"..")){

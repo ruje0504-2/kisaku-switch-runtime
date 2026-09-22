@@ -18,12 +18,13 @@ static inline void kdialog_stamp(KImage *dst,const KImage *src,unsigned dx,unsig
 }
 /* 4bf530 / 4bfaa0: dialog0 quit, dialog1 title, dialog7 scene selection. */
 static inline int kdialog_draw(KImage *out,KImage *body,const KImage *base,const KImage *atlas,unsigned kind,int selected){
-    if(!out||!body||!base||!atlas||!out->pixels||!base->pixels||!atlas->pixels||(kind!=0&&kind!=1&&kind!=7)||
-       out->width!=640||out->height!=480||base->width<640||base->height<480||atlas->width<428||atlas->height<(kind==7?312u:168u))return -1;
+    if(!out||!body||!base||!atlas||!out->pixels||!base->pixels||!atlas->pixels||(kind!=0&&kind!=1&&kind!=2&&kind!=7)||
+       out->width!=640||out->height!=480||base->width<640||base->height<480||atlas->width<428||atlas->height<(kind==7?312u:kind==2?192u:168u))return -1;
     if(!body->pixels){*body=(KImage){0,0,428,88,428*4,calloc(88,428*4)};if(!body->pixels)return -1;}
     if(body->width!=428||body->height!=88)return -1;
     for(unsigned y=0;y<88;y++)memcpy(body->pixels+y*body->stride,atlas->pixels+y*atlas->stride,428*4);
-    if(kind==7)kdialog_stamp(body,atlas,76,20,0,288,276,24);
+    if(kind==2){kdialog_stamp(body,atlas,76,8,0,168,276,24);kdialog_stamp(body,atlas,124,32,0,136,180,24);}
+    else if(kind==7)kdialog_stamp(body,atlas,76,20,0,288,276,24);
     else kdialog_stamp(body,atlas,124,20,0,88+kind*24,180,24);
     for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
         const uint8_t *s=base->pixels+y*base->stride+x*4;uint8_t *d=out->pixels+y*out->stride+x*4;

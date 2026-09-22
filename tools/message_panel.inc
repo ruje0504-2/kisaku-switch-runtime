@@ -45,8 +45,9 @@ static unsigned scene_replay_slots(MessagePanel *p,KBootstrap *b,unsigned slots[
 }
 #include "navigation_panel.inc"
 static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
-    if(p->kind==6||p->kind==18||p->kind==19){
+    if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){
         if(action==1){
+            if(p->kind==21&&bootstrap_title_reset_close(b,0))return;
             if(p->kind==6)bootstrap_quit_dialog_close(b,0);
             if(p->kind==19&&bootstrap_letter_exit(b,0)){snprintf(p->status,sizeof(p->status),"信件画面に戻れませんでした");return;}
             p->kind=0;p->viewing=0;b->message_hover=-1;return;
@@ -55,7 +56,9 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         if(action==2||action==4)p->selected=1;
         if(action==3||action==5)p->selected=0;
         if(!action&&p->selected<2){
-            if(p->kind==19){
+            if(p->kind==21){
+                if(bootstrap_title_reset_close(b,p->selected==1)){snprintf(p->status,sizeof(p->status),"初期化に失敗しました");return;}
+            }else if(p->kind==19){
                 if(bootstrap_letter_exit(b,p->selected==1)){snprintf(p->status,sizeof(p->status),"回想画面に戻れませんでした");return;}
             }else if(p->selected==1){
                 if(p->kind==18)p->return_title=1;
@@ -262,10 +265,10 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         for(unsigned i=0;i<4;i++)if(b->flag_dialog.checked[i]==1)ui_text(b,&p->image,labels[i],144,186+(int)row++*28,352,24,0xffdf78,0);
         ui_text(b,&p->image,"A: 消去       B: キャンセル",144,342,352,24,0xffffff,0);ui_present(r,&p->image,&p->texture);return;
     }
-    if(p->kind==6||p->kind==18||p->kind==19){
+    if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){
         if(!p->viewing){p->selected=2;p->viewing=1;}
         if(ui_canvas(&p->image)||ui_asset(b,"kisaku_DL_dialog_p.akb",&p->dialog_artwork))return;
-        if(kdialog_draw(&p->image,&p->dialog_body,&b->layers[0],&p->dialog_artwork,p->kind==19?7:p->kind==18,(int)p->selected))return;
+        if(kdialog_draw(&p->image,&p->dialog_body,&b->layers[0],&p->dialog_artwork,p->kind==21?2:p->kind==19?7:p->kind==18,(int)p->selected))return;
         if(p->status[0])ui_text(b,&p->image,p->status,112,292,416,24,0xffffff,0);
         ui_present(r,&p->image,&p->texture);return;
     }

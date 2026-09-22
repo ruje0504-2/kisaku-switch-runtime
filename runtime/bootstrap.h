@@ -100,7 +100,7 @@ typedef struct {
     KVoiceWorker *voice_worker;unsigned voice_loading;
     KImageWorker *image_worker;unsigned image_loading;int image_layer,image_offset_x,image_offset_y;
     int restore_read_id;unsigned restore_pending,restore_remaining,restore_mode;
-    unsigned read_loaded,read_dirty,read_selector,quit_requested,quit_modal,title_load_requested;
+    unsigned read_loaded,read_dirty,read_selector,quit_requested,quit_modal,title_load_requested,file_modal,native_menu_enabled,title_reset_modal;
     Ai6Archive scripts,images,data,effects,movies,music,voice;
     uint8_t *module_data[KVM_MODULES];
     KImage layers[64]; unsigned layer_count;
@@ -173,9 +173,7 @@ typedef struct {
     KTitle title;
     unsigned message_timed,message_timed_delay;uint64_t message_timed_clock;
     unsigned extra_active,extra_request,extra_kind,input_events;uint64_t input_event_until;
-    /* CFuncExec 31/527 keeps its status word outside the VM globals.  The
-       native handler only polls the IFlag queue; portable input feeds the
-       same two confirmation bits here without manufacturing a script value. */
+    /* 31/527 requests application save/load menus; action 2 queries bank1[60]. */
     uint32_t exec_status;
     KGallery gallery;char image_name[261];
     KFlagDialog flag_dialog;unsigned reset_pending;
@@ -220,6 +218,7 @@ void bootstrap_menu_move(KBootstrap *b,int dx,int dy);
 int bootstrap_enable_async_voice(KBootstrap *b);
 int bootstrap_enable_async_images(KBootstrap *b);
 int bootstrap_flush_progress(KBootstrap *b);
+int bootstrap_title_reset_close(KBootstrap *b,int accept);
 int bootstrap_quit_dialog_close(KBootstrap *b,int accept);
 void bootstrap_bowling_pointer(KBootstrap *b,int x,int y,unsigned held);
 int bootstrap_bowling_active(const KBootstrap *b);

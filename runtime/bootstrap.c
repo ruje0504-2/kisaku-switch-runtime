@@ -1288,6 +1288,11 @@ int bootstrap_dispatch(KBootstrap *b){
         if(sub==4||sub==6)v->stack[v->sp++]=(KValue){value,NULL};
         b->handled++;return kvm_resume(v);
     }
+    if(main==31&&sub==111){
+        if(b->title_reset_modal||b->message_request)return error(b,"31/111 dialog already pending (arguments preserved)");
+        b->title_reset_modal=1;b->message_request=21;
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
     if(main==31&&sub==3){
         /* 4fbdb0 -> 4b4060: no script arguments or return value. The
            frontend owns CDialog mode 0; the VM remains suspended until No. */
@@ -1624,6 +1629,26 @@ int bootstrap_dispatch(KBootstrap *b){
         }
         return error(b,"31/524 action unsupported (arguments preserved)");
     }
+    if(main==14&&sub==12){
+        /* 4f7890 -> 4f91c0 -> 4f8d40 -> 503920: restore all flag
+           banks and raw data, without changing the executing MES or stack. */
+        if(v->sp<2||v->stack[v->sp-2].string||v->stack[v->sp-2].number<0||v->stack[v->sp-2].number>999)
+            return error(b,"14/12 slot invalid (arguments preserved)");
+        KFlags *f=kflags_read_slot(bootstrap_save_dir(b),0,(unsigned)v->stack[v->sp-2].number);
+        if(!f||f->byte_count!=9192||f->word_count!=600||f->raw_count!=15000||f->counts[0]<51||f->counts[0]>8192||f->counts[1]!=100){
+            kflags_free(f);return error(b,"14/12 full FLAG invalid (arguments preserved)");
+        }
+        for(unsigned bank=0;bank<2;bank++){
+            memset(v->globals[bank],0,sizeof(v->globals[bank]));
+            memcpy(v->globals[bank],f->globals[bank],f->counts[bank]*sizeof(KValue));v->global_count[bank]=f->counts[bank];
+        }
+        memcpy(v->bytes,f->bytes,f->byte_count);v->byte_count=f->byte_count;
+        memcpy(v->words,f->words,f->word_count*sizeof(uint16_t));v->word_count=f->word_count;
+        free(b->raw_variables);b->raw_variables=f->raw;b->raw_size=f->raw_count;f->raw=NULL;f->raw_count=0;
+        v->raw=b->raw_variables;v->raw_size=b->raw_size;
+        f->next=b->flag_files;b->flag_files=f;b->flag_file_count++;
+        v->sp-=2;b->handled++;return kvm_resume(v);
+    }
     if(main==14&&sub>=3&&sub<=6){
         /* 4f8ad0 / 4f88a0 / 4f8670 / 4f8440: copy the same indexed
            range from a snapshot into byte/word/raw/bank1 storage. */
@@ -1734,22 +1759,37 @@ int bootstrap_dispatch(KBootstrap *b){
         v->sp-=2;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==527){
-        /* CFuncExec::virtual_0 (4f9dc0) is an input poll, not a normal
-           parameterized game call.  It drains one IFlag from the native
-           queue, ORs 0x10/0x08 into the private status word for event 0/1,
-           and may enqueue the context's event-2 flag.  The VM contributes
-           only the selector; the two leading zeros in save.mes are caller
-           values and must remain on its operand stack.  Feed the same two
-           bits from the portable confirmation/cancel edge and clear them
-           after the poll.  No synthetic event-2 result is invented while
-           its producer is not present.
-        */
-        if(v->sp<1)return error(b,"31/527 event selector required (arguments preserved)");
-        unsigned edges=b->input_events&3u;
-        if(edges&1u)b->exec_status|=0x10u;
-        if(edges&2u)b->exec_status|=0x08u;
-        b->input_events&=~3u;
-        v->sp--;b->handled++;return kvm_resume(v);
+        /* 4f9dc0 pops an action. 0/1 set application save/load bits;
+           2 returns an IFlag copy of bank1[60]. The caller's preceding
+           value remains on the stack (open.mes writes it to sys18). */
+        if(v->sp<2||v->stack[v->sp-2].string)
+            return error(b,"31/527 numeric action required (arguments preserved)");
+        int action=v->stack[v->sp-2].number;
+        if(action<0||action>2||b->file_modal||b->message_request)
+            return error(b,"31/527 invalid action or pending menu (arguments preserved)");
+        if(action==2){
+            if(v->global_count[1]<=60)return error(b,"31/527 flag bank missing (arguments preserved)");
+            v->sp-=2;if(kvm_push(v,v->globals[1][60]))return error(b,"31/527 return allocation failed");
+        }else{
+            b->exec_status|=action?8:16;b->file_modal=1;b->message_request=action?3:2;v->sp-=2;
+        }
+        b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==1020){
+        /* 4f95d0 -> 4655a0/465580 deletes the two weekly INI sections. */
+        void *previous=malloc(sizeof(b->settings));if(!previous)return error(b,"weekly settings allocation failed");
+        memcpy(previous,b->settings,sizeof(b->settings));unsigned old_count=b->setting_count,next=0;
+        for(unsigned i=0;i<old_count;i++)if(!equal(b->settings[i].section,"WEEK_DATA")&&!equal(b->settings[i].section,"WEEKEND_DATA"))
+            b->settings[next++]=b->settings[i];
+        b->setting_count=next;
+        if(settings_save(b)){memcpy(b->settings,previous,sizeof(b->settings));b->setting_count=old_count;free(previous);return -1;}
+        free(previous);v->sp--;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==1013){
+        /* 4f97c0 changes the application menu enable state. */
+        if(v->sp<2||v->stack[v->sp-2].string)return error(b,"31/1013 numeric menu state required (arguments preserved)");
+        b->native_menu_enabled=v->stack[v->sp-2].number!=0;
+        v->sp-=2;b->handled++;return kvm_resume(v);
     }
     /* 4fb980 constructs CFuncAnimeEx. The native dispatcher reads one
        variant command after subcall 520; commands 0, 1 and 12 then consume
@@ -2795,12 +2835,12 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
     if(restore_message(b))return -1;
     history_restore_apply(b);
     if(b->scene_replay_finished)return 1;
-    if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
+    if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
     while(budget--){b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;int old_module=b->vm->module;unsigned old_scripts=b->vm->script_depth;KStatus s=kvm_run(b->vm,1);
         /* Native 408060 notifies navigation on a script return, but library
            function calls only change the VM instruction source. */
         if(b->vm->script_depth<old_scripts&&scene_transition(b,b->vm->modules[old_module].name,b->vm->modules[b->vm->module].name))return -1;
-        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
+        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
         else if(s==KVM_TEXT){if(draw_text(b))return -1;}
         else if(s==KVM_BUDGET)kvm_resume(b->vm);
         else if(s==KVM_ERROR)return error(b,b->vm->error);
@@ -3290,6 +3330,27 @@ size_t bootstrap_audio_mix_read(KBootstrap *b,size_t *position,uint8_t *out,size
 #include "save_runtime.inc"
 #include "scene_replay.inc"
 
+int bootstrap_title_reset_close(KBootstrap *b,int accept){
+    if(!b||!b->title_reset_modal)return -1;
+    if(kvm_push(b->vm,(KValue){accept!=0,NULL}))return -1;
+    if(accept){
+        /* The original script runs FLAGINI/HAGE_FLAGINI after Yes. Commit
+           tombstones for this mode's portable checkpoint indices as well;
+           otherwise those newer files would resurrect the initialized saves.
+           No source-game files or the other mode's checkpoints are touched. */
+        unsigned selector=b->vm->globals[1][61].number==1;
+        KResetFile files[100];char names[100][64];
+        static const char empty[]="KISAKU-SLOT-1 0\n";
+        for(unsigned i=0;i<100;i++){
+            snprintf(names[i],sizeof(names[i]),"kisaku-slot-%u-%03u.index",selector,i+1);
+            files[i]=(KResetFile){names[i],empty,sizeof(empty)-1};
+        }
+        b->reset_pending=1;
+        if(kreset_prepare(bootstrap_save_dir(b),files,100)||kreset_recover(bootstrap_save_dir(b))){b->vm->sp--;return -1;}
+        b->reset_pending=0;
+    }
+    b->title_reset_modal=0;return 0;
+}
 int bootstrap_quit_dialog_close(KBootstrap *b,int accept){
     if(!b)return -1;
     if(accept){

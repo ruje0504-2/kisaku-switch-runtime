@@ -643,7 +643,7 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 原因：31/110 的分发条件只接受 mode0；原始 open.mes 的附录按钮返回2，随后使用 mode1，之前没有覆盖该路径。
 - 按 4fbc40/4ed590 及汇编补齐模式0..3的动作0/1：普通/秃作主菜单与附录布局，独立保存禁用项图集编号。附录四项解锁按 byte4005/4002/3290/4004 等于1，返回6/7/8/9/13/10；秃作附录按 byte3601/3290，返回6/8/10。原始进度保持不变，没有默认解锁。
 - 原始 open.mes 主菜单→附录→返回主菜单通过；全部四种布局、禁用点击、各项返回编号、非法模式保留参数专项通过。初始 layer1 允许大于640×480，仍仅绘制原版客户端矩形。
-- 进一步逐项探针明确暴露旧缺口：CG 31/300、音乐31/330、视频31/60、秃作切换14/12（参数201）仍报错；回想可进入场景选择模态。本轮不声称附录内容全部完成。详情见 remaining-work.md；本地诊断 local/title-children-probe.log。
+- 进一步逐项探针明确暴露旧缺口：CG 31/310、音乐31/340、视频31/70、秃作切换14/12（参数201）仍报错；回想可进入场景选择模态。本轮不声称附录内容全部完成。详情见 remaining-work.md；本地诊断 local/title-children-probe.log。
 - 验证：`./build-host.sh`、`./test-host.sh 鬼作`、`build/kisaku-bootstrap-test 鬼作 <临时存档目录> --title`、对应 ASan/UBSan 专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。日志 local/title-appendix-{build,tests,sanitized,switch,package}.log。
 - NRO SHA-256：`5b40b3b17efe0f7f35b1a2f0fccd06ba609b50b6af3775208d3b9efdd9610abc`。Switch实机、附录各内容完整回放、全部路线未验证；未运行PC程序。
 
@@ -655,3 +655,14 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 新增`--calendar`专项：真实timepart图片的日期逐像素合成、选择底图连续180帧变化仍保持日期、暂停/恢复/隐藏；周任务group0/item2参数与停止问号后80帧稳定；结束音非空PCM保留时两帧自动收尾、确认/取消/点击不能抢先跳过。旧日期测试改为检查私有表面，并验证隐藏不回滚覆盖区域外的新画面。
 - `./build-host.sh`、`build/kisaku-bootstrap-test 鬼作 <临时存档目录> --calendar`、`./test-host.sh 鬼作`、该专项ASan/UBSan、`./build-switch.sh`、`git diff --check`通过。日志local/calendar-{build,focused,tests,sanitized,switch}.log；首次专项的缺失choice_text夹具已修正，最终专项及完整回归均通过。
 - NRO SHA-256：`aa025f0c6f9dea89b39d66ce18587430d5ce7bec2f6fc70d492e17b0415e8fdb`。Switch实机及全部周任务真实剧情组合仍未验证；本轮已修具体生命周期/参数/结束条件，不代表整个移植完成。未运行PC原版。
+
+## 2026-09-22 主菜单读档、存档初始化与秃作入口修复
+
+- `31/527` 按 `4f9dc0` 纠正为读取动作参数：0/1请求存档/读档，2返回bank1[60]；此前误当输入队列轮询且未消费动作，导致标题读档没有进入窗口。新增独立文件模态阻塞，关闭后原脚本继续；前端覆盖标题读档、取消和实际读取检查点。
+- 标题对旧便携存档补有效性扫描：只有本模式存在可读、尺寸匹配、含控制记录的检查点才补bank1[60]，修复重启后读档/初始化错误灰色。全新无存档仍禁用，不默认解锁附录内容。
+- `31/111` 接通原版CDialog mode2。该菜单是初始化/清除存档，不是恢复；取消不修改存档，确认后对当前模式100槽写入可恢复事务的索引墓碑，再执行原始FLAGINI/HAGE_FLAGINI。`31/1020`按4f95d0删除WEEK_DATA/WEEKEND_DATA设置节。破坏性分支仅在临时测试目录验证，未清除用户存档。
+- `14/12` 按4f7890→4f91c0→4f8d40→503920恢复两个全局bank、byte/word/raw并同步VM指针，保留当前MES与调用现场；错误快照保留参数和现态。`31/1013`按4f97c0接通应用菜单启用状态。原始脚本普通→秃作→普通往返、再次进入秃作并开始至第一句剧情通过，不等于秃作全路线验证。
+- 修正上一轮诊断忽略MES加法所写的接口编号：CG实际31/310、音乐31/340、视频31/70。这三项仍未实现；不是本轮已修的标题/秃作入口。
+- 验证通过：`./build-host.sh`、`./test-host.sh 鬼作`、`build/kisaku-bootstrap-test 鬼作 <临时目录> --title-paths`、标题专项及完整前端ASan/UBSan（detect_leaks=0）、`./build-switch.sh`。日志local/title-load-{build,tests,focused,sanitized,panel-sanitized,switch}.log。全回归后仅扩充标题测试的秃作首句和坏FLAG断言，重新编译并通过普通/消毒器专项；运行时代码未再改动。
+- NRO SHA-256：`0efe2f0bd82572257da6b521e0525ec8330cd05ff65a56c624f16be63c666f97`。Switch实机、秃作完整路线、全部后期存档未验证；未运行PC原版。
+- `python3 tools/package_sd.py 鬼作`、`git diff --check`通过；交付/switch/kisaku主入口与兼容名SHA均与上述构建一致，日志local/title-load-package.log。
