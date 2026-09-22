@@ -1,113 +1,114 @@
-#include "../runtime/scene_mode_catalog.h"
-/* Native 4fae70 selector artwork. Completion/playback still uses the
-   portable checkpoint bridge pending the native scene-script dispatch. */
-static int scene_mode_hage(const KBootstrap *b);
+#include "../runtime/scene_mode.h"
+/* 4fae70 owns the modal; the original MES resumes playback after its return.
+   Do not route this selector through the unrelated checkpoint history menu. */
+static int scene_mode_hage(const KBootstrap *b){return b&&b->vm&&b->vm->global_count[1]>61&&!b->vm->globals[1][61].string&&b->vm->globals[1][61].number==1;}
+static unsigned scene_mode_base(unsigned cat){unsigned n=0;for(unsigned c=0;c<cat;c++)n+=kscene_mode_counts[c];return n;}
+static unsigned scene_mode_items(KBootstrap *b,unsigned cat){return scene_mode_hage(b)?30:kscene_mode_counts[cat];}
+static void scene_mode_at(KBootstrap *b,unsigned flat,unsigned *cat,unsigned *item){if(scene_mode_hage(b)){*cat=0;*item=flat;}else if(kscene_mode_at(flat,cat,item)){*cat=0;*item=0;}}
+static int scene_mode_bank(KBootstrap *b,unsigned index){KValue v=b->vm->globals[1][index];return v.string?0:v.number;}
 static void scene_mode_prepare(MessagePanel *p,KBootstrap *b){
     if(p->direct_count)return;
-    if(!b->scene_history.loaded)khistory_load(&b->scene_history,bootstrap_save_dir(b));
-    p->direct_count=scene_mode_hage(b)?30:kscene_mode_total();p->direct_selected=0;p->direct_page=0;
+    int hage=scene_mode_hage(b),cat=scene_mode_bank(b,12),page=scene_mode_bank(b,13),slot=scene_mode_bank(b,14),variant=scene_mode_bank(b,15);
+    p->direct_count=hage?30:kscene_mode_total();p->direct_sub=-1;p->direct_focus=0;
+    if(hage){page=cat>=0&&cat<4?cat:0;cat=0;slot=0;}
+    else {if(cat<0||cat>=11)cat=0;if(page<0||page>=(kscene_mode_counts[cat]+8)/9)page=0;slot=slot<0?0:slot%9;}
+    if(page*9+slot>=(int)scene_mode_items(b,(unsigned)cat))slot=0;
+    p->direct_selected=(hage?0:scene_mode_base((unsigned)cat))+(unsigned)(page*9+slot);p->direct_page=(unsigned)page;
+    if(!hage&&variant>=0&&(unsigned)variant<kscene_mode_variants((unsigned)cat,(unsigned)(page*9+slot))){p->direct_sub=variant;p->direct_focus=variant;}
 }
-static int scene_mode_hage(const KBootstrap *b){
-    return b&&b->vm&&b->vm->global_count[1]>61&&!b->vm->globals[1][61].string&&b->vm->globals[1][61].number;
+static unsigned scene_mode_visible(MessagePanel *p,KBootstrap *b){unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);if(p->direct_sub>=0)return kscene_mode_variants(cat,item);unsigned n=scene_mode_items(b,cat)-item/9*9;return n<9?n:9;}
+static int scene_mode_unlocked(MessagePanel *p,KBootstrap *b,unsigned slot){
+    unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);
+    if(slot>=scene_mode_visible(p,b))return 0;
+    if(scene_mode_hage(b))return kscene_mode_flag_value(b->vm->bytes,b->vm->byte_count,kscene_mode_hage_flags[item/9*9+slot])==1;
+    return kscene_mode_unlocked(b->vm->bytes,b->vm->byte_count,cat,p->direct_sub>=0?item:item/9*9+slot,p->direct_sub>=0?(int)slot:-1);
 }
-static int scene_mode_checkpoint(KBootstrap *b,unsigned slot,KSceneCheckpoint *cp){
-    if(!b||!cp||slot>=600)return -1;
-    if(!b->scene_history.loaded&&khistory_load(&b->scene_history,bootstrap_save_dir(b)))return -1;
-    return khistory_checkpoint(&b->scene_history,slot,cp);
+static void scene_mode_page(MessagePanel *p,KBootstrap *b,unsigned cat,unsigned page){
+    p->direct_selected=(scene_mode_hage(b)?0:scene_mode_base(cat))+page*9;p->direct_page=page;p->direct_sub=-1;p->status[0]=0;
+    if(scene_mode_hage(b))b->vm->globals[1][12]=(KValue){(int32_t)page,NULL};
 }
-static unsigned scene_mode_items(KBootstrap *b,unsigned cat){return scene_mode_hage(b)?30:kscene_mode_counts[cat];}
-static void scene_mode_at(KBootstrap *b,unsigned flat,unsigned *cat,unsigned *item){
-    if(scene_mode_hage(b)){*cat=0;*item=flat;}else if(kscene_mode_at(flat,cat,item)){*cat=0;*item=0;}
+static int scene_mode_finish(MessagePanel *p,KBootstrap *b,int result){
+    if(kvm_push(b->vm,(KValue){result,NULL})){snprintf(p->status,sizeof(p->status),"返回值压栈失败");return -1;}
+    b->vm->bytes[4012]=0;b->scene_modal=0;b->scene_panel_request=0;p->kind=0;p->direct_scene=0;return 0;
 }
-static unsigned scene_mode_base(unsigned cat){unsigned n=0;for(unsigned c=0;c<cat;c++)n+=kscene_mode_counts[c];return n;}
 static void scene_mode_action(MessagePanel *p,KBootstrap *b,int action){
-    scene_mode_prepare(p,b);if(action==1){b->scene_modal=0;b->scene_panel_request=-1;if(kvm_push(b->vm,(KValue){-1,NULL}))snprintf(p->status,sizeof(p->status),"返回值压栈失败");p->kind=0;p->direct_scene=0;return;}
-    unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);unsigned old=p->direct_selected;
-    if(action==2&&item>=3)p->direct_selected-=3; else if(action==3&&item+3<scene_mode_items(b,cat))p->direct_selected+=3;
-    else if(action==4&&item%3)p->direct_selected--; else if(action==5&&item%3<2&&item+1<scene_mode_items(b,cat))p->direct_selected++;
-    else if(action==8&&item>=9)p->direct_selected-=9; else if(action==9&&item+9<scene_mode_items(b,cat))p->direct_selected+=9;
-    if(old!=p->direct_selected){unsigned nc,ni;scene_mode_at(b,p->direct_selected,&nc,&ni);p->direct_page=ni/9;}
-    if(action)return;
-    KSceneCheckpoint cp;if(scene_mode_checkpoint(b,p->direct_selected,&cp)){snprintf(p->status,sizeof(p->status),"该场景尚未解锁");return;}
-    if(b->vm->global_count[0]>18)b->vm->globals[0][18]=(KValue){(int32_t)cp.scene,NULL};
-    if(kvm_push(b->vm,(KValue){(int32_t)cp.scene,NULL})){snprintf(p->status,sizeof(p->status),"返回值压栈失败");return;}b->scene_modal=0;b->scene_panel_request=0;p->scene_request=p->direct_selected+1;p->kind=16;p->direct_scene=0;
+    scene_mode_prepare(p,b);unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);
+    unsigned page=item/9,n=scene_mode_visible(p,b),pages=(scene_mode_items(b,cat)+8)/9;int f=p->direct_focus,hage=scene_mode_hage(b);
+    if(action==1){if(p->direct_sub>=0){p->direct_sub=-1;p->direct_focus=(int)(item%9);p->status[0]=0;}else scene_mode_finish(p,b,-1);return;}
+    if((action==8||action==9)&&p->direct_sub<0){unsigned next=action==8?(page? page-1:page):(page+1<pages?page+1:page);scene_mode_page(p,b,cat,next);p->direct_focus=0;return;}
+    if(action>=2&&action<=5){
+        if(f<0)f=0;
+        else if(f<0x100){
+            if(action==2)f=f>=3?f-3:(p->direct_sub<0?0x200:f);
+            else if(action==3)f=f+3<(int)n?f+3:0x300;
+            else if(action==4)f=f%3?f-1:(!hage&&p->direct_sub<0?0x100+(f==0?0:f==3?3:8):f);
+            else if(f%3<2&&f+1<(int)n)f++;
+        }else if(f<0x200){int c=f&255;if(action==2&&c>0)f--;if(action==3&&c<10)f++;if(action==5){f=c==10?0x300:c==0?0:c<5?3:6;if(f<0x100&&f>=(int)n)f=(int)(n-1);}}
+        else if(f<0x300){if(action==3)f=0;if(action==4&&f>0x200)f--;if(action==5&&(unsigned)(f-0x200+1)<pages)f++;}
+        else {if(action==2)f=(int)n-1;if(action==4&&!hage&&p->direct_sub<0)f=0x10a;}
+        p->direct_focus=f;p->status[0]=0;return;
+    }
+    if(action||f<0)return;
+    if(f==0x300){scene_mode_action(p,b,1);return;}
+    if(f>=0x200){if(p->direct_sub<0&&(unsigned)(f&255)<pages)scene_mode_page(p,b,cat,(unsigned)(f&255));return;}
+    if(f>=0x100){unsigned c=(unsigned)(f&255);if(!hage&&p->direct_sub<0&&c<11&&(c!=10||b->vm->bytes[4006]))scene_mode_page(p,b,c,0);return;}
+    if(!scene_mode_unlocked(p,b,(unsigned)f)){snprintf(p->status,sizeof(p->status),"该场景尚未解锁");return;}
+    if(!hage&&p->direct_sub<0){item=page*9+(unsigned)f;p->direct_selected=scene_mode_base(cat)+item;if(kscene_mode_variants(cat,item)){p->direct_sub=0;p->direct_focus=0;p->status[0]=0;return;}}
+    /* 4735ca..473655 stores category, page, page*9+slot, variant. */
+    if(!scene_mode_finish(p,b,hage?(int)(page*256)+(f&255):0)&&!hage){
+        b->vm->globals[1][12]=(KValue){(int32_t)cat,NULL};b->vm->globals[1][13]=(KValue){(int32_t)page,NULL};
+        b->vm->globals[1][14]=(KValue){(int32_t)item,NULL};b->vm->globals[1][15]=(KValue){p->direct_sub>=0?f:-1,NULL};
+    }
+}
+static void scene_mode_grid(MessagePanel *p,KBootstrap *b,unsigned slot,int *x,int *y){
+    if(p->direct_sub>=0){unsigned n=scene_mode_visible(p,b),cols=n<3?n:3;*x=(640-(int)cols*168)/2+5+(int)(slot%3)*168;*y=(480-(int)((n+2)/3)*136)/2+4+(int)(slot/3)*136;}
+    else if(scene_mode_hage(b)){*x=69+(int)(slot%3)*176;*y=48+(int)(slot/3)*136;}
+    else {*x=133+(int)(slot%3)*168;*y=40+(int)(slot/3)*136;}
 }
 static int scene_mode_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     scene_mode_prepare(p,b);
-    if(ui_canvas(&p->image)||ui_akb_asset(b,"kisaku_dl_seanemode_p.akb",&p->direct_artwork)||
-       ui_akb_asset(b,"kisaku_dl_seanemode_p2.akb",&p->direct_parts))return -1;
+    if(ui_canvas(&p->image)||ui_akb_asset(b,"kisaku_dl_seanemode_p.akb",&p->direct_artwork)||ui_akb_asset(b,"kisaku_dl_seanemode_p2.akb",&p->direct_parts))return -1;
     memset(p->image.pixels,0,p->image.stride*p->image.height);
-    int hage=scene_mode_hage(b);unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);
-    unsigned page=item/9; char asset[64];
-    if(hage){unsigned lo=page*9,hi=lo+8;if(page==3)hi=29;snprintf(asset,sizeof(asset),"hage_scene_%02u_%02u.akb",lo,hi);}else snprintf(asset,sizeof(asset),"scene_%02u_%02u.akb",kscene_mode_resource_group[cat],page);
-    if(strcmp(asset,p->direct_thumb_name)){rmt_free(&p->direct_thumb);p->direct_thumb_name[0]=0;ui_akb_asset(b,asset,&p->direct_thumb);if(p->direct_thumb.pixels)snprintf(p->direct_thumb_name,sizeof(p->direct_thumb_name),"%s",asset);}
-    /* p and p2 are atlases.  Drawing either atlas wholesale produces the
-       duplicated ELF/label blocks visible in the old preview.  471950 only
-       copies the individual frame, category, tab and return rectangles. */
-    static const int normal_x[3]={133,301,469},normal_y[3]={40,176,312};
-    static const int hage_x[3]={64,240,416},hage_y[3]={44,180,316};
-    for(unsigned i=0;i<9;i++){
-        unsigned flat=0,base=0;for(unsigned c=0;c<11;c++){if(c==cat){flat=base+page*9+i;break;}base+=kscene_mode_counts[c];}
-        if(page*9+i>=scene_mode_items(b,cat)||flat>=p->direct_count)continue;
-        int col=(int)(i%3),row=(int)(i/3),x=hage?hage_x[col]:normal_x[col],y=hage?hage_y[row]:normal_y[row];
-        KSceneCheckpoint cp;int unlocked=!scene_mode_checkpoint(b,flat,&cp);
-        if(unlocked&&p->direct_thumb.pixels){
-            /* 471740: columns are variants, rows are scene slots. */
-            ui_blit(&p->image,&p->direct_thumb,0,(int)i*112,149,112,x,y,1);
-        }
-        /* unlocked/selected frames are rows 28/148 in p; the locked row
-           268 is the opaque cover used by CScMode for incomplete entries. */
-        unsigned frame_y=unlocked&&flat==p->direct_selected?148u:28u;
-        ui_blit(&p->image,&p->direct_artwork,224,(int)frame_y,160,120,x-5,y-4,1);
+    int hage=scene_mode_hage(b);unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);unsigned page=item/9;char asset[64];
+    if(hage){unsigned lo=page*9,hi=lo+8;if(hi>29)hi=29;snprintf(asset,sizeof(asset),"hage_scene_%02u_%02u.akb",lo,hi);}
+    else if(p->direct_sub>=0)snprintf(asset,sizeof(asset),"scene_%02u_%02u_%02u.akb",kscene_mode_resource_group[cat],page,item%9);
+    else snprintf(asset,sizeof(asset),"scene_%02u_%02u.akb",kscene_mode_resource_group[cat],page);
+    if(strcmp(asset,p->direct_thumb_name)){rmt_free(&p->direct_thumb);p->direct_thumb_name[0]=0;if(ui_akb_asset(b,asset,&p->direct_thumb))return -1;snprintf(p->direct_thumb_name,sizeof(p->direct_thumb_name),"%s",asset);}
+    ui_blit(&p->image,&p->direct_artwork,224,0,116,28,hage?2:0,hage?2:0,1);
+    for(unsigned i=0;i<scene_mode_visible(p,b);i++){
+        int x,y;scene_mode_grid(p,b,i,&x,&y);int unlocked=scene_mode_unlocked(p,b,i);
+        if(unlocked)ui_blit(&p->image,&p->direct_thumb,0,(int)i*112,149,112,x,y,1);
+        ui_blit(&p->image,&p->direct_artwork,224,unlocked&&p->direct_focus==(int)i?148:28,160,120,x-5,y-4,1);
         if(!unlocked)ui_blit(&p->image,&p->direct_artwork,224,268,149,112,x,y,1);
     }
-    /* Category labels, page tabs and cancel are all sprite rectangles from
-       the same two atlases.  The resource-group table is the 0x547c74 map
-       used by 471950; it is independent of the flat scene slot number. */
-    if(!hage)for(unsigned c=0;c<11;c++){
-        unsigned map=kscene_mode_resource_group[c],state=c==cat?2u:0u;
-        ui_blit(&p->image,&p->direct_artwork,(int)((map/6)*112),(int)((state+(map%6)*4)*20),112,20,0,172+(int)c*28,1);
+    if(p->direct_sub<0){
+        if(!hage)for(unsigned c=0;c<11;c++){
+            unsigned map=kscene_mode_resource_group[c],state=c==10&&!b->vm->bytes[4006]?3:c==cat?2:p->direct_focus==(int)(0x100+c)?1:0;
+            ui_blit(&p->image,&p->direct_artwork,(int)((map/6)*112),(int)((state+(map%6)*4)*20),112,20,0,172+(int)c*28,1);
+        }
+        unsigned pages=(scene_mode_items(b,cat)+8)/9;
+        for(unsigned i=0;i<pages;i++){
+            unsigned state=i==page?2:p->direct_focus==(int)(0x200+i)?1:0;
+            const KImage *atlas=hage?&b->layers[8]:&p->direct_artwork;
+            ui_blit(&p->image,atlas,(hage?0:224)+(int)i*48,(hage?184:380)+(int)state*20,48,20,(hage?460:498)+(int)(i+((hage?4:3)-pages))*38,0,1);
+        }
+        ui_blit(&p->image,hage?&b->layers[8]:&p->direct_artwork,hage?480:368,hage?184:380,28,20,612,0,1);
     }
-    unsigned pages=(scene_mode_items(b,cat)+8)/9;if(pages>4)pages=4;
-    for(unsigned i=0;i<pages;i++){
-        unsigned state=i==page?2u:0u;
-        ui_blit(&p->image,&p->direct_artwork,224+(int)i*48,380+(int)state*20,48,20,(hage?460:498)+(int)(i+((hage?4u:3u)-pages))*38,0,1);
-    }
-    ui_blit(&p->image,&p->direct_artwork,368,380,28,20,612,0,1);
-    ui_blit(&p->image,&p->direct_artwork,384,0,112,32,528,448,1);
-    if(p->status[0])ui_text(b,&p->image,p->status,184,410,272,24,0xffb85c,0);
+    ui_blit(&p->image,&p->direct_artwork,384,p->direct_focus==0x300?32:0,112,32,528,448,1);
+    if(p->status[0])ui_text(b,&p->image,p->status,184,450,328,24,0xffb85c,0);
     ui_present(r,&p->image,&p->texture);return 0;
 }
-/* The PC selector accepts both the controller focus and the original
-   rectangular hit areas.  Keep pointer/touch selection on the same catalog
-   slot and action path as the D-pad so lock checks and replay preparation
-   cannot diverge between input devices. */
 static void scene_mode_pointer(MessagePanel *p,KBootstrap *b,int x,int y,int click){
-    scene_mode_prepare(p,b);
-    if(click==2){scene_mode_action(p,b,1);return;}
-    int hage=scene_mode_hage(b);unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);unsigned page=item/9,base=scene_mode_base(cat);
-    /* 472700/4a7d40 expose page tabs through AREA ids 0x100+.  Their
-       geometry differs between the two selector classes; map them to the
-       same nine-slot page cursor used by controller navigation. */
-    if(click&&!hage&&x>=0&&x<112&&y>=172&&y<472){
-        unsigned tab=(unsigned)(y-172)/28;if(tab<11){unsigned slot=scene_mode_base(tab);if(slot<p->direct_count){p->direct_selected=slot;p->direct_page=0;}return;}
+    scene_mode_prepare(p,b);if(click==2){scene_mode_action(p,b,1);return;}
+    int hage=scene_mode_hage(b),focus=-1;unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);
+    if(x>=528&&x<640&&y>=448&&y<480)focus=0x300;
+    if(p->direct_sub<0){
+        if(!hage&&x>=0&&x<112&&y>=172&&y<472&&(y-172)%28<20)focus=0x100+(y-172)/28;
+        unsigned pages=(scene_mode_items(b,cat)+8)/9;int start=(hage?460:498)+(int)((hage?4:3)-pages)*38;
+        if(y>=0&&y<20&&x>=start&&x<start+(int)pages*38)focus=0x200+(x-start)/38;
     }
-    if(click&&hage&&x>=460&&x<622&&y<24){
-        unsigned tab=(unsigned)(x-460)/38;if(tab<4){unsigned slot=tab*9;if(slot<p->direct_count){p->direct_selected=slot;p->direct_page=0;}return;}
-    }
-    /* Both area files reserve (528,448)-(640,480) for cancel.  Keep the
-       preview's left footer page step, but never let the native cancel zone
-       become a page-forward hit. */
-    if(click&&y>=438){if(x<128)scene_mode_action(p,b,8);else scene_mode_action(p,b,1);return;}
-    static const int normal_x[3]={133,301,469},normal_y[3]={40,176,312};
-    static const int hage_x[3]={64,240,416},hage_y[3]={44,180,316};
-    const int *xs=hage?hage_x:normal_x,*ys=hage?hage_y:normal_y;int w=hage?160:149;
-    for(unsigned row=0;row<3;row++)for(unsigned col=0;col<3;col++){
-        if(x>=xs[col]&&x<xs[col]+w&&y>=ys[row]&&y<ys[row]+(hage?120:112)){
-            unsigned slot=base+page*9+row*3+col;if(page*9+row*3+col<scene_mode_items(b,cat)&&slot<p->direct_count){p->direct_selected=slot;p->direct_page=page;if(click)scene_mode_action(p,b,0);}return;
-        }
-    }
-    if(click&&y>=408&&y<438){scene_mode_action(p,b,x<320?8:9);return;}
+    for(unsigned i=0;i<scene_mode_visible(p,b);i++){int gx,gy;scene_mode_grid(p,b,i,&gx,&gy);if(x>=gx&&x<gx+149&&y>=gy&&y<gy+112){focus=(int)i;break;}}
+    p->direct_focus=focus;if(click&&focus>=0)scene_mode_action(p,b,0);
 }
 /* AI6WIN 48d2c9 / 48d6c1: scene ID selects NNN.rmt; part n is the
    120x90 tile at ((n-1)*120,0). Four frames per filmstrip page. */

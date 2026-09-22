@@ -695,14 +695,46 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
             assert(!capture(r,path));
         }
         message_panel_action(&p,b,1);assert(!p.kind&&!b->scene_modal&&b->vm->sp==1&&b->vm->stack[0].number==-1);
+        /* A native completion byte, not a checkpoint, unlocks the slot. */
+        b->vm->sp=0;p.kind=20;p.direct_count=0;p.status[0]=0;
+        b->vm->globals[1][12]=(KValue){0,NULL};b->vm->globals[1][13]=(KValue){0,NULL};
+        b->vm->globals[1][14]=(KValue){0,NULL};b->vm->globals[1][15]=(KValue){-1,NULL};
+        unsigned flag=mode?kscene_mode_hage_flags[0]:kscene_mode_flags[0][0];
+        b->vm->bytes[flag]=0;message_panel_action(&p,b,0);assert(p.kind==20&&!b->vm->sp);
+        b->vm->bytes[flag]=1;message_panel_action(&p,b,0);
+        assert(!p.kind&&!p.scene_request&&b->vm->sp==1&&b->vm->stack[0].number==0&&!b->vm->bytes[4012]);
         if(!mode){
-            assert(!khistory_register(&b->scene_history,b->save_root,1,1,"s01.mes",0));
-            assert(!khistory_completion(&b->scene_history,b->save_root,1,1,1,NULL));
-            b->vm->sp=0;p.kind=20;p.direct_scene=1;p.direct_count=0;p.direct_selected=0;p.status[0]=0;
-            message_panel_action(&p,b,0);
-            assert(p.kind==16&&p.scene_request==1&&!b->scene_modal&&b->vm->sp==1&&b->vm->stack[0].number==1);
-            p.kind=0;p.scene_request=0;b->vm->sp=0;
+            assert(b->vm->globals[1][14].number==0&&b->vm->globals[1][15].number==-1);
+            /* Category 3 item 20 uses 3551/3552 even when its base is locked. */
+            b->vm->sp=0;p.kind=20;p.direct_count=0;
+            b->vm->globals[1][12]=(KValue){3,NULL};b->vm->globals[1][13]=(KValue){2,NULL};b->vm->globals[1][14]=(KValue){20,NULL};
+            b->vm->bytes[kscene_mode_flags[3][20]]=0;b->vm->bytes[3551]=0;b->vm->bytes[3552]=1;
+            scene_mode_prepare(&p,b);p.direct_focus=2;message_panel_action(&p,b,0);
+            assert(p.kind==20&&p.direct_sub==0);message_panel_draw(&p,b,r);
+            assert(!strcmp(p.direct_thumb_name,"scene_01_02_02.akb"));
+            message_panel_action(&p,b,0);assert(p.kind==20&&!b->vm->sp);
+            message_panel_action(&p,b,1);assert(p.kind==20&&p.direct_sub==-1);
+            message_panel_action(&p,b,0);message_panel_action(&p,b,5);message_panel_action(&p,b,5);message_panel_action(&p,b,0);
+            assert(!p.kind&&b->vm->sp==1&&b->vm->stack[0].number==0);
+            assert(b->vm->globals[1][12].number==3&&b->vm->globals[1][13].number==2&&b->vm->globals[1][14].number==20&&b->vm->globals[1][15].number==2);
+        }else{
+            b->vm->sp=0;p.kind=20;p.direct_count=0;b->vm->globals[1][12]=(KValue){3,NULL};
+            b->vm->bytes[kscene_mode_hage_flags[29]]=1;scene_mode_prepare(&p,b);p.direct_focus=2;
+            message_panel_draw(&p,b,r);message_panel_action(&p,b,0);
+            assert(!p.kind&&b->vm->sp==1&&b->vm->stack[0].number==0x302);
         }
+        /* Resume the original selector MES until it calls a real replay module. */
+        int dispatched=0;
+        for(unsigned step=0;step<3000;step++){
+            int state=bootstrap_run(b,100000);if(state<0)fprintf(stderr,"Scene dispatch: %s\n",b->error);assert(state>=0);
+            for(unsigned m=0;m<b->vm->module_count;m++){
+                const char *name=b->vm->modules[m].name;
+                if(!strncmp(name,"sc_",3)){dispatched=1;if(mode)assert(!strcmp(name,"sc_hage30.mes"));}
+            }
+            if(dispatched)break;
+            if(state==1)bootstrap_frame(b);
+        }
+        assert(dispatched&&!b->scene_modal&&!b->error[0]);
         SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.dialog_artwork);rmt_free(&p.dialog_body);rmt_free(&p.direct_artwork);rmt_free(&p.direct_parts);rmt_free(&p.direct_thumb);bootstrap_destroy(b);
     }
     puts("Kisaku letter replay exit and 31/320 selector: native mode7 atlas, scene catalog lock state, AKB selector layers, cancel/result and both selector script targets: PASS");

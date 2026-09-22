@@ -1502,7 +1502,7 @@ int bootstrap_dispatch(KBootstrap *b){
            The native modal returns its selected scene value through the VM
            stack; the frontend owns the input loop while scene_modal is set. */
         if(v->sp<1)return error(b,"31/320 subcall value required (arguments preserved)");
-        b->scene_modal=1;b->scene_panel_request=3;b->scene_focus=0;
+        b->scene_modal=1;b->scene_panel_request=3;b->scene_focus=0;v->bytes[4012]=1;
         v->sp--;b->handled++;return kvm_resume(v);
     }
     if(main==29&&(sub==0||sub==1)){

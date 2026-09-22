@@ -803,3 +803,16 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - **高清覆盖限制**：信件/小说全屏模式、消息交叉淡化、系统面板/历史仍采用原640合成后放大；缺少companion的旧检查点当前句也保留原渲染，下一次正常消息初始化可启用高清字层。没有修改字体分工：系统界面继续HOS，剧情使用已配置字体。
 - 验证：`./build-host.sh`、`./test-host.sh 鬼作`、`build/present-filter-test`、`build/font-test local/fonts/arshanghaisonggbpro_lt.otf`、高清专项 `build/kisaku-bootstrap-test 鬼作 local/hires-test-save --hires` 通过；高清专项 ASan/UBSan 通过。实际开场逐字显示、旧字底图清除、原始画面不变、源层被另行修改后的回退及选项层均有断言。主机截图 `local/hires-first.png` 已检查。
 - Switch `./build-switch.sh` 已通过 `-Werror`；主入口 SHA-256 `ba2c6cf047aea12d3dabfade461359d671a8c8b7ca3b2122da21183b033cc46b`。主机日志 `local/hires-regression.log`、`local/hires-asan.log`、`local/hires-final-build.log`、`local/hires-final-switch.log`。**Switch 实机画面、帧率和完整路线仍未验证。**
+
+## 2026-09-22 CScMode / CHageScMode 原生选择返回
+
+- 移除 31/320 前端的 khistory 检查点桥接；该菜单返回到原始 MES，由脚本自行选择回放模块，不再设置 kind16 或伪造 SceneData 场景编号。
+- 4735ca..473655 汇编确认普通模式写 bank1[12..15] = category/page/page*9+slot/variant，返回0；473410取消返回-1。4a7bf0确认秃作返回page*256+slot，翻页保存bank1[12]。4fae70进入/退出设置/清除byte4012。
+- 523378的11×27个word和5a3748的30条记录给出真实完成字节；470270/4705d0/472700的分支数量、按位解锁、3541..3552额外标志、3481..3483和3496..3501特例已实现。构建从已校验哈希的EXE重新提取并cmp校验提交的元数据。
+- 普通分支列表按473020居中排列，读取scene_group_page_slot.akb；取消仅退上层。方向键可在分类、缩略图、页签、返回之间切换，指针使用对应矩形，移除底部大范围误触翻页/取消。
+- 秃作缩略图原点按4a6840纠正为(69,48)，外框(64,44)。第四页页签按4a7d40/4a6840从借用layer8的y184/204/224行取图，不再错误读取普通模式三页图集。
+- 前端夹具使用隔离运行时设置完成字节，验证锁定拒绝、普通分支取消/返回值、特殊完成标志、原版普通回放MES跳转及秃作第30项sc_hage30.mes跳转；这不是通过真实路线获得解锁的验证，没有运行PC EXE。
+- 尚未完成470ba0条件缩略图重排、悬停轮播和菜单进退动画；本轮不是全部回想通关测试。周末第一项秘伝書界面故障、信件/小说高清字体路径仍按remaining-work.md记录。
+- 验证：`./build-host.sh`、更新后的message-panel-test（锁定/分支/真实MES跳转）、`./test-host.sh 鬼作`、`./build-switch.sh`（主入口-Werror）、元数据重新提取cmp、`git diff --check`均通过。日志：local/scene-native-build.log、scene-native-panels.log、scene-native-regression.log、scene-native-switch.log。
+- 前端ASan/UBSan通过：以`-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer`编译message_panel_test.c及同套依赖；运行`DYLD_LIBRARY_PATH=/opt/homebrew/opt/sdl3/lib ASAN_OPTIONS=detect_leaks=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/scene-panel-asan 鬼作 <新建临时目录>`。日志local/scene-native-asan-retry.log。首次/tmp运行卡在SDL2-compat的SDL3加载失败弹窗（sample确认尚在dyld初始化、未进入测试）；该次终止，不计通过。
+- Switch主入口SHA-256：`a074ad859af67edbe8ba203246622f508b9083399d9b4c10599d2456c00b659f`。实机效果/性能、全目录逐槽完整播放、自然路线解锁仍为**未验证**。
