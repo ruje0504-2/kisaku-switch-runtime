@@ -416,9 +416,22 @@ int main(int argc,char **argv){
         if(audio&&!menu.active&&(!panel.kind||(panel.kind>=9&&panel.kind<=15)))SDL_PauseAudioDevice(audio,0);
         SDL_SetRenderDrawColor(r,12,15,20,255);SDL_RenderClear(r);
         SDL_Rect dst={160,0,960,720};
-        if(b->layers[0].pixels){
+        /* Backlog paints an opaque full-size panel and caches its settled
+           image. Do not recomposite/sharpen hidden story text every frame. */
+        int opaque_backlog=panel.kind==5;
+        if(b->layers[0].pixels&&!opaque_backlog){
             const KImage *hires=NULL,*source=bootstrap_present_layers(b,&hires);
-            if(SDL_UpdateTexture(texture,NULL,source->pixels,(int)source->stride))goto done;
+            if(hires){
+                if(!hires_texture){
+                    hires_texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,960,720);
+                    if(!hires_texture||SDL_SetTextureBlendMode(hires_texture,SDL_BLENDMODE_BLEND)){
+                        fprintf(stderr,"HQ text texture creation failed: %s\n",SDL_GetError());goto done;
+                    }
+                }
+                if(SDL_UpdateTexture(hires_texture,NULL,hires->pixels,(int)hires->stride)){
+                    fprintf(stderr,"HQ text texture upload failed: %s\n",SDL_GetError());goto done;
+                }
+            }
             unsigned cas_strength=raw_present?0u:(unsigned)bootstrap_cas_strength(b);
             if(!raw_present){
                 /* The normal presentation path is always a filtered 1.5x
@@ -426,9 +439,10 @@ int main(int argc,char **argv){
                    optional RCAS weight; the CPU fallback uses the same
                    bilinear/RCAS equations.  --raw-present remains the
                    explicit nearest-neighbour reference path. */
-                if(!present_gles_draw(&present_gles,r,texture,&dst,cas_strength)){
+                if(!present_gles_draw(&present_gles,r,source,&dst,cas_strength)){
                     /* GLES2 handled the full-screen pass. */
                 }else {
+                if(SDL_UpdateTexture(texture,NULL,source->pixels,(int)source->stride))goto done;
                 /* Filter only a presentation copy.  The authored layer 0
                    remains untouched for save/replay and raw screenshot tests. */
                 if(!present_texture&&!present_disabled){
@@ -445,6 +459,7 @@ int main(int argc,char **argv){
                 else SDL_RenderCopy(r,texture,NULL,&dst);
                 }
             }else{
+                if(SDL_UpdateTexture(texture,NULL,source->pixels,(int)source->stride))goto done;
 #ifdef __SWITCH__
                 /* SDL's Switch backend historically rejected this call but
                    still rendered the texture; keep the raw path explicit and
@@ -453,13 +468,8 @@ int main(int argc,char **argv){
 #endif
                 SDL_RenderCopy(r,texture,NULL,&dst);
             }
-            if(hires){
-                if(!hires_texture){
-                    hires_texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,960,720);
-                    if(hires_texture)SDL_SetTextureBlendMode(hires_texture,SDL_BLENDMODE_BLEND);
-                }
-                if(!hires_texture||SDL_UpdateTexture(hires_texture,NULL,hires->pixels,(int)hires->stride)||
-                   SDL_RenderCopy(r,hires_texture,NULL,&dst))goto done;
+            if(hires&&SDL_RenderCopy(r,hires_texture,NULL,&dst)){
+                fprintf(stderr,"HQ text overlay draw failed: %s\n",SDL_GetError());goto done;
             }
         }
         if(b->fade_visible&&b->fade_surface.pixels){

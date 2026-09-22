@@ -816,3 +816,21 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - 验证：`./build-host.sh`、更新后的message-panel-test（锁定/分支/真实MES跳转）、`./test-host.sh 鬼作`、`./build-switch.sh`（主入口-Werror）、元数据重新提取cmp、`git diff --check`均通过。日志：local/scene-native-build.log、scene-native-panels.log、scene-native-regression.log、scene-native-switch.log。
 - 前端ASan/UBSan通过：以`-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer`编译message_panel_test.c及同套依赖；运行`DYLD_LIBRARY_PATH=/opt/homebrew/opt/sdl3/lib ASAN_OPTIONS=detect_leaks=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/scene-panel-asan 鬼作 <新建临时目录>`。日志local/scene-native-asan-retry.log。首次/tmp运行卡在SDL2-compat的SDL3加载失败弹窗（sample确认尚在dyld初始化、未进入测试）；该次终止，不计通过。
 - Switch主入口SHA-256：`a074ad859af67edbe8ba203246622f508b9083399d9b4c10599d2456c00b659f`。实机效果/性能、全目录逐槽完整播放、自然路线解锁仍为**未验证**。
+
+## 2026-09-22 高清呈现回归：偏色、SDL菜单/文字消失
+
+用户视频显示标题/人物整体偏蓝，CG、音乐等鉴赏及历史面板不可正常显示；用户确认从提高清晰度的c6975ec之后发生，而非仅场景选择修复。
+
+- 根因核查：旧present_gles直接采样SDL BGRA纹理的底层存储，绕过SDL自身的通道处理；更严重的是改写并禁用attribute0/1，未恢复指针、enable状态和VBO绑定，却继续让SDL使用其缓存的绘制状态。此影响同帧后续所有SDL绘制，包括960×720高清文字、鉴赏菜单和历史面板。
+- 修复：后处理自有RGBA纹理，显式从只读BGRA源转换，使用GL_RGBA上传；不再借用SDL纹理。显式解绑VBO后设置自有顶点，完整保存/恢复两个顶点属性的格式/指针/绑定/启用、当前array buffer、程序、0号纹理绑定、活动纹理单元、viewport、unpack alignment、blend和scissor启用状态。未修改内部游戏图层或原始素材。
+- 高清文字仍为960×720；没有加入上传失败时回退低清的处理。纹理创建/上传/绘制失败均明确记录错误。原先建议的上传失败回退已按用户要求撤销，上传失败本身不是本次视频中已经证实的原因。
+- 历史页本身是完整不透明面板，打开后跳过被遮住的剧情高清合成和CAS呈现，保留原有历史面板缓存。新增120帧缓存断言：无新增字形光栅化、VM IP/SP不动，之后滚动与退出测试仍通过；本机120次缓存绘制提交25.87ms，不作为Switch帧率。
+- 新增tests/present_gles_test.c执行真实pass代码的状态夹具：非默认VBO/属性、纹理unit3、scissor、blend、padded stride、100帧颜色转换与状态恢复、纹理创建失败恢复；ASan/UBSan通过。
+- 新增tests/present_gles_render_test.c，使用Mesa EGL surfaceless实际执行GLES着色器（llvmpipe）。提供的OTF在960×720生成1934个非透明字形像素；保留UI着色器/VBO/纹理缓存状态，在后处理后绘制文字与菜单60帧，与正常参考绘制逐像素一致。不是只有CPU位图检查，也不是Switch硬件测试。
+- 可复现入口：`tools/test_present_gles.sh`（Mesa路径可由KISAKU_MESA_PREFIX指定）。主机完整回归日志local/gallery-color-regression.log；GL实际绘制日志local/gallery-color-gles-render.log；GL ASan/UBSan日志local/gallery-color-gles-asan.log。
+- 轮播/动画新增代码尚未完成，已单独保存在local/pending-scene-animation.patch和local/pending-scene-mode-thumbnails.inc，没有混入本次紧急显示修复包。
+- 最终构建：`./build-host.sh`、`./build-switch.sh`通过；主机完整回归通过（包括高清消息、CG/音乐/视频/回想模态、历史滚动/退出、存读档）。最终GLES脚本`tools/test_present_gles.sh`通过，日志local/gallery-color-gles-final.log；`git diff --check`通过。
+- 最终主入口SHA-256：`68e5945b412d2a2f8cc489d96d9730c1fdbef2474a265f35cd99e06ee44458e8`，同步到交付SD目录。Switch实机颜色、所有鉴赏操作、历史页响应和高清文字仍未验证；主机实际GLES结果不冒充实机结果。
+
+- 后续实链路检查：tests/present_sdl_test.c 使用实际SDL opengles2后端（Mesa offscreen），调用原生CG、音乐、视频、场景鉴赏、历史和存读档绘制函数。六类各12帧，在CAS之后重绘，与正常SDL参考画面逐像素一致；960×720 OTF文字1934个非透明像素，连续30次SDL流式上传及后处理后叠加同样逐像素一致。入口仍为tools/test_present_gles.sh，允许第二参数指定资源目录。
+- 此检查另外发现视频鉴赏kind23的ui_canvas成功返回0，却被当成真值条件，导致原版图片页被跳过。已纠正并给既有前端测试补上实际画布/纹理断言；此前只有素材加载断言不能证明视频页绘出。

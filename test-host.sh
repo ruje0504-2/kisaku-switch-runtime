@@ -12,6 +12,7 @@ trap 'rm -f "$test_save/kisaku-runtime.ini" "$test_save/kisaku-flag-0-100.dat" "
 build/akb-test
 build/vm-memory-test
 build/present-filter-test
+if [ -x build/present-gles-test ]; then build/present-gles-test; fi
 build/param-change-test
 build/bowling-test
 build/bowling-score-test

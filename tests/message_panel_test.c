@@ -135,6 +135,7 @@ static void test_appendix_media(const char *root,const char *saves,SDL_Renderer 
     p.kind=23;p.selected=0;p.status[0]=0;b->vm->sp=0;b->vm->bytes[3600]=1;b->extra_active=1;b->extra_kind=b->extra_request=23;
     message_panel_draw(&p,b,renderer);
     assert(p.appendix_artwork.pixels&&p.appendix_artwork.width==640&&p.appendix_parts.pixels&&p.appendix_parts.width==585);
+    assert(p.texture&&p.image.pixels&&p.image.width==640&&p.image.height==480);
     /* videomode.area slot 0 is (34,8)-(49,123). */
     panel_touch(&p,b,NULL,35,9);assert(!p.kind&&!b->extra_active&&b->vm->sp==1&&b->vm->stack[0].number==0);
     rmt_free(&p.image);rmt_free(&p.appendix_artwork);rmt_free(&p.appendix_parts);SDL_DestroyTexture(p.texture);bootstrap_destroy(b);
@@ -413,6 +414,12 @@ static void test_backlog(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,const cha
     e.type=SDL_FINGERUP;e.tfinger.y=450.0f/480;
     assert(menu_touch_event(&touch,&menu,p,b,&e,200)&&p->kind==5&&!p->voice_loading&&!p->backlog_mouse_drag);
     backlog_pointer(p,b,100,100,0);backlog_panel_draw(p,b,r);assert(!p->status[0]);
+    KFontCacheStats cache_before,cache_after;assert(!kfont_cache_stats(ui_font(b),&cache_before));
+    uint64_t cache_start=SDL_GetPerformanceCounter();size_t story_ip=b->vm->ip;unsigned story_sp=b->vm->sp;
+    for(unsigned frame=0;frame<120;frame++)backlog_panel_draw(p,b,r);
+    assert(!kfont_cache_stats(ui_font(b),&cache_after)&&cache_before.rasterizations==cache_after.rasterizations);
+    assert(b->vm->ip==story_ip&&b->vm->sp==story_sp);
+    fprintf(stdout,"Backlog cached 120 frames: %.2f ms, no glyph rerasterization or story advance\n",1000.0*(SDL_GetPerformanceCounter()-cache_start)/SDL_GetPerformanceFrequency());
     if(shot){char path[4096];snprintf(path,sizeof(path),"%s.backlog-full.bmp",shot);assert(!capture(r,path));}
     backlog_scroll(p,b,-100,0);assert(!p->backlog_offset&&p->kind==5);
     backlog_scroll(p,b,-1,1);assert(!p->kind&&p->dismiss_menus);

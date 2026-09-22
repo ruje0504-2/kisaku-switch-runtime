@@ -386,7 +386,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind==8){settings_panel_draw(p,b,r);return;}
     if(p->kind==5){backlog_panel_draw(p,b,r);return;}
     if(p->kind==23){
-        if(!appendix_assets(p,b,1)&&ui_canvas(&p->image)){
+        if(!appendix_assets(p,b,1)&&!ui_canvas(&p->image)){
             ui_scale(&p->image,&p->appendix_artwork,0,0,640,480);
             /* 45c130/45c2f0 copy 15x115 cells from p2 into the two native
                rows. Locked cells remain the base background; unlocked cells
