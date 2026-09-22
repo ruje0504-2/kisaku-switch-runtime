@@ -127,6 +127,10 @@ typedef struct {
     /* Optional presentation companions; never saved or used by script reads. */
     unsigned present_hires,present_text_valid;
     unsigned present_page_valid,present_page_active;
+    unsigned present_fade_valid,present_fade_active,present_fade_alpha,present_fade_incoming;
+    KImage present_fade_to,present_fade_from,present_fade_text,present_fade_base,present_fade_reference,present_fade_overlay;
+    unsigned present_mes_valid;
+    KImage present_mes_source,present_mes_shadow,present_mes_old,present_mes_new,present_mes_reference;
     KImage present_page_source,present_page_text,present_page_shadow,present_page_base,present_page_reference;
     KImage present_source_text,present_message_text,present_choice_text;
     KImage present_shadow,present_clean,present_reference,present_overlay;

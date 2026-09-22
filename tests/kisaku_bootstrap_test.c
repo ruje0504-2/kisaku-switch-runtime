@@ -70,7 +70,23 @@ static void test_backlog_records(const char *root,const char *saves){
     assert(!backlog_call(b,6,1,(KValue){5,NULL})&&b->vm->stack[1].number==0);
     assert(!backlog_call(b,7,1,(KValue){1,NULL})&&b->vm->sp==2&&b->vm->stack[1].string&&!strcmp(b->vm->stack[1].string,"xyz"));
     assert(backlog_call(b,7,1,(KValue){99,NULL})<0&&b->vm->sp==3&&strstr(b->error,"23/7"));
+    assert(!backlog_call(b,5,1,(KValue){1,NULL})&&b->vm->sp==2);
+    KValue binary=b->vm->stack[1];const uint8_t *view=NULL;size_t bytes=0;
+    assert(kvm_pointer_value(binary)&&!kvm_buffer_view(b->vm,binary,&view,&bytes)&&bytes==4&&!memcmp(view,"abc",4));
+    assert(!backlog_call(b,5,1,(KValue){1,NULL})&&b->vm->stack[1].number==binary.number);
+    assert(!backlog_call(b,5,1,(KValue){99,NULL})&&b->vm->stack[1].number==0);
+    assert(backlog_call(b,5,1,(KValue){-1,NULL})<0&&b->vm->sp==3);
+    assert(backlog_call(b,5,1,(KValue){0,"bad"})<0&&b->vm->sp==3);
+    uint8_t binary_out[4]={0};
+    assert(!kvm_buffer_read(b->vm,binary,0,binary_out,4)&&!memcmp(binary_out,"abc",4));
+    assert(kvm_buffer_read(b->vm,binary,SIZE_MAX,binary_out,1)<0);
+    assert(kvm_buffer_read(b->vm,binary,3,binary_out,2)<0);
+    KValue middle={binary.number+2,NULL};
+    assert(!kvm_buffer_view(b->vm,middle,&view,&bytes)&&bytes==2&&view[0]=='c'&&!view[1]);
+    size_t saved_budget=b->vm->buffer_bytes;b->vm->buffer_bytes=KVM_POINTER_LIMIT-KVM_POINTER_BASE;
+    b->messages[1].data[0]='z';
     assert(backlog_call(b,5,1,(KValue){1,NULL})<0&&b->vm->sp==3&&strstr(b->error,"23/5"));
+    b->vm->buffer_bytes=saved_budget;b->messages[1].data[0]='a';
     assert(backlog_call(b,0,1,(KValue){-1,NULL})<0&&b->vm->sp==3&&b->message_count==5);
     assert(backlog_call(b,0,1,(KValue){4092,NULL})<0&&b->vm->sp==3&&b->message_count==5);
     assert(backlog_call(b,6,1,(KValue){0,"bad"})<0&&b->vm->sp==3&&b->messages[1].flag);
@@ -82,6 +98,8 @@ static void test_backlog_records(const char *root,const char *saves){
     assert(!bootstrap_backlog_count(b)&&!b->history_count&&!b->history_next&&!b->history[0][0]&&!b->history_voice[0][0]);
     assert(b->message_count==5&&b->messages[1].data==data&&b->messages[1].text==text);
     assert(!b->messages[1].size&&!b->messages[1].flag&&!data[0]&&!text[0]);
+    assert(!kvm_buffer_read(b->vm,binary,0,binary_out,4)&&!memcmp(binary_out,"abc",4));
+    assert(!backlog_call(b,5,1,(KValue){1,NULL})&&b->vm->stack[1].number==0);
     assert(!backlog_call(b,4,0,(KValue){0,NULL})&&b->vm->stack[1].number==0);
     assert(!backlog_call(b,6,1,(KValue){1,NULL})&&b->vm->stack[1].number==0);
     b->vm->syscall=29;b->vm->status=KVM_SYSCALL;b->vm->sp=1;b->vm->stack[0]=(KValue){0,NULL};
@@ -1716,14 +1734,30 @@ static void test_page_hires(const char *root,const char *saves){
         uint8_t *pixel=b->layers[0].pixels+y*2560+x*4;pixel[0]^=0x7f;
         const KImage *overlay=NULL,*base=bootstrap_present_layers(b,&overlay);
         assert(base->pixels[y*2560+x*4]==pixel[0]&&!overlay->pixels[at*4+3]);pixel[0]^=0x7f;
-        bootstrap_cancel(b);while(b->letter_transition)bootstrap_frame(b);
+        bootstrap_cancel(b);
+        while(b->letter_transition){
+            assert(b->present_fade_active&&bootstrap_present_layers(b,&overlay)!=&b->layers[0]&&overlay);
+            bootstrap_frame(b);
+        }
         assert(b->message_user_hidden&&bootstrap_present_layers(b,&overlay)==&b->layers[0]&&!overlay);
         if(novel)bootstrap_confirm(b);else bootstrap_cancel(b);
-        while(b->letter_transition)bootstrap_frame(b);
+        while(b->letter_transition){
+            assert(b->present_fade_active&&bootstrap_present_layers(b,&overlay)!=&b->layers[0]&&overlay);
+            bootstrap_frame(b);
+        }
         assert(!b->message_user_hidden&&bootstrap_present_layers(b,&overlay)!=&b->layers[0]&&overlay);
         bootstrap_confirm(b);assert(!b->message_active);
         /* Clear must discard the previous page, including HD glyphs. */
-        test_setting(b,"Display","EffectSpeed","2");assert(!call(b,novel?18:525,3));
+        assert(!call(b,novel?18:525,3));
+        unsigned fade_frames=0;
+        while(b->letter_transition||b->novel_transition){
+            assert(b->present_fade_active);
+            base=bootstrap_present_layers(b,&overlay);assert(base!=&b->layers[0]&&overlay);
+            unsigned ink=0;for(unsigned i=0;i<960*720;i++)ink+=overlay->pixels[i*4+3]!=0;
+            assert(ink);fade_frames++;bootstrap_frame(b);
+        }
+        assert(speed==2||fade_frames);
+        test_setting(b,"Display","EffectSpeed","2");
         bootstrap_present_layers(b,&overlay);assert(overlay);
         for(unsigned i=0;i<960*720;i++)assert(!overlay->pixels[i*4+3]);
         page_hires_text(b);KValue show[]={{124,NULL},{1,NULL},{novel?18:525,NULL}};
@@ -1735,6 +1769,43 @@ static void test_page_hires(const char *root,const char *saves){
         present_worker_clear(&worker);free(prepared);bootstrap_destroy(pair[0]);bootstrap_destroy(b);
     }
     puts("Full-page HD: letter/novel, three speeds, native pixel equality, mask reveal, worker, occlusion, hide/restore, clear and exit: PASS");
+}
+
+static void test_fade_hires(const char *root,const char *saves){
+    for(unsigned type=1;type<=3;type++)for(unsigned speed=0;speed<3;speed++){
+        KBootstrap *pair[2];
+        for(unsigned high=0;high<2;high++){
+            KBootstrap *b=pair[high]=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);
+            b->title.active=0;b->present_hires=high;b->vm->globals[0][50].number=0;
+            assert(!call(b,43,0));b->vm->globals[0][49].number=1;assert(!call(b,43,2));
+            b->font_width=b->font_height=24;b->vm->globals[0][30].number=24;b->vm->globals[0][31].number=24;
+            b->vm->globals[0][46].number=0;b->vm->globals[0][47].number=100;
+            page_hires_text(b);
+            char value[2]={(char)('0'+speed),0};test_setting(b,"Display","EffectSpeed",value);
+            KValue fade[]={{(int)type,NULL},{0,NULL},{24,NULL},{3,NULL},{43,NULL}};
+            assert(!call_anime520(b,fade,5));
+        }
+        KBootstrap *b=pair[1];unsigned seen=0;
+        for(unsigned frame=0;frame<20;frame++){
+            bootstrap_frame(pair[0]);bootstrap_frame(b);
+            assert(!memcmp(pair[0]->layers[0].pixels,b->layers[0].pixels,640*480*4));
+            const KImage *overlay=NULL,*base=bootstrap_present_layers(b,&overlay);
+            assert(b->present_mes_valid&&base!=&b->layers[0]&&overlay);
+            for(unsigned i=0;i<960*720;i++)seen+=overlay->pixels[i*4+3]!=0;
+            if(!b->mes_fade_transition)break;
+        }
+        assert(seen&&!b->mes_fade_transition);
+        KValue hide[]={{24,NULL},{4,NULL},{43,NULL}};
+        assert(!call_anime520(b,hide,3));
+        for(unsigned frame=0;frame<20&&b->mes_fade_transition;frame++){
+            bootstrap_frame(b);const KImage *overlay=NULL;
+            bootstrap_present_layers(b,&overlay);assert(overlay||!b->mes_fade_visible);
+        }
+        assert(!b->mes_fade_transition&&!b->mes_fade_visible);
+        assert(!call(b,43,1)&&!b->present_mes_valid&&!b->present_mes_source.pixels);
+        bootstrap_destroy(pair[0]);bootstrap_destroy(b);
+    }
+    puts("HD fade: three CMesFade types/speeds, original raw pixels, persistent text, hide and release: PASS");
 }
 
 /* Original Saturday script, not a synthetic replacement of its menu bodies. */
@@ -1803,7 +1874,7 @@ static void test_weekend_books(const char *root,const char *saves){
     puts("Weekend original MES: locked/unlocked book lists, HD labels, cancel=0, parent return, book playback and parameter completion: PASS");
 }
 int main(int argc,char **argv){
-    if(argc==4&&!strcmp(argv[3],"--page-hires")){test_page_hires(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--page-hires")){test_page_hires(argv[1],argv[2]);test_fade_hires(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--weekend")){test_weekend_books(argv[1],argv[2]);return 0;}
 
     if(argc==4&&!strcmp(argv[3],"--hires")){test_hires_present(argv[1],argv[2]);return 0;}
@@ -1816,7 +1887,7 @@ int main(int argc,char **argv){
         test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
     }
     if(argc!=3)return 2;
-    test_page_hires(argv[1],argv[2]);
+    test_page_hires(argv[1],argv[2]);test_fade_hires(argv[1],argv[2]);
     test_weekend_books(argv[1],argv[2]);
     test_title_appendix(argv[1],argv[2]);
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b);

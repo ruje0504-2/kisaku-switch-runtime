@@ -295,7 +295,7 @@ static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     return 0;
 }
 #include "backlog_store.h"
-void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->present_page_source);rmt_free(&b->present_page_text);rmt_free(&b->present_page_shadow);rmt_free(&b->present_page_base);rmt_free(&b->present_page_reference);rmt_free(&b->present_source_text);rmt_free(&b->present_message_text);rmt_free(&b->present_choice_text);rmt_free(&b->present_shadow);rmt_free(&b->present_clean);rmt_free(&b->present_reference);rmt_free(&b->present_overlay);native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
+void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->present_fade_to);rmt_free(&b->present_fade_from);rmt_free(&b->present_fade_text);rmt_free(&b->present_fade_base);rmt_free(&b->present_fade_reference);rmt_free(&b->present_fade_overlay);rmt_free(&b->present_mes_reference);rmt_free(&b->present_mes_source);rmt_free(&b->present_mes_shadow);rmt_free(&b->present_mes_old);rmt_free(&b->present_mes_new);rmt_free(&b->present_page_source);rmt_free(&b->present_page_text);rmt_free(&b->present_page_shadow);rmt_free(&b->present_page_base);rmt_free(&b->present_page_reference);rmt_free(&b->present_source_text);rmt_free(&b->present_message_text);rmt_free(&b->present_choice_text);rmt_free(&b->present_shadow);rmt_free(&b->present_clean);rmt_free(&b->present_reference);rmt_free(&b->present_overlay);native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);kvm_destroy(b->vm);free(b);}
 /* Companions use original layout coordinates at 3/2 scale; layout and VM
    surfaces stay at 640x480. Allocation failure simply leaves raw text intact. */
 static int present_surface(KImage *im,unsigned w,unsigned h){
@@ -304,6 +304,7 @@ static int present_surface(KImage *im,unsigned w,unsigned h){
     *im=(KImage){0,0,w,h,(size_t)w*4,pixels};return 0;
 }
 #include "present_page.inc"
+#include "present_fade.inc"
 static void present_text_reset(KBootstrap *b){
     b->present_text_valid=0;if(!b->present_hires)return;
     if(present_surface(&b->present_source_text,960,126)||
@@ -1390,20 +1391,23 @@ int bootstrap_dispatch(KBootstrap *b){
         v->sp--;b->handled++;return kvm_resume(v);
     }
     if(main==23&&(sub==5||sub==7)){
-        /* 4fe310/4fe1d0 query one raw CBackLog slot.  23/7 returns the
-           record's text (41ccc0); VM strings are borrowed, so the record must
-           stay alive until the next native backlog mutation.  23/5 instead
-           returns 41e7a0's binary command-vector address.  KValue has no
-           length-carrying byte-vector type, and treating that pointer as a C
-           string would truncate at embedded NULs or read past the vector.
-           Keep both operands intact on every failure, as required by the
-           native-unknown-call boundary.
-        */
+        /* 4fe310 -> 4fe130 -> 41cd80: binary vector data(), returned as
+           an integer IFlag. A VM-owned snapshot keeps embedded NULs and
+           remains valid after backlog clear/reallocation. */
         if(v->sp<2||v->stack[v->sp-2].string)
             return error(b,"backlog numeric operand required (arguments preserved)");
         int index=v->stack[v->sp-2].number;
-        if(sub==5)
-            return error(b,"23/5 raw backlog command pointer has no safe VM value (arguments preserved)");
+        if(sub==5){
+            /* Negative indices reach the native vector range handler. */
+            if(index<0)return error(b,"23/5 negative backlog index (arguments preserved)");
+            KValue result={0,NULL};
+            if(index>=0&&(unsigned)index<b->message_count){
+                KMessageRecord *record=&b->messages[index];
+                if(kvm_buffer(v,record->data,record->size,&result))
+                    return error(b,"23/5 command buffer allocation/limit (arguments preserved)");
+            }
+            v->sp-=2;v->stack[v->sp++]=result;b->handled++;return kvm_resume(v);
+        }
         if(index<0||(unsigned)index>=b->message_count)
             return error(b,"23/7 backlog slot out of range (arguments preserved)");
         const char *text=b->messages[index].text?b->messages[index].text:"";
@@ -2967,6 +2971,7 @@ static int draw_text(KBootstrap *b){
         }
         if(b->novel_font)active_font=b->novel_font;
     }
+    int mes_companion=b->mes_fade_surfaces[0].pixels&&present_mes_matches(b,dst);
     int page_companion=(b->novel_mode||b->letter_mode)&&dst==&b->layers[1]&&present_page_matches(b);
     int companion=b->present_hires&&b->present_text_valid&&!b->novel_mode&&!b->letter_mode&&
         dst==&b->layers[1]&&dst->width==640&&dst->height>=84;
@@ -2976,6 +2981,9 @@ static int draw_text(KBootstrap *b){
         }
     }
     for(size_t i=0;i<count;i++){
+        if(mes_companion&&kfont_draw_outline(active_font,&b->present_mes_source,chars[i].codepoint,
+           positions[i].x*3/2,positions[i].y*3/2,(unsigned)b->font_width*3/2,(unsigned)b->font_height*3/2,
+           (uint32_t)v->globals[0][33].number)){b->present_mes_valid=0;mes_companion=0;}
         if(page_companion&&kfont_draw_outline(active_font,&b->present_page_source,chars[i].codepoint,
            positions[i].x*3/2,positions[i].y*3/2,(unsigned)b->font_width*3/2,(unsigned)b->font_height*3/2,
            (uint32_t)v->globals[0][33].number)){b->present_page_valid=b->present_page_active=0;page_companion=0;}
@@ -2984,6 +2992,7 @@ static int draw_text(KBootstrap *b){
            (uint32_t)v->globals[0][33].number)){b->present_text_valid=0;companion=0;}
         if(kfont_draw_outline(active_font,dst,chars[i].codepoint,positions[i].x,positions[i].y,(unsigned)b->font_width,(unsigned)b->font_height,(uint32_t)v->globals[0][33].number))return error(b,"glyph unavailable");
     }
+    if(mes_companion)for(unsigned row=0;row<480;row++)memcpy(b->present_mes_shadow.pixels+row*2560,dst->pixels+row*dst->stride,2560);
     if(page_companion)for(unsigned row=0;row<480;row++)memcpy(b->present_page_shadow.pixels+row*2560,dst->pixels+row*dst->stride,2560);
     if(companion)for(unsigned row=0;row<84;row++)memcpy(b->present_shadow.pixels+row*2560,dst->pixels+row*dst->stride,2560);
     if(record_text(b))return -1;
@@ -3787,13 +3796,15 @@ const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay){
     if(!b)return NULL;
     const KImage *raw=&b->layers[0];
     if(!overlay||!b->present_hires||!raw->pixels||raw->width!=640||raw->height!=480||
-       b->letter_transition||(b->novel_transition&&!b->novel_text_reveal)||b->mes_fade_transition||b->helper_steps||b->exec_wipe_active)
+       ((b->letter_transition||(b->novel_transition&&!b->novel_text_reveal))&&!b->present_fade_active)||b->helper_steps||b->exec_wipe_active)
         return raw;
-    int page=(b->letter_mode||b->novel_mode)&&!b->message_user_hidden&&b->present_page_active&&present_page_matches(b);
-    if((b->letter_mode||b->novel_mode)&&!page)return raw;
-    int choice=!page&&b->choice_active&&b->present_choice_text.pixels;
-    int message=!page&&!choice&&b->message_visible&&!b->message_user_hidden&&b->present_text_valid;
-    if(!page&&!choice&&!message)return raw;
+    int fade=b->present_fade_active;
+    int mes=b->present_mes_valid&&b->mes_fade_drawn;
+    int page=!fade&&!mes&&(b->letter_mode||b->novel_mode)&&!b->message_user_hidden&&b->present_page_active&&present_page_matches(b);
+    if((b->letter_mode||b->novel_mode)&&!page&&!fade&&!mes)return raw;
+    int choice=!fade&&!mes&&!page&&b->choice_active&&b->present_choice_text.pixels;
+    int message=!fade&&!mes&&!page&&!choice&&b->message_visible&&!b->message_user_hidden&&b->present_text_valid;
+    if(!page&&!choice&&!message&&!fade&&!mes)return raw;
     if(message){
         KImage *source=&b->layers[1];
         if(!source->pixels||source->width!=640||source->height<84)return raw;
@@ -3802,7 +3813,14 @@ const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay){
     if(present_surface(&b->present_clean,640,480)||present_surface(&b->present_reference,640,480)||
        present_surface(&b->present_overlay,960,720))return raw;
     memset(b->present_overlay.pixels,0,960*720*4);
-    if(page){
+    if(fade){
+        present_fade_generate(b);
+        memcpy(b->present_clean.pixels,b->present_fade_base.pixels,640*480*4);
+        memcpy(b->present_reference.pixels,b->present_fade_reference.pixels,640*480*4);
+        memcpy(b->present_overlay.pixels,b->present_fade_overlay.pixels,960*720*4);
+    }else if(mes){
+        present_mes_layers(b);
+    }else if(page){
         memcpy(b->present_clean.pixels,b->present_page_base.pixels,640*480*4);
         memcpy(b->present_reference.pixels,b->present_page_reference.pixels,640*480*4);
         memcpy(b->present_overlay.pixels,b->present_page_text.pixels,960*720*4);

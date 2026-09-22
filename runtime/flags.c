@@ -36,7 +36,7 @@ static int putbank(FILE *f,const KFlags *s,unsigned bank){
     if(s->counts[bank]>8192||putnum(f,s->counts[bank]))return -1;
     for(unsigned i=0;i<s->counts[bank];i++){
         KValue v=s->globals[bank][i];size_t n=v.string?strlen(v.string):0;
-        if(n>1048576||putnum(f,v.string!=NULL)||putnum(f,(uint32_t)v.number)||putnum(f,(uint32_t)n)||(n&&fwrite(v.string,1,n,f)!=n))return -1;
+        if(kvm_pointer_value(v)||n>1048576||putnum(f,v.string!=NULL)||putnum(f,(uint32_t)v.number)||putnum(f,(uint32_t)n)||(n&&fwrite(v.string,1,n,f)!=n))return -1;
     }return 0;
 }
 int kflags_write(const KFlags *s,const char *path){

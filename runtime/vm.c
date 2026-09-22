@@ -10,8 +10,40 @@
 static uint32_t le32(const uint8_t *p) { return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24; }
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0]<<24|(uint32_t)p[1]<<16|(uint32_t)p[2]<<8|p[3]; }
 static int fail(KVM *v,const char *s) { snprintf(v->error,sizeof(v->error),"%s @0x%zx op=0x%02x: %s",v->module>=0?v->modules[v->module].name:"<none>",v->instruction_ip,v->opcode,s);v->status=KVM_ERROR;return -1; }
+struct KVMBuffer {struct KVMBuffer *next;uint32_t address;size_t size;uint8_t data[];};
+int kvm_buffer(KVM *v,const uint8_t *data,size_t size,KValue *value){
+    if(!v||!value||(size&&!data))return -1;
+    if(!size){*value=(KValue){0,NULL};return 0;}
+    for(KVMBuffer *p=v->buffers;p;p=p->next)if(p->size==size&&!memcmp(p->data,data,size)){
+        *value=(KValue){(int32_t)p->address,NULL};return 0;
+    }
+    /* Include a guard byte between vectors; one-past addresses never alias
+       the next allocation. The budget bounds both storage and addresses. */
+    size_t limit=KVM_POINTER_LIMIT-KVM_POINTER_BASE;
+    if(v->buffer_count>=4096||size>=limit||v->buffer_bytes>limit-size-1)return -1;
+    KVMBuffer *p=malloc(sizeof(*p)+size);if(!p)return -1;
+    p->address=KVM_POINTER_BASE+(uint32_t)v->buffer_bytes;p->size=size;
+    memcpy(p->data,data,size);p->next=v->buffers;v->buffers=p;v->buffer_bytes+=size+1;v->buffer_count++;
+    *value=(KValue){(int32_t)p->address,NULL};return 0;
+}
+int kvm_buffer_view(const KVM *v,KValue address,const uint8_t **data,size_t *size){
+    if(data)*data=NULL;
+    if(size)*size=0;
+    if(!v||!data||!size||!kvm_pointer_value(address))return -1;
+    uint32_t a=(uint32_t)address.number;
+    for(const KVMBuffer *p=v->buffers;p;p=p->next)if(a>=p->address&&(size_t)(a-p->address)<p->size){
+        size_t offset=a-p->address;*data=p->data+offset;*size=p->size-offset;return 0;
+    }
+    return -1;
+}
+int kvm_buffer_read(const KVM *v,KValue address,size_t offset,void *out,size_t count){
+    const uint8_t *data;size_t size;
+    if((count&&!out)||kvm_buffer_view(v,address,&data,&size)||offset>size||count>size-offset)return -1;
+    if(count)memcpy(out,data+offset,count);
+    return 0;
+}
 KVM *kvm_create(void) { KVM *v=calloc(1,sizeof(*v));if(v){v->random_state=(uint32_t)time(NULL)^(uint32_t)clock();v->module=-1;v->current_list=-1;v->byte_count=8192;v->word_count=600;v->global_count[0]=100;v->global_count[1]=100;}return v; }
-void kvm_destroy(KVM *v) { if(!v)return;for(unsigned i=0;i<v->module_count;i++)free(v->modules[i].boundaries);free(v->stack);free(v); }
+void kvm_destroy(KVM *v) { if(!v)return;for(unsigned i=0;i<v->module_count;i++)free(v->modules[i].boundaries);while(v->buffers){KVMBuffer *next=v->buffers->next;free(v->buffers);v->buffers=next;}free(v->stack);free(v); }
 int kvm_push(KVM *v,KValue x) {
     /* 46f390 -> 402720 -> 402c30 grows the native variant vector by 50%.
        Message return values may remain on this stack across library calls. */

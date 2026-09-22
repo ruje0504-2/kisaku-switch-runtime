@@ -46,5 +46,21 @@ int main(void){
     }
     assert(!v->sp);kvm_destroy(v);
     puts("Kisaku VM growable operand stack, mixed values and LIFO beyond 4096: PASS");
-    puts("Kisaku VM raw memory views, bounds, word clamp and local assignment: PASS");
+    v=kvm_create();assert(v);
+    uint8_t payload[]={0x32,0,0xff,0,0x18},out[5];KValue address,again;
+    assert(!kvm_buffer(v,payload,sizeof(payload),&address)&&kvm_pointer_value(address));
+    assert(!kvm_buffer(v,payload,sizeof(payload),&again)&&again.number==address.number&&v->buffer_count==1);
+    memset(payload,0,sizeof(payload));
+    assert(!kvm_buffer_read(v,address,0,out,5)&&out[0]==0x32&&!out[1]&&out[2]==0xff&&!out[3]&&out[4]==0x18);
+    /* The PC ABI is numeric: stores/loads, equality and pointer arithmetic
+       retain the VM address. Access always checks the mapped vector bounds. */
+    size=4;store(address.number,3,0x0e);load(3,4);integer(2);emit(0x34);emit(1);
+    id=kvm_add_module(v,"pointer-copy",code,size);assert(id>=0&&!kvm_start(v,id));
+    assert(kvm_run(v,100)==KVM_DONE&&v->sp==1);
+    assert(!kvm_buffer_read(v,v->stack[0],0,out,3)&&out[0]==0xff&&!out[1]&&out[2]==0x18);
+    assert(kvm_buffer_read(v,address,4,out,2)<0&&kvm_buffer_read(v,address,SIZE_MAX,out,1)<0);
+    v->buffer_count=4096;again=(KValue){123,NULL};
+    assert(kvm_buffer(v,payload,sizeof(payload),&again)<0&&again.number==123);
+    kvm_destroy(v);
+    puts("Kisaku VM raw memory, local assignment and bounded binary pointers: PASS");
 }

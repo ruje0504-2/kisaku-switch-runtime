@@ -4,6 +4,14 @@
 #include <stddef.h>
 #define KVM_MODULES 1024
 typedef struct { int32_t number; const char *string; } KValue;
+/* Native IFlag stores pointers as 32-bit integers. Map these into a bounded
+   VM address space; never truncate a host pointer or use strlen on payloads. */
+#define KVM_POINTER_BASE UINT32_C(0x60000000)
+#define KVM_POINTER_LIMIT UINT32_C(0x61000000)
+typedef struct KVMBuffer KVMBuffer;
+static inline int kvm_pointer_value(KValue v){
+    return !v.string&&(uint32_t)v.number>=KVM_POINTER_BASE&&(uint32_t)v.number<KVM_POINTER_LIMIT;
+}
 typedef struct { const uint8_t *code,*checkpoints; unsigned checkpoint_count; size_t size; uint8_t *boundaries; char name[261]; } KModule;
 typedef struct { int module; size_t ip; unsigned argc; int valid; } KFunction;
 typedef struct { int module; size_t ip; KValue args[64]; unsigned argc; } KFrame;
@@ -16,6 +24,7 @@ typedef struct {
     KList lists[32];unsigned list_count;int current_list;
     KFrame frames[64]; unsigned depth;
     struct {int module;size_t ip;unsigned depth;} scripts[64];unsigned script_depth;
+    KVMBuffer *buffers;size_t buffer_bytes;unsigned buffer_count;
     KValue *stack; unsigned sp,stack_capacity; /* Native growable variant vector. */
     const char *text;size_t text_size;
     /* Optional native recorders; failure stops before instruction effects or
@@ -40,6 +49,11 @@ int kvm_call_module(KVM *vm,int module);
 KStatus kvm_run(KVM *vm, unsigned budget);
 int kvm_push(KVM *vm, KValue value);
 int kvm_pop(KVM *vm, KValue *value);
+/* Immutable snapshots live until VM destruction. Empty vectors return NULL
+   (integer zero). Repeated queries deduplicate identical vectors. */
+int kvm_buffer(KVM *vm,const uint8_t *data,size_t size,KValue *value);
+int kvm_buffer_view(const KVM *vm,KValue address,const uint8_t **data,size_t *size);
+int kvm_buffer_read(const KVM *vm,KValue address,size_t offset,void *out,size_t size);
 int kvm_resume(KVM *vm);
 int kvm_list_clear(KVM *vm,int32_t id);
 #endif

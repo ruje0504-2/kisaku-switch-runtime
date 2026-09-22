@@ -945,3 +945,21 @@ L存档保持原入口，新增ZL以load=1打开原读档界面；撤除剧情ZL
 - 整屏隐藏/清页/退出淡化中的高清文字叠层、CMesFadeSprite及普通旧档当前句的高清重建仍未实现；本轮不是全流程高清完成。其他路线、Switch实机效果/负载/长时内存未验证。
 - 最终验证：`./build-host.sh`、`./test-host.sh 鬼作`、`tools/test_present_gles.sh`、`./build-switch.sh`与`python3 tools/package_sd.py 鬼作`全部通过。ASan/UBSan：`sh local/page-hd-asan-build.sh` 后以 `DYLD_LIBRARY_PATH=/opt/homebrew/opt/sdl3/lib ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 build/page-hd-asan 鬼作 local/weekend-probe-save --page-hires` 通过。日志前缀local/page-hd-*，git diff --check通过。
 - 最新交付主入口/兼容入口与build-switch产物同源，主入口SHA-256：`0156ac82435cd361f17efce6a5e2ac062239362a3ecf8477b5146ea6ab755906`。未运行PC原版程序，未做Switch实机验证。
+
+## 2026-09-23：高清淡化与回看23/5
+
+- 信件隐藏/恢复、清页/退出及旧小说兼容路径清页/退出增加独立高清淡化端点；CMesFadeSprite type1/2/3、持续字层、隐藏和遮罩接入960×720字形。原始表面和时钟不变，呈现计算进入既有worker；raw-nearest保留原帧。
+- 23/5按4fe310/4fe130/41cd80/402000返回数字型VM地址，实际对应有长度的只读二进制快照；支持安全偏移读取、去重、清空回看后的引用寿命。负索引、内存/数量上限失败保留参数；FLAG/control拒绝保存临时地址且不覆盖旧文件。空槽返回0属于安全移植约定，详见backlog-native.md。
+- 不启动PC程序，不改原始素材。FSR默认仍80，字体分工与ZL读档保持不变。覆盖旧“淡化时退回原字号”“23/5无安全结果而报错”待办，不代表整项移植或全回看原生调用已完成。
+
+验证：
+
+- `./build-host.sh`、`./test-host.sh 鬼作`：通过；含VM二进制地址、FLAG失败事务、回看、高清淡化、真实信件存读档和2191张AKB资源检查。日志 `local/fade-final-clean-build.log` / `local/fade-final-host.log`（前次完整通过日志为`local/fade-host-tests.log`）。
+- `build/kisaku-bootstrap-test 鬼作 local/weekend-probe-save --page-hires` / `--backlog`：通过；前者包含CMesFade三模式×三速度和原始像素对照。
+- 同两项以ASan/UBSan运行通过（`local/page-hd-asan-build.sh`构建，`DYLD_LIBRARY_PATH=/opt/homebrew/opt/sdl3/lib ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 build/page-hd-asan ...`）；日志 `local/fade-asan-page.log` / `local/fade-asan-backlog.log`。
+- `tools/test_present_gles.sh`：通过；真实SDL/GLES淡化14帧完整/增量上传一致，既有菜单、文字和FSR对照通过，日志 `local/fade-gles.log`。
+- `./build-switch.sh`（运行时`-Werror`）、`python3 tools/package_sd.py 鬼作`、`git diff --check`：通过。主入口与兼容文件名已同步。
+
+NRO SHA256（三份一致）：`c853368a80662e50fccb92ddea3b1021dcc8b6950cba7bbfa0cbfba335ceea53`。
+
+未验证：Switch实机视觉/帧时/长期内存、包含23/5的全路线回放。高清淡化的字形覆盖片使用双线性底色，非“两个完整FSR端点混合”的逐像素等价；具体内存和取舍已记入高清笔记第18节。普通旧档当前句高清重建及其余剩余项仍见remaining-work.md。

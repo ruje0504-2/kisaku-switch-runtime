@@ -417,7 +417,7 @@ int main(int argc,char **argv){
             audio_queued=navigation.queued;restore_navigation_audio=0;
         }
         int prepare_present=b->layers[0].pixels&&panel.kind!=5&&panel.kind!=22&&
-            b->present_hires&&(b->choice_active||b->message_visible||b->letter_mode||b->novel_mode);
+            b->present_hires&&(b->choice_active||b->message_visible||b->letter_mode||b->novel_mode||b->present_fade_active||b->mes_fade_drawn);
         if(prepare_present&&present_worker_submit(&present_worker,b))goto done;
         if(audio&&!menu.active&&(!panel.kind||(panel.kind>=9&&panel.kind<=15))){
             uint8_t chunk[4096];

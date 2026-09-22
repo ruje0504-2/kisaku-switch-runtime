@@ -34,7 +34,7 @@ static void letter_darken(KImage *to,const KImage *from){
     }
 }
 static int letter_finish(KBootstrap *b){
-    unsigned transition=b->letter_transition;b->letter_transition=0;
+    unsigned transition=b->letter_transition;b->letter_transition=0;present_fade_release(b);
     if(transition==1){
         if(message_init(b))return -1;
         b->letter_mode=0;b->novel_mode=0;
@@ -60,6 +60,14 @@ static int letter_render(KBootstrap *b){
             out[x*4+3]=src[x*4+3];
         }
     }
+    if(alpha<255){
+        if(b->letter_transition==5){
+            if(b->present_page_valid&&!present_fade_prepare(b)){
+                memcpy(b->present_fade_from.pixels,from->pixels,640*480*4);
+                present_fade_frame(b,&b->present_page_base,alpha,1);
+            }
+        }else present_fade_frame(b,to,alpha,0);
+    }
     return alpha>=255?letter_finish(b):0;
 }
 static int letter_begin(KBootstrap *b,unsigned transition){
@@ -82,6 +90,7 @@ static int letter_call(KBootstrap *b,int action){
         letter_darken(target,screen);b->font_width=b->font_height=24;letter_region(b);
         return letter_begin(b,2);
     }
+    present_fade_capture(b);
     if(action==3){ /* 48acd0 preserves the original background across clear. */
         letter_region(b);
         memcpy(b->letter_surfaces[2].pixels,saved->pixels,480*2560);
@@ -180,7 +189,7 @@ static void letter_text_hide(KBootstrap *b,int hidden){
     if(!b->letter_active||b->letter_transition||b->letter_exit_pending||b->message_user_hidden==(unsigned)(hidden!=0))return;
     KImage *screen=&b->layers[0],*saved=&b->letter_surfaces[0],*target=&b->letter_surfaces[1],*text=&b->layers[1];
     if(hidden){ /* 48abe0, after 489d00 completes the reveal. */
-        letter_text_all(b);memcpy(target->pixels,saved->pixels,480*2560);
+        letter_text_all(b);present_fade_capture(b);memcpy(target->pixels,saved->pixels,480*2560);
         for(unsigned y=0;y<480;y++)memcpy(saved->pixels+y*2560,screen->pixels+y*screen->stride,2560);
         b->font_width=b->font_height=16;b->vm->globals[0][30].number=16;b->vm->globals[0][31].number=18;
         (void)letter_begin(b,4);

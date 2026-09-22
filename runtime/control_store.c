@@ -53,7 +53,7 @@ int kcontrol_write(const char *path,const KControlRecord *r,unsigned count){
         bad=r[i].count>8192||(r[i].count&&!r[i].values)||(i&&key<=((uint32_t)r[i-1].type<<16|r[i-1].id))||putnum(f,key)||putnum(f,r[i].count);
         for(unsigned j=0;!bad&&j<r[i].count;j++){
             KValue v=r[i].values[j];size_t n=v.string?strlen(v.string):0;
-            bad=n>1048576||putnum(f,v.string!=NULL)||putnum(f,(uint32_t)v.number)||putnum(f,(uint32_t)n)||(n&&fwrite(v.string,1,n,f)!=n);
+            bad=kvm_pointer_value(v)||n>1048576||putnum(f,v.string!=NULL)||putnum(f,(uint32_t)v.number)||putnum(f,(uint32_t)n)||(n&&fwrite(v.string,1,n,f)!=n);
         }
     }
     if(fclose(f))bad=1;

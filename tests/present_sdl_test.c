@@ -34,7 +34,24 @@ static void page_upload(SDL_Renderer *r,KPresentGles *pass,const SDL_Rect *dst,c
     }
     assert(cache.uploads==1);
     printf("Letter HD runtime: %u ink pixels, 12 actual SDL/GLES compositions, one upload: PASS\n",ink);
-    texture_cache_clear(&cache);SDL_DestroyTexture(full);bootstrap_destroy(b);
+    SDL_DestroyTexture(full);
+    bootstrap_message_setting(b,8,-bootstrap_message_setting(b,8,0));
+    unsigned fades=0;
+    for(unsigned direction=0;direction<2;direction++){
+        bootstrap_cancel(b);
+        while(b->letter_transition){
+            base=bootstrap_present_layers(b,&overlay);assert(base!=&b->layers[0]&&overlay);
+            full=kimage_texture(r,overlay);assert(full);
+            assert(!present_gles_draw(pass,r,base,dst,0)&&!SDL_RenderCopy(r,full,NULL,dst));read_pixels(r,expected);
+            assert(!texture_cache_update(&cache,r,overlay,SDL_BLENDMODE_BLEND));
+            assert(!present_gles_draw(pass,r,base,dst,0)&&!SDL_RenderCopy(r,cache.texture,NULL,dst));read_pixels(r,actual);
+            assert(!memcmp(expected,actual,960*720*4));SDL_DestroyTexture(full);
+            fades++;bootstrap_frame(b);
+        }
+    }
+    assert(fades>2&&!b->message_user_hidden);
+    printf("Letter HD fade: %u actual SDL/GLES frames, full versus incremental texture upload: PASS\n",fades);
+    texture_cache_clear(&cache);bootstrap_destroy(b);
 }
 int main(int argc,char **argv){
     assert(argc==4);assert(!SDL_Init(SDL_INIT_VIDEO));

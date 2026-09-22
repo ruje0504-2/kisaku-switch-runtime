@@ -44,7 +44,12 @@ int main(int argc,char **argv){
     assert(read->byte_count==9192&&read->word_count==600&&read->raw_count==15000);
     assert(!memcmp(read->bytes,bytes,sizeof(bytes))&&!memcmp(read->raw,raw,sizeof(raw)));
     assert(!memcmp(read->words,words,sizeof(words))&&!strcmp(read->globals[1][2].string,values[2].string));
-    kflags_free(read);FILE *f=fopen(argv[1],"ab");assert(f);fputc(0,f);fclose(f);
+    kflags_free(read);
+    values[3]=(KValue){(int32_t)KVM_POINTER_BASE,NULL};
+    assert(kflags_write(&saved,argv[1])<0);
+    read=kflags_read(argv[1]);assert(read&&!read->globals[1][3].number);kflags_free(read);
+    values[3]=(KValue){0,NULL};
+    FILE *f=fopen(argv[1],"ab");assert(f);fputc(0,f);fclose(f);
     assert(!kflags_read(argv[1]));assert(!remove(argv[1]));
     puts("Kisaku FLAG ranges, merge modes, serialization and malformed input: PASS");return 0;
 }

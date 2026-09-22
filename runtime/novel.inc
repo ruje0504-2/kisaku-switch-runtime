@@ -43,7 +43,9 @@ static void novel_fade_frame(KBootstrap *b){
         for(unsigned c=0;c<3;c++)b->layers[0].pixels[i+c]=(uint8_t)(b->novel_from.pixels[i+c]*(255-alpha)/255+b->novel_target.pixels[i+c]*alpha/255);
         b->layers[0].pixels[i+3]=b->novel_target.pixels[i+3];
     }
+    if(!b->novel_text_reveal)present_fade_frame(b,&b->novel_target,alpha,0);
     if(alpha==255){
+        present_fade_release(b);
         if(b->novel_mode){present_page_background(b,&b->novel_background);present_page_all(b);}
         else present_page_free(b);
         b->novel_transition=0;b->novel_text_reveal=0;b->message_revealing=0;}
@@ -112,6 +114,7 @@ static int novel_dispatch(KBootstrap *b){
             if(voice_play(b))return -1;
             novel_fade(b,1);
         }else{
+            present_fade_capture(b);
             if(action==2){
                 memcpy(b->novel_target.pixels,b->novel_original.pixels,640*480*4);
                 if(message_init(b))return -1;

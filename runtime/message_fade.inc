@@ -51,9 +51,46 @@ static void message_fade_present(KBootstrap *b){
             message_fade_blend(screen,&b->mes_fade_surfaces[0],alpha);
         }
     }
+    if(b->present_mes_valid){
+        if(present_surface(&b->present_mes_reference,640,480))b->present_mes_valid=0;
+        else for(unsigned y=0;y<480;y++)memcpy(b->present_mes_reference.pixels+y*2560,screen->pixels+y*screen->stride,2560);
+    }
     b->mes_fade_drawn=1;
 }
+static void present_mes_layers(KBootstrap *b){
+    memcpy(b->present_clean.pixels,b->mes_fade_backing.pixels,640*480*4);
+    if(b->mes_fade_shade_visible)message_fade_blend(&b->present_clean,&b->mes_fade_surfaces[2],b->mes_fade_shade_alpha);
+    /* Capture the native reference before later sprites cover this surface. */
+    memcpy(b->present_reference.pixels,b->present_mes_reference.pixels,640*480*4);
+    unsigned next=b->mes_fade_transition==3?(b->mes_fade_type==1?255-b->mes_fade_alpha:
+        (unsigned)((uint64_t)255*b->mes_fade_tick/b->mes_fade_steps)):0;
+    unsigned threshold=b->mes_fade_steps?(512u/b->mes_fade_steps)*b->mes_fade_tick:512;
+    for(unsigned y=0;y<720;y++)for(unsigned x=0;x<960;x++){
+        size_t i=((size_t)y*960+x)*4;
+        const uint8_t *a=b->present_mes_old.pixels+i,*z=b->present_mes_new.pixels+i;
+        uint8_t *d=b->present_overlay.pixels+i;
+        unsigned aa=b->mes_fade_visible?a[3]*b->mes_fade_alpha/255:0,za=z[3]*next/255;
+        if(b->mes_fade_transition==3&&b->mes_fade_type==3){
+            unsigned mask=b->mes_fade_mask[(y*2/3)*640+x*2/3];
+            za=threshold>mask?threshold-mask:0;if(za>z[3])za=z[3];
+        }
+        unsigned old_weight=aa*(255-za)/255,out=za+old_weight;
+        if(!out)continue;
+        for(unsigned c=0;c<3;c++)d[c]=(uint8_t)((z[c]*za+a[c]*old_weight)/out);
+        d[3]=(uint8_t)out;
+    }
+}
 static void message_fade_finish(KBootstrap *b){
+    if(b->present_mes_valid&&b->mes_fade_transition==3){
+        if(b->mes_fade_type==1)memcpy(b->present_mes_old.pixels,b->present_mes_new.pixels,960*720*4);
+        else{
+            const unsigned *r=b->mes_fade_rect;
+            unsigned x=(r[0]*3+1)/2,end=((r[0]+r[2])*3+1)/2;
+            for(unsigned y=(r[1]*3+1)/2;y<((r[1]+r[3])*3+1)/2;y++)
+                memcpy(b->present_mes_old.pixels+y*3840+x*4,b->present_mes_new.pixels+y*3840+x*4,(end-x)*4);
+        }
+        memset(b->present_mes_new.pixels,0,960*720*4);
+    }
     switch(b->mes_fade_transition){
     case 3:
         if(b->mes_fade_type==1){
@@ -86,6 +123,9 @@ static void message_fade_frame(KBootstrap *b){
     }
 }
 static void message_fade_release(KBootstrap *b){
+    b->present_mes_valid=0;
+    rmt_free(&b->present_mes_reference);rmt_free(&b->present_mes_source);rmt_free(&b->present_mes_shadow);
+    rmt_free(&b->present_mes_old);rmt_free(&b->present_mes_new);
     for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);
     free(b->mes_fade_mask);b->mes_fade_mask=NULL;b->mes_fade_type=0;
     b->mes_fade_visible=b->mes_fade_shade_visible=b->mes_fade_transition=0;
@@ -115,6 +155,7 @@ static int message_fade_call(KBootstrap *b,int mode){
         for(unsigned i=0;i<2;i++)memset(b->mes_fade_surfaces[i].pixels,0,480*2560);
         unsigned width=dst->width<640?dst->width:640,height=dst->height<480?dst->height:480;
         for(unsigned y=0;y<height;y++)memset(dst->pixels+y*dst->stride,0,width*4);
+        present_mes_reset(b,dst);
         b->mes_fade_visible=1;
         const int rect[4]={0,0,640,480};
         for(unsigned i=0;i<4;i++)b->vm->globals[0][42+i]=(KValue){rect[i],NULL};
@@ -159,6 +200,11 @@ static int message_fade_call(KBootstrap *b,int mode){
             KImage *target=&b->mes_fade_surfaces[0];
             for(int row=0;row<h;row++)memcpy(target->pixels+(y+row)*2560+x*4,
                 source->pixels+(y+row)*source->stride,(size_t)w*4);
+            if(present_mes_matches(b,source)){
+                unsigned left=((unsigned)x*3+1)/2,right=((unsigned)(x+w)*3+1)/2;
+                for(unsigned row=((unsigned)y*3+1)/2;row<((unsigned)(y+h)*3+1)/2;row++)
+                    memcpy(b->present_mes_new.pixels+row*3840+left*4,b->present_mes_source.pixels+row*3840,(right-left)*4);
+            }else b->present_mes_valid=0;
             b->mes_fade_type=(unsigned)type;
             b->mes_fade_rect[0]=(unsigned)x;b->mes_fade_rect[1]=(unsigned)y;
             b->mes_fade_rect[2]=(unsigned)w;b->mes_fade_rect[3]=(unsigned)h;
