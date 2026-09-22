@@ -44,21 +44,27 @@ static int appendix_assets(MessagePanel *p,KBootstrap *b,unsigned video){
 static int music_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(appendix_assets(p,b,0)||ui_canvas(&p->image))return -1;
     ui_scale(&p->image,&b->layers[0],0,0,640,480);
-    /* The 714x540 atlas is four state rows for each of ten tracks laid out in
-       three columns.  Compose one state per track into the native 640x480
-       canvas instead of displaying the whole atlas (which would expose all
-       disabled/pressed rows at once). */
-    unsigned count=bootstrap_music_count();
-    for(unsigned i=0;i<count;i++){
-        unsigned group=i/3,col=i%3;
-        unsigned state=!bootstrap_music_unlocked(b,i)?3:b->music_active&&!SDL_strcasecmp(b->audio_name,bootstrap_music_name(i))?2:p->selected==i?1:0;
-        unsigned row=group*4+state,sy0=row*540/16,sy1=(row+1)*540/16;
-        appendix_crop_over(&p->image,&p->appendix_artwork,(int)col*238,(int)sy0,238,(int)sy1-(int)sy0,(int)col*213,20+(int)group*72,213,32);
+    /* CMusicMode::virtual_12 builds a compact list of the unlocked tracks;
+       virtual_0 then draws each entry at (0x9c + 10*i, 0x38 + 0x24*i),
+       copying a 0xee x 0x20 cell from the three-column atlas.  The atlas is
+       four 32px state rows per 0x80px group (normal, hover, playing, locked),
+       with the state selected by the mode's cursor/playing slot.  The old
+       preview treated the atlas as a 16-row 540px grid, which sliced through
+       glyphs and exposed the wrong Japanese labels on Switch.
+       Keep the native overlapping list geometry and source stride exactly. */
+    unsigned count=bootstrap_music_count(),visible=0;
+    for(unsigned i=0;i<count;i++)if(bootstrap_music_unlocked(b,i)){
+        unsigned state=b->music_active&&!SDL_strcasecmp(b->audio_name,bootstrap_music_name(i))?2:p->selected==i?1:0;
+        int sx=(int)(i%3)*238,sy=(int)(i/3)*128+28+(int)state*32;
+        appendix_crop_over(&p->image,&p->appendix_artwork,sx,sy,238,32,
+                           156+(int)visible*10,56+(int)visible*36,238,32);
+        visible++;
     }
-    /* Stop/back controls are the final atlas row. */
-    appendix_crop_over(&p->image,&p->appendix_artwork,238,12*540/16,238,540/16,418,448,120,32);
-    appendix_crop_over(&p->image,&p->appendix_artwork,476,12*540/16,238,540/16,538,448,102,32);
-    if(p->selected<count&&bootstrap_music_unlocked(b,p->selected))appendix_rect(&p->image,(int)(p->selected%3)*213,20+(int)(p->selected/3)*72,213,32,0xf0d060);
+    /* 4814e0's final two copies use the dedicated stop/back cells rather than
+       the track rows: stop is (0xee,0x1fc,0x82,0x20), back is
+       (0x170,0x19c,0x70,0x20). */
+    appendix_crop_over(&p->image,&p->appendix_artwork,238,508,130,32,418,448,130,32);
+    appendix_crop_over(&p->image,&p->appendix_artwork,368,412,112,32,528,448,112,32);
     if(p->status[0])ui_text(b,&p->image,p->status,16,446,608,22,0xffd070,0);
     ui_present(r,&p->image,&p->texture);return 0;
 }

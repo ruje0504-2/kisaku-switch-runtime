@@ -112,8 +112,13 @@ static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int
         /* music_mode.area records are (id,left,top,right,bottom):
            stop=(418,448)-(538,480), back=(538,448)-(640,480). */
         if(y>=448&&y<480){if(x>=418&&x<538)message_panel_action(p,b,6);else if(x>=538&&x<640)message_panel_action(p,b,1);}
-        /* Track tiles are composed in a 3x4 grid by the AKB atlas. */
-        if(x>=0&&x<639&&y>=20&&y<340){unsigned col=(unsigned)x/213,row=(unsigned)(y-20)/72;if(col<3&&row<4){unsigned i=row*3+col;if(i<bootstrap_music_count()){p->selected=i;message_panel_action(p,b,0);}}}return;
+        /* 4814e0 registers the unlocked rows at x=0x9c+10*i,
+           y=0x38+0x24*i, width=0xee, height=0x20.  Rows overlap by design;
+           select the nearest registered row exactly as the native hit table
+           does instead of treating the source atlas as a 3x4 grid. */
+        if(y>=56&&y<56+10*36){unsigned visible[16],n=0;for(unsigned i=0;i<bootstrap_music_count()&&n<16;i++)if(bootstrap_music_unlocked(b,i))visible[n++]=i;
+            for(unsigned row=0;row<n;row++){int top=56+(int)row*36;if(x>=156+(int)row*10&&x<156+(int)row*10+238&&y>=top&&y<top+32){p->selected=visible[row];message_panel_action(p,b,0);break;}}
+        }return;
     }
     if(p->kind==23){
         /* videomode.area is a 39x2 grid of 15x115 cells at (34,8). */

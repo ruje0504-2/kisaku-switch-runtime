@@ -750,3 +750,10 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - 姓名输入模态按原版保留确认完成路径，屏蔽手柄B、Esc和右键返回；确认框中的B也不会取消。底部提示同步移除B返回说明。
 - `b->font`继续服务剧情对白和选择分支，并在运行时配置或游戏目录存在时使用提供的`arshanghaisonggbpro_lt.otf`；历史、回想、设置、姓名、地点标签和其他原生面板改用独立的`b->ui_font`，Switch走HOS共享字体，桌面走系统字体回退。
 - 主机完整回归、CName/面板SDL专项、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`和`git diff --check`通过。最新NRO SHA-256为`9cc0b74b10276c8844c5196b2728b34db4039142e299651efdfd432d9649918e`；Switch实机字体和输入回归仍未验证。
+
+## 2026-09-22 HOS面板字形与原版音乐图集坐标
+
+- `runtime/font.c` 不再依赖 FreeType 对 HOS 原始 SFNT/TTC 的首个 Unicode 别名：打开共享字体时优先选择 Microsoft BMP/UCS-4 cmap，再回退 Apple/首个 cmap；单个字形查找还会遍历其余 cmap。历史、十字菜单回看和 CName 姓名网格因此继续使用 `bootstrap_ui_font` 的 HOS 字体，不会因共享字体子表顺序变化而整页无字形。
+- 按 `004814e0`、`004809d0` 重建 `CMusicMode` 图层：每个解锁曲目从 `0xee×0x20` 状态块复制到 `(0x9c+10*i,0x38+0x24*i)`，停止按钮取 `(0xee,0x1fc,0x82,0x20)`，返回按钮取 `(0x170,0x19c,0x70,0x20)`；触摸命中同步使用紧凑列表的原版 AREA，而不是把图集误切成规则 3×4 网格。视频图层仍按 `0045c2f0` 的 39×2、15×115 坐标。
+- `./build-host.sh`、`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/message-panel-test 鬼作 <临时目录>`、`./test-host.sh 鬼作`、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。当前构建与SD交付主入口SHA-256均为 `f3f5c0d0d7d9a07e3b6e8be4f653737eccc5bfed05eadf876cf88bae2593987b`。
+- Switch实机字形/输入、完整路线和其他仍引用不存在原版素材的旧参考面板（`sp_ev*.rmt`、`nawatuna*.rmt`、`sl_data2.rmt`）未验证；未启动PC原版程序。

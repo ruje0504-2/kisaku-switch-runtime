@@ -324,11 +324,18 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         return;
     }
     if(p->kind==9){
-        unsigned count=bootstrap_music_count();p->status[0]=0;
-        if(action==2)p->selected=(p->selected+count-1)%count;
-        if(action==3)p->selected=(p->selected+1)%count;
-        if(action==4)p->selected=(p->selected+count-(10%count))%count;
-        if(action==5)p->selected=(p->selected+10)%count;
+        unsigned count=bootstrap_music_count(),visible[16],n=0;for(unsigned i=0;i<count&&n<16;i++)if(bootstrap_music_unlocked(b,i))visible[n++]=i;
+        p->status[0]=0;
+        if(n){unsigned at=0;while(at<n&&visible[at]!=p->selected)at++;if(at>=n)at=0;
+            /* CMusicMode registers one area per unlocked row.  Up/down walk
+               those rows; left/right are the same row transition on the PC
+               control pad and must never land on a locked source cell. */
+            if(action==2)at=(at+n-1)%n;
+            if(action==3)at=(at+1)%n;
+            if(action==4)at=(at+n-1)%n;
+            if(action==5)at=(at+1)%n;
+            p->selected=visible[at];
+        }
         if(action==6)bootstrap_music_stop(b);
         if(!action&&bootstrap_music_select(b,p->selected))snprintf(p->status,sizeof(p->status),"This track is locked or unavailable");
         return;
