@@ -209,11 +209,17 @@ int main(int argc,char **argv){
                 continue;
             }
             if(panel.kind==14){
-                if(e.type==SDL_TEXTINPUT){size_t n=strlen(panel.name),add=strlen(e.text.text);if(n+add<sizeof(panel.name)){memcpy(panel.name+n,e.text.text,add+1);panel.status[0]=0;}}
+                if(e.type==SDL_TEXTINPUT){size_t n=strlen(panel.name),add=strlen(e.text.text);if(name_utf8_count(panel.name)<5&&n+add<sizeof(panel.name)){memcpy(panel.name+n,e.text.text,add+1);panel.status[0]=0;}else snprintf(panel.status,sizeof(panel.status),"名前は5文字まで入力できます");}
                 if(e.type==SDL_KEYDOWN){
-                    if(e.key.keysym.sym==SDLK_RETURN)message_panel_action(&panel,b,0);
+                    SDL_Keycode key=e.key.keysym.sym;
+                    if(key==SDLK_RETURN)message_panel_action(&panel,b,0);
                     else if(e.key.keysym.sym==SDLK_ESCAPE){running=1;message_panel_action(&panel,b,1);}
-                    else if(e.key.keysym.sym==SDLK_BACKSPACE||e.key.keysym.sym==SDLK_DELETE){size_t n=strlen(panel.name);if(n){n--;while(n&&((unsigned char)panel.name[n]&0xc0)==0x80)n--;panel.name[n]=0;}}
+                    else if(key==SDLK_BACKSPACE||key==SDLK_DELETE)message_panel_action(&panel,b,7);
+                    else if(key==SDLK_UP)message_panel_action(&panel,b,2);
+                    else if(key==SDLK_DOWN)message_panel_action(&panel,b,3);
+                    else if(key==SDLK_LEFT)message_panel_action(&panel,b,4);
+                    else if(key==SDLK_RIGHT)message_panel_action(&panel,b,5);
+                    else if(key==SDLK_F2)message_panel_action(&panel,b,6);
                 }
                 continue;
             }
@@ -308,7 +314,11 @@ int main(int argc,char **argv){
                 panel.back=0;
             }
         }
-        if(b->extra_request){panel.kind=b->extra_request;panel.selected=panel.back=panel.viewing=panel.variant=0;panel.status[0]=0;b->extra_request=0;if(panel.kind==14){snprintf(panel.name,sizeof(panel.name),"会員１号");SDL_StartTextInput();}}
+        if(b->extra_request){panel.kind=b->extra_request;panel.selected=panel.back=panel.viewing=panel.variant=0;panel.status[0]=0;b->extra_request=0;if(panel.kind==14){snprintf(panel.name,sizeof(panel.name),"会員１号");panel.name_mode=panel.name_page=panel.name_cursor=panel.name_confirm=0;panel.name_focus=0;
+#ifndef __SWITCH__
+                SDL_StartTextInput();
+#endif
+            }}
         if(panel.dismiss_menus){menu.active=0;b->load_modal=b->file_modal=0;panel.dismiss_menus=0;bootstrap_message_hide(b,0);}
         if(b->message_request){
             unsigned action=b->message_request;b->message_request=0;

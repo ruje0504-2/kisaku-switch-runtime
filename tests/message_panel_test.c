@@ -34,6 +34,18 @@ static void test_native_quit(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("Kisaku 31/3 exit dialog: suspended VM, no return value, No/cancel, Yes and flush failure: PASS");
 }
+static void test_name_editor(const char *root,const char *saves,SDL_Renderer *renderer){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->extra_active=1;b->extra_kind=b->extra_request=14;
+    MessagePanel p={.kind=14,.name_focus=0};snprintf(p.name,sizeof(p.name),"鬼作");
+    message_panel_draw(&p,b,renderer);assert(p.name_artwork.pixels&&p.name_artwork.width==640&&p.name_artwork.height==300);
+    message_panel_action(&p,b,2);assert(p.name_focus==1);
+    p.name_cursor=0;message_panel_action(&p,b,0);assert(name_utf8_count(p.name)==3);
+    p.name_focus=0;message_panel_action(&p,b,0);assert(p.name_confirm&&p.selected==0);
+    message_panel_action(&p,b,0);assert(!p.kind&&!b->extra_active&&b->vm->bytes[1950]!=0);
+    SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.name_artwork);bootstrap_destroy(b);
+    puts("Kisaku CName modal: namepart atlas, 18x12 CP932 grid, five-character limit and confirm flow: PASS");
+}
 static void test_saved_parameters(SaveMenu *m,KBootstrap *b,SDL_Renderer *r,const char *shot){
     KFlags *saved=m->states[0];assert(saved&&saved->word_count==600);
     uint16_t words[600];memcpy(words,saved->words,sizeof(words));
@@ -636,6 +648,7 @@ int main(int argc,char **argv){
     test_native_backlog(argv[1],argv[2],renderer);
     test_save_menu(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_letter_exit(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
+    test_name_editor(argv[1],argv[2],renderer);
     for(unsigned i=0;i<5;i++)rmt_free(&p.config_art[i]);
     kconfig_audio_clear(&p.config_audio);
     SDL_DestroyTexture(p.texture);rmt_free(&p.image);rmt_free(&p.dialog_artwork);rmt_free(&p.dialog_body);

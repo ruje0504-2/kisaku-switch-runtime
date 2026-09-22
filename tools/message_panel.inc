@@ -2,9 +2,15 @@
 #include "voice_character.h"
 #include "text_layout.h"
 #include "config_audio.h"
+#include "../runtime/name_tables.h"
 typedef struct {int id,x0,y0,x1,y1;} ConfigArea;
 typedef struct KNawaPanel KNawaPanel;
-typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_cancel,cg_zoom;int cg_x,cg_y;char status[96],name[129];KImage image;SDL_Texture *texture;
+typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_cancel,cg_zoom;int cg_x,cg_y;char status[96],name[129];
+    /* CName (0047b380) keeps a five-character CP932 buffer and a separate
+       grid/category cursor.  These fields mirror that transient state so the
+       date/name modal does not fall back to the Switch system keyboard. */
+    unsigned name_mode,name_page,name_cursor,name_focus,name_confirm;
+    KImage image;SDL_Texture *texture;
     unsigned direct_scene,direct_selected,direct_page,direct_count;KImage direct_artwork,direct_parts;
     unsigned cg_scroll_active,cg_scroll_limit,cg_scroll_step,cg_movie_return;uint64_t cg_scroll_start;
     SDL_Texture *cg_textures[3];unsigned cg_cached,cg_group,cg_page,cg_count;
@@ -21,6 +27,38 @@ typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_
     unsigned config_motion,config_steps,config_step,config_target,config_next_kind;
     uint64_t config_clock;int config_dx,config_dy,config_preview_dx;unsigned config_alpha;
 } MessagePanel;
+
+static unsigned name_utf8_count(const char *text){
+    unsigned count=0;const unsigned char *p=(const unsigned char *)text;
+    while(*p){unsigned char c=*p++;if(c<0x80){count++;continue;}
+        unsigned more=c<0xe0?1:c<0xf0?2:3;for(unsigned i=0;i<more&&*p;i++)p++;count++;}
+    return count;
+}
+static void name_delete_last(char *text){
+    size_t n=strlen(text);if(!n)return;n--;while(n&&((unsigned char)text[n]&0xc0)==0x80)n--;text[n]=0;
+}
+static int name_cp932_utf8(uint16_t raw,char out[8]){
+    if(raw==0xffff)return -1;
+    uint8_t bytes[2];size_t size=raw>0xff?2:1;bytes[0]=(uint8_t)(raw&0xff);bytes[1]=(uint8_t)(raw>>8);
+    KTextChar ch;if(ktext_decode(KTEXT_CP932,bytes,size,&ch,1,&size))return -1;
+    uint32_t cp=ch.codepoint;size_t n=0;
+    if(cp<0x80)out[n++]=(char)cp;
+    else if(cp<0x800){out[n++]=(char)(0xc0|(cp>>6));out[n++]=(char)(0x80|(cp&63));}
+    else if(cp<0x10000){out[n++]=(char)(0xe0|(cp>>12));out[n++]=(char)(0x80|((cp>>6)&63));out[n++]=(char)(0x80|(cp&63));}
+    else{out[n++]=(char)(0xf0|(cp>>18));out[n++]=(char)(0x80|((cp>>12)&63));out[n++]=(char)(0x80|((cp>>6)&63));out[n++]=(char)(0x80|(cp&63));}
+    out[n]=0;return 0;
+}
+static uint16_t name_table_value(const MessagePanel *p,unsigned row,unsigned col){
+    if(row>=12||col>=18)return 0xffff;
+    if(p->name_mode==0)return k_name_kana[row][col];
+    if(p->name_mode==2)return row<6?k_name_symbol[row][col]:0xffff;
+    unsigned page=p->name_page<175?p->name_page:174;
+    return k_name_kanji[page+row][col];
+}
+static int name_append_value(MessagePanel *p,uint16_t raw){
+    char add[8];if(name_cp932_utf8(raw,add)||name_utf8_count(p->name)>=5)return -1;
+    size_t n=strlen(p->name),m=strlen(add);if(n+m>=sizeof(p->name))return -1;memcpy(p->name+n,add,m+1);p->status[0]=0;return 0;
+}
 #include "history_voice.inc"
 #include "gallery_panel.inc"
 #include "nawa_panel.inc"
@@ -112,19 +150,42 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         return;
     }
     if(p->kind==14){
-        if(action==7){p->name[0]=0;p->status[0]=0;return;}
-        if(action==1){bootstrap_name_submit(b,NULL);SDL_StopTextInput();p->kind=0;return;}
-        if(!action){if(!bootstrap_name_submit(b,p->name)){SDL_StopTextInput();p->kind=0;}else snprintf(p->status,sizeof(p->status),"Use a nonempty CP932 name, at most 32 bytes");}
-#ifdef __SWITCH__
-        if(action==6){
-            SwkbdConfig keyboard;char name[129]={0};
-            if(R_SUCCEEDED(swkbdCreate(&keyboard,0))){
-                swkbdConfigMakePresetUserName(&keyboard);swkbdConfigSetInitialText(&keyboard,p->name);swkbdConfigSetStringLenMax(&keyboard,16);swkbdConfigSetStringLenMin(&keyboard,1);
-                if(R_SUCCEEDED(swkbdShow(&keyboard,name,sizeof(name)))){snprintf(p->name,sizeof(p->name),"%s",name);p->status[0]=0;}
-                swkbdClose(&keyboard);
+        if(p->name_confirm){
+            if(action==2||action==3)p->selected=action==2?0:1;
+            if(action==1){p->name_confirm=0;p->name_focus=0;return;}
+            if(!action){
+                if(p->selected==0){
+                    if(!bootstrap_name_submit(b,p->name)){SDL_StopTextInput();p->kind=0;return;}
+                    snprintf(p->status,sizeof(p->status),"その名前は使用できません");p->name_confirm=0;
+                }else{p->name_confirm=0;p->name_focus=0;}
             }
+            return;
         }
-#endif
+        if(action==7){name_delete_last(p->name);p->status[0]=0;return;}
+        if(action==1){bootstrap_name_submit(b,NULL);SDL_StopTextInput();p->kind=0;return;}
+        /* Y cycles the three native CName tables.  It replaces the old
+           Switch OS keyboard call: the original always stays in this modal. */
+        if(action==6){p->name_mode=(p->name_mode+1)%3;p->name_page=0;p->name_cursor=0;p->name_focus=1;p->status[0]=0;return;}
+        if(action>=2&&action<=5){
+            if(p->name_focus==0){if(action==2)p->name_focus=1;else if(action==3)p->name_focus=1;return;}
+            if(p->name_focus==1){
+                unsigned row=p->name_cursor/18,col=p->name_cursor%18;
+                if(action==2){if(row)p->name_cursor-=18;else p->name_focus=0;}
+                else if(action==3){if(row+1<(p->name_mode==2?6:12))p->name_cursor+=18;}
+                else if(action==4){if(col)p->name_cursor--;}
+                else if(action==5){if(col+1<18)p->name_cursor++;}
+            }
+            return;
+        }
+        if(!action){
+            if(p->name_focus==1){
+                unsigned row=p->name_cursor/18,col=p->name_cursor%18;uint16_t raw=name_table_value(p,row,col);
+                if(raw!=0xffff&&!name_append_value(p,raw))return;
+                snprintf(p->status,sizeof(p->status),"名前は5文字まで入力できます");return;
+            }
+            if(!p->name[0]){snprintf(p->status,sizeof(p->status),"名前を入力してください");return;}
+            p->name_confirm=1;p->selected=0;
+        }
         return;
     }
     if(p->kind==8){settings_panel_action(p,b,action);return;}
@@ -267,12 +328,34 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         panel_text(r,272,604,"Up/down: part   A: replay   B: map");return;
     }
     if(p->kind==14){
-        if(ui_canvas(&p->image)||ui_asset(b,"53_name.rmt",&p->name_artwork))return;
+        if(ui_canvas(&p->image)||ui_akb_asset(b,"namepart.akb",&p->name_artwork))return;
         ui_scale(&p->image,&b->layers[0],0,0,640,480);
-        ui_blit(&p->image,&p->name_artwork,0,0,288,96,176,180,0);
-        ui_fill(&p->image,187,207,266,24,0xffffff);ui_text(b,&p->image,p->name,190,211,260,20,0x18120a,0);
-        ui_text(b,&p->image,"Y: 入力  X: 消去  A: 決定  B: 戻る",176,298,304,44,0xffffff,0);
-        if(p->status[0])ui_text(b,&p->image,"日本語・英数字 16 文字以内",176,350,304,44,0xffda74,0);
+        /* CName's six category buttons are the first six 64x24 cells in the
+           namepart atlas.  The second row is the highlighted state. */
+        for(unsigned i=0;i<6;i++)ui_blit(&p->image,&p->name_artwork,(int)i*64,p->name_mode==i%3?24:0,64,24,144+(int)i*72,368,1);
+        /* The native grid is 18 columns by 12 rows, 24 pixels per cell, at
+           (128,32).  Draw its CP932 labels from the recovered CName tables;
+           the atlas supplies the same gold frame and the selected cell is
+           kept separate so movement never changes the story VM. */
+        unsigned rows=p->name_mode==2?6:12;
+        for(unsigned row=0;row<rows;row++)for(unsigned col=0;col<18;col++){
+            int x=128+(int)col*24,y=32+(int)row*24;uint16_t raw=name_table_value(p,row,col);
+            if(p->name_focus==1&&p->name_cursor==row*18+col)ui_fill(&p->image,x,y,24,24,0x806020);
+            else ui_fill(&p->image,x,y,24,24,0x181c24);
+            if(raw!=0xffff){char label[8];if(!name_cp932_utf8(raw,label))ui_text(b,&p->image,label,x+3,y+3,18,18,0xffffff,0);}
+        }
+        /* Native name slots are x=260+24*n, y=414. */
+        ui_fill(&p->image,160,400,352,40,0x080b12);ui_fill(&p->image,160,400,352,2,0xd0a83c);ui_fill(&p->image,160,438,352,2,0xd0a83c);
+        ui_text(b,&p->image,p->name,260,410,240,24,0xffffff,0);
+        if(p->name_focus==0)ui_fill(&p->image,256,408,4,28,0xf4d45a);
+        ui_text(b,&p->image,"方向キー:文字選択   A:入力   X:削除   Y:種類   B:戻る",128,452,384,20,0xffe9a0,0);
+        if(p->status[0])ui_text(b,&p->image,p->status,128,8,384,20,0xff8a7a,0);
+        if(p->name_confirm){
+            ui_fill(&p->image,80,188,480,116,0x080b12);ui_fill(&p->image,80,188,480,2,0xd0a83c);ui_fill(&p->image,80,302,480,2,0xd0a83c);
+            ui_text(b,&p->image,"これでよろしいですか？",176,208,288,24,0xffffff,0);
+            ui_text(b,&p->image,p->selected==0?"> はい":"  はい",210,258,90,20,p->selected==0?0xffe36a:0xffffff,0);
+            ui_text(b,&p->image,p->selected==1?"> いいえ":"  いいえ",348,258,110,20,p->selected==1?0xffe36a:0xffffff,0);
+        }
         ui_present(r,&p->image,&p->texture);return;
     }
     if(p->kind==15){

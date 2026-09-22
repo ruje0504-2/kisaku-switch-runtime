@@ -3592,7 +3592,11 @@ int bootstrap_nawa_select(KBootstrap *b,unsigned item){
 int bootstrap_name_submit(KBootstrap *b,const char *utf8){
     if(!b||!b->extra_active||b->extra_kind!=14)return -1;
     if(!utf8){b->extra_active=b->extra_request=b->extra_kind=0;return 0;}
-    uint8_t name[33];size_t size;if(ktext_name_encode(utf8,name,&size))return -1;
+    uint8_t name[33];size_t size;KTextChar chars[8];size_t count=0;
+    /* CName's 0x1ddc counter is a five-slot UTF-16/CP932 buffer.  The old
+       preview accepted 32 bytes and consequently let the date modal submit
+       names the original editor could never produce. */
+    if(ktext_name_encode(utf8,name,&size)||ktext_decode(KTEXT_CP932,name,size,chars,8,&count)||count==0||count>5)return -1;
     memcpy(b->vm->bytes+1950,name,size+1);
     b->extra_active=b->extra_request=b->extra_kind=0;
     if(b->title.variant==2){b->title.active=0;return kvm_push(b->vm,(KValue){0,NULL});}

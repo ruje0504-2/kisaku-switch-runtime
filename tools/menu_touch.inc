@@ -73,7 +73,15 @@ static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int
     if(p->kind==10){gallery_touch(p,b,x,y);return;}
     if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){int hit=kdialog_hit(x,y);if(hit>=0){p->selected=(unsigned)hit;p->viewing=1;message_panel_action(p,b,0);}return;}
     if(p->kind==15){if(y>=336&&y<370)message_panel_action(p,b,x<320?0:1);return;}
-    if(p->kind==14){if(y>=242&&y<267&&x>=200&&x<443)message_panel_action(p,b,x<272?7:x<358?0:1);else if(y>=206&&y<232&&x>=186&&x<454)message_panel_action(p,b,6);return;}
+    if(p->kind==14){
+        if(p->name_confirm){
+            if(y>=248&&y<286){p->selected=x<320?0:1;message_panel_action(p,b,0);}return;
+        }
+        if(y>=32&&y<320&&x>=128&&x<560){unsigned col=(unsigned)(x-128)/24,row=(unsigned)(y-32)/24;if(col<18&&row<(p->name_mode==2?6:12)){p->name_cursor=row*18+col;p->name_focus=1;message_panel_action(p,b,0);}return;}
+        if(y>=368&&y<394&&x>=144&&x<576){unsigned mode=(unsigned)(x-144)/72;p->name_mode=mode%3;p->name_page=0;p->name_cursor=0;p->name_focus=1;return;}
+        if(y>=400&&y<442&&x>=160&&x<512){p->name_focus=0;return;}
+        return;
+    }
     if(p->kind==9){
         if(x>=24&&x<256&&y>=20&&y<468){unsigned i=(unsigned)(y-20)/28;if((y-20)%28<20&&i<bootstrap_music_count()){p->selected=i;message_panel_action(p,b,0);}}
         if(y>=420&&y<448){if(x>=340&&x<460)message_panel_action(p,b,6);else if(x>=484&&x<556)message_panel_action(p,b,1);}return;
