@@ -1032,8 +1032,28 @@ static void test_backlog_replay(const char *root,const char *saves){
     assert(bootstrap_backlog_replay(b,0,&row,&voices,why)<0&&strstr(why,"31/99"));
     assert(!memcmp(pixels,row.pixels,640*54*4)&&voices.count==2&&!b->error[0]);
     assert(!memcmp(globals,b->vm->globals,sizeof(b->vm->globals)));
+    /* Native CBackLog rows share the renderer's text state.  A selected row
+       may intentionally omit its colour/font setup; replay the preceding
+       command vector in chronological order instead of resetting to the
+       current gameplay globals for every row. */
+    b->vm->sp=0;assert(!backlog_call(b,0,1,(KValue){1,NULL})&&b->message_count==2);
+    uint8_t prior[64],current[16];size_t prior_size=0,current_size=0;
+    replay_number(prior,&prior_size,0xff0000);replay_number(prior,&prior_size,33);prior[prior_size++]=0x0e;
+    prior[prior_size++]=0x0a;prior[prior_size++]='R';prior[prior_size++]=0;prior[prior_size++]=0;
+    current[current_size++]=0x0a;current[current_size++]='I';current[current_size++]=0;current[current_size++]=0;
+    free(b->messages[0].data);b->messages[0].data=malloc(prior_size);assert(b->messages[0].data);
+    memcpy(b->messages[0].data,prior,prior_size);b->messages[0].size=b->messages[0].capacity=prior_size;b->messages[0].flag=0;
+    b->messages[1].data=malloc(current_size);assert(b->messages[1].data);memcpy(b->messages[1].data,current,current_size);
+    b->messages[1].size=b->messages[1].capacity=current_size;b->messages[1].flag=0;
+    memset(row.pixels,0,640*54*4);memset(why,0,sizeof(why));kbacklog_voices_free(&voices);
+    assert(!bootstrap_backlog_replay(b,0,&row,&voices,why)&&!voices.count);
+    unsigned inherited_red=0;for(unsigned y=0;y<54;y++)for(unsigned x=0;x<640;x++){
+        uint8_t *p=row.pixels+y*row.stride+x*4;if(p[2]&&!p[1])inherited_red++;
+    }
+    assert(inherited_red);
+    kbacklog_voices_free(&voices);
     free(pixels);free(globals);rmt_free(&row);kbacklog_voices_free(&voices);bootstrap_destroy(b);
-    puts("Native backlog replay: colors, newline, ordered voices, isolated VM and atomic unknown-call failure: PASS");
+    puts("Native backlog replay: colors, newline, cross-record state, ordered voices, isolation and atomic failure: PASS");
 }
 static void test_backlog_real_records(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
@@ -1236,6 +1256,42 @@ static int test_audio_command(KBootstrap *b,int main,int sub,int channel,const c
     assert(!kvm_push(b->vm,(KValue){0,name}));
     assert(!kvm_push(b->vm,(KValue){sub,NULL}));return bootstrap_dispatch(b);
 }
+static int test_voice_start(KBootstrap *b){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=17;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){0,NULL}));
+    assert(!kvm_push(b->vm,(KValue){6,NULL}));
+    return bootstrap_dispatch(b);
+}
+static void test_audio_overlap(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    int startup=bootstrap_run(b,100000);
+    for(unsigned frame=0;startup==1&&frame<1000&&!b->title.active;frame++){
+        bootstrap_frame(b);startup=bootstrap_run(b,100000);
+    }
+    assert(startup==1&&!b->error[0]&&b->title.active&&b->audio_counts[2]==1);
+    b->title.active=0;
+    b->message_active=b->message_was_read=b->force_skip=0;
+    b->audio_rate=44100;b->audio_channels=2;
+    /* A foreground VSD has its own movie PCM stream; starting voice must
+       use the ordinary voice output bus instead of rejecting the call. */
+    b->video_active=1;b->video_background=0;
+    int rc=test_audio_command(b,17,5,0,"z09577.ogg");assert(!rc);assert(!test_voice_start(b));
+    assert(!b->error[0]&&b->voice_active&&(b->voice_loading||b->voice_pcm));
+    free(b->audio_pcm);b->audio_pcm=NULL;b->audio_size=b->audio_cursor=0;b->voice_active=0;
+    /* Logo WAV remains on audio_pcm while the independent voice PCM is
+       decoded and mixed. */
+    b->video_active=0;b->logo_phase=2;b->audio_pcm=malloc(4);assert(b->audio_pcm);
+    memset(b->audio_pcm,0x11,4);b->audio_size=4;b->audio_cursor=0;uint8_t *logo=b->audio_pcm;
+    rc=test_audio_command(b,17,5,0,"z09577.ogg");assert(!rc);assert(!test_voice_start(b));
+    assert(!b->error[0]&&b->voice_active&&(b->voice_loading||b->voice_pcm)&&b->audio_pcm==logo&&b->audio_size==4);
+    unsigned voice_setting=0;for(;voice_setting<b->setting_count;voice_setting++)if(!strcmp(b->settings[voice_setting].section,"Voice")&&!strcmp(b->settings[voice_setting].key,"IsVoice"))break;
+    if(voice_setting==b->setting_count){assert(voice_setting<sizeof(b->settings)/sizeof(*b->settings));b->setting_count++;strcpy(b->settings[voice_setting].section,"Voice");strcpy(b->settings[voice_setting].key,"IsVoice");}
+    strcpy(b->settings[voice_setting].value,"0");
+    b->music_active=b->music_fading=0;b->music_enabled=0;
+    uint8_t logo_out[4];size_t logo_pos=0;assert(bootstrap_audio_read(b,&logo_pos,logo_out,sizeof(logo_out))==4&&!memcmp(logo_out,logo,4));
+    bootstrap_destroy(b);
+    puts("Kisaku voice/movie and voice/logo concurrent PCM buses: PASS");
+}
 static void test_config_audio(KBootstrap *b){
     /* 464140 maps every configured character, including both NPC ranges. */
     const char *names[]={"z1.ogg","h1.ogg","i1.ogg","b1.ogg","j1.ogg","r1.ogg","c1.ogg","e1.ogg","m1.ogg","t1.ogg","a1.ogg","d1.ogg","s1.ogg","f1.ogg","g1.ogg","k1.ogg","l1.ogg","n65.ogg","n103.ogg","n206.ogg","n211.ogg","n223.ogg","n233.ogg","n264.ogg","n275.ogg","n324.ogg","n333.ogg","n338.ogg","n1.ogg","n37.ogg","n54.ogg","n55.ogg","n62.ogg"};
@@ -1282,6 +1338,23 @@ static void test_config_audio(KBootstrap *b){
     assert(bootstrap_audio_mix_read(b,&position,out,4)==4&&!memcmp(out,expected,4));
     test_setting(b,"Voice","IsCharVoice00","0");b->voice_read_cursor=0;assert(bootstrap_audio_mix_read(b,&position,out,4)==4);for(unsigned i=0;i<4;i++)assert(!out[i]);
     test_setting(b,"Voice","IsCharVoice00","1");b->voice_read_cursor=0;assert(bootstrap_audio_mix_read(b,&position,out,4)==4&&!memcmp(out,expected,4));
+    /* Native CFuncVoice has its own output bus.  A foreground VSD mixes its
+       movie PCM with voice, while logo.wav stays on the main bus and voice
+       is mixed independently; neither path rejects the pending voice. */
+    free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=0;b->voice_active=0;
+    free(b->audio_pcm);b->audio_pcm=NULL;b->audio_size=b->audio_cursor=0;
+    b->audio_rate=44100;b->audio_channels=2;b->audio_loop_start=b->audio_loop_end=0;
+    b->message_active=b->message_was_read=b->force_skip=0;b->video_active=1;b->video_background=0;b->logo_phase=0;
+    assert(!test_audio_command(b,17,5,0,"z09577.ogg"));assert(!test_voice_start(b));
+    assert(b->voice_active&&(b->voice_loading||b->voice_pcm));
+    free(b->audio_pcm);b->audio_pcm=NULL;b->audio_size=b->audio_cursor=0;b->voice_active=0;
+    b->video_active=0;b->logo_phase=2;b->audio_rate=44100;b->audio_channels=2;
+    b->audio_pcm=malloc(4);assert(b->audio_pcm);memset(b->audio_pcm,0x11,4);b->audio_size=4;b->audio_cursor=0;
+    uint8_t *logo_bus=b->audio_pcm;
+    assert(!test_audio_command(b,17,5,0,"z09577.ogg"));assert(!test_voice_start(b));
+    assert(b->voice_active&&(b->voice_loading||b->voice_pcm)&&b->audio_pcm==logo_bus&&b->audio_size==4);
+    free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=b->voice_read_cursor=b->voice_clock_cursor=0;
+    free(b->audio_pcm);b->audio_pcm=NULL;b->audio_size=b->audio_cursor=0;b->logo_phase=0;
     free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=0;b->voice_active=b->music_active=0;b->audio_size=0;
     test_setting(b,"Music","IsMusic","1");test_setting(b,"Music","Volume","72");test_setting(b,"Voice","Volume","83");
     test_setting(b,"Effect","IsEffect","1");test_setting(b,"Effect","IsHEffect","1");test_setting(b,"Effect","Volume","83");test_setting(b,"Effect","HVolume","83");free(pcm);free(mixed);
@@ -1504,6 +1577,7 @@ static void test_native_cg(const char *root,const char *saves){
 }
 int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--native-cg")){test_native_cg(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--audio-overlap")){test_audio_overlap(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--calendar")){test_week(argv[1],argv[2]);test_calendar_persistence(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}

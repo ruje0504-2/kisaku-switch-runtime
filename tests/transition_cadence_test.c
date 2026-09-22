@@ -197,8 +197,18 @@ static void test_board(const char *root,const char *saves){
             b->input_events=0;bootstrap_confirm(b);bootstrap_cancel(b);
             bootstrap_pointer(b,50,400,1);bootstrap_message_action(b,6);
             assert(!b->input_events&&!b->message_request&&!bootstrap_can_save(b));
-            bootstrap_frame(b);assert(!b->error[0]&&b->exec523_step==step);
-            bootstrap_frame(b);assert(!b->error[0]&&b->exec523_step==step+1);
+            /* 00508540 carries the fractional 60 Hz remainder between
+               waits.  A 20 ms native deadline therefore lands on a
+               2,1,1,1,1,2 frame cadence at 60 Hz, rather than stretching
+               every row to two frames. */
+            static const unsigned wait_frames[6]={2,1,1,1,1,2};
+            unsigned wait=0;
+            while(b->exec523_step==step&&b->exec523_active){
+                assert(wait<wait_frames[step]);
+                bootstrap_frame(b);wait++;
+                assert(!b->error[0]);
+            }
+            assert(wait==wait_frames[step]&&b->exec523_step==step+1);
             assert(b->exec523_active==(step<5));
         }
     }
@@ -212,10 +222,10 @@ static void test_board(const char *root,const char *saves){
         const int args[]={0,523};dispatch_native(b,31,args,2);
         unsigned frames=0;
         while(b->exec523_active){assert(frames++<20);bootstrap_frame(b);assert(!b->error[0]);}
-        assert(frames==(kind==2?12:6));
+        assert(frames==(kind==2?8:6));
     }
     bootstrap_destroy(b);
-    puts("31/523: six visible rows, fresh 20ms waits (12 host frames), Alpha, VM/input isolation, speed gates and scratch preflight: PASS");
+    puts("31/523: six visible rows, carried 20ms waits (8 host frames), Alpha, VM/input isolation, speed gates and scratch preflight: PASS");
 }
 
 int main(int argc, char **argv)

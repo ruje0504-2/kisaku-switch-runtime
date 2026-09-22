@@ -108,9 +108,15 @@ static int animation523_frame(KBootstrap *b){
         !(b->vm->byte_count>4012&&b->vm->bytes[4012]==1));
     b->exec523_clock+=fast?16000:1000;
     if(b->exec523_clock<1200)return 0;
-    /* Each native wait samples a new start time. Do not carry overshoot
-       into the next row or skip its visible dwell on the 60 Hz host. */
-    b->exec523_clock=0;
+    /* 00508540 accumulates elapsed wall-clock time from one wait to the next.
+       Keep the fractional remainder when a 60 Hz host crosses the 20 ms
+       deadline; dropping it turns every wait into a fixed two-frame (33 ms)
+       dwell and stretches this 120 ms native sequence to 200 ms.  The
+       carried remainder produces the expected 2,1,1,1,1,2 frame cadence
+       around the 20 ms deadlines without allowing a single frame to skip
+       rows. The host remains a 60 Hz display and therefore cannot present
+       the PC's millisecond boundaries exactly. */
+    b->exec523_clock-=1200;
     if(++b->exec523_step==6){
         if(b->exec523_mode&&animation523_copy(b,0,0x20,0x5c,0x240,0xc4,3,0,0,0))return -1;
         b->exec523_active=0;return 0;

@@ -349,27 +349,35 @@ static void message_skip_voice(KBootstrap *b){
     mam_stop(b);kvoice_worker_cancel(b->voice_worker);b->voice_loading=b->voice_active=0;
     free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=b->voice_read_cursor=b->voice_clock_cursor=0;
     if(b->audio_counts[2])b->audio_objects[2][0].state=0;
-    if(!b->music_active){b->audio_size=b->audio_cursor=0;b->audio_serial++;}
+    /* During the logo sequence audio_pcm is logo.wav/potapota.wav.  Voice
+       uses the independent voice bus there; skipping it must not erase the
+       logo track that is still being mixed. */
+    if(!b->music_active&&!b->logo_phase){b->audio_size=b->audio_cursor=0;b->audio_serial++;}
 }
 static int voice_play(KBootstrap *b){
     if(b->audio_counts[2]!=1)return error(b,"voice channel missing");
     if(b->message_active&&(b->force_skip||(b->message_was_read&&bootstrap_message_setting(b,16,0)))){message_skip_voice(b);return 0;}
         if(b->audio_objects[2][0].state){
-            if((b->video_active&&!b->video_background)||b->logo_phase)return error(b,"voice over movie/logo not implemented");
+            /* Voice is a separate output bus in the native engine.  The
+               portable mixer already adds voice_pcm on top of both the
+               movie PCM stream and the current audio bus, so a foreground
+               VSD or the logo sequence does not need to stop/replace the
+               voice.  Keep the old single-bus path for ordinary dialogue,
+               but retain the existing logo PCM when it is active. */
             if(b->music_active&&(b->audio_rate!=44100||b->audio_channels!=2))return error(b,"music mixing format unsupported");
             snprintf(b->voice_playing_name,sizeof(b->voice_playing_name),"%s",b->audio_objects[2][0].name);
             if(mam_prepare(b,b->audio_objects[2][0].name))return -1;
             if(b->voice_worker){
                 if(kvoice_worker_submit(b->voice_worker,b->audio_objects[2][0].name,1))return error(b,"voice worker submission failed");
                 free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=b->voice_read_cursor=b->voice_clock_cursor=0;b->voice_clock=0;
-                if(!b->music_active){b->audio_size=b->audio_cursor=0;}
+                if(!b->music_active&&!b->logo_phase){b->audio_size=b->audio_cursor=0;}
                 if(b->audio_rate!=44100||b->audio_channels!=2){b->audio_rate=44100;b->audio_channels=2;b->audio_serial++;}
                 b->voice_loading=b->voice_active=1;b->audio_objects[2][0].state=0;return 0;
             }
             uint8_t *data=NULL,*pcm=NULL;size_t size=0,bytes=0;
             if(read_named(&b->voice,b->audio_objects[2][0].name,&data,&size)||kaudio_decode(data,size,&pcm,&bytes)){free(data);free(pcm);return error(b,"voice decode failed");}free(data);
             free(b->voice_pcm);b->voice_pcm=NULL;b->voice_size=b->voice_read_cursor=b->voice_clock_cursor=0;b->voice_clock=0;
-            if(b->music_active){
+            if(b->music_active||b->logo_phase){
                 b->voice_pcm=pcm;b->voice_size=bytes;b->voice_active=1;
                 b->audio_objects[2][0].state=0;return 0;
             }
@@ -3322,7 +3330,9 @@ size_t bootstrap_audio_read(const KBootstrap *b,size_t *position,uint8_t *out,si
     }
     double gain=1;
     if(b->music_active){int enabled;int db=music_volume_db(b,&enabled);gain=enabled?db_gain(db)*b->music_gain:0;}
-    else if(b->voice_active)gain=voice_output_gain(b);
+    /* Logo WAV remains on the primary bus while its voice is mixed from
+       voice_pcm.  Do not apply the voice slider twice to that primary track. */
+    else if(b->voice_active&&!b->logo_phase)gain=voice_output_gain(b);
     if(gain!=1){
         for(size_t i=0;i+1<total;i+=2){int16_t v=(int16_t)le16(out+i);int16_t q=(int16_t)(v*gain);out[i]=(uint8_t)q;out[i+1]=(uint8_t)((uint16_t)q>>8);}
     }

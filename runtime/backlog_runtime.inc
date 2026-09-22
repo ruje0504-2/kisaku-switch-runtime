@@ -26,19 +26,49 @@ static int backlog_replay_text(void *owner,KVM *v,unsigned width,unsigned height
     if(r->row)for(size_t i=0;i<count;i++)if(kfont_draw(r->b->font,r->row,chars[i].codepoint,positions[i].x,positions[i].y,width,height,(uint32_t)v->globals[0][33].number))return -1;
     v->globals[0][46]=(KValue){x,NULL};v->globals[0][47]=(KValue){y,NULL};return 0;
 }
+typedef struct {KBacklogRender render;size_t target_ip;} KBacklogSequenceRender;
+static int backlog_replay_sequence_text(void *owner,KVM *v,unsigned width,unsigned height){
+    KBacklogSequenceRender *sequence=owner;
+    KImage *saved=sequence->render.row;
+    /* Execute earlier rows for their VM side effects, while keeping their
+       pixels out of the selected 640x54 row. */
+    if(v->instruction_ip<sequence->target_ip)sequence->render.row=NULL;
+    int result=backlog_replay_text(&sequence->render,v,width,height);
+    sequence->render.row=saved;
+    return result;
+}
 /* Render into a staged 640x54 row, committing neither pixels nor voices on
    failure. Only the UI font cache may initialize; gameplay is untouched. */
 int bootstrap_backlog_replay(KBootstrap *b,unsigned back,KImage *row,KBacklogVoices *voices,char error[256]){
     if(!b||!voices||!error||!backlog_use_native(b))return -1;
-    const KMessageRecord *record=backlog_native_record(b,back);if(!record)return -1;
+    unsigned native=backlog_native_count(b);if(back>=native)return -1;
+    /* CBackLog's row index is newest-first, while its command vectors are
+       stateful in chronological order.  Replay every earlier vector into an
+       isolated VM before drawing the requested row; this preserves font,
+       colour, cursor and rectangle changes that intentionally span records. */
+    unsigned target=native-1-back,seq_count=0;
+    KBacklogReplayRecord *sequence=calloc(target+1,sizeof(*sequence));
+    if(!sequence){snprintf(error,256,"backlog sequence allocation failed");return -1;}
+    for(unsigned i=0;i<b->message_count&&seq_count<=target;i++)if(b->messages[i].size){
+        sequence[seq_count++]=(KBacklogReplayRecord){b->messages[i].data,b->messages[i].size};
+    }
+    if(seq_count!=target+1){free(sequence);return -1;}
     KImage staged={0};if(row){
-        if(!row->pixels||row->width!=640||row->height!=54||row->stride<2560||!bootstrap_ui_font(b))return -1;
-        staged=(KImage){0,0,640,54,2560,malloc(640*54*4)};if(!staged.pixels)return -1;
+        if(!row->pixels||row->width!=640||row->height!=54||row->stride<2560||!bootstrap_ui_font(b)){free(sequence);return -1;}
+        staged=(KImage){0,0,640,54,2560,malloc(640*54*4)};if(!staged.pixels){free(sequence);return -1;}
         for(unsigned y=0;y<54;y++)memcpy(staged.pixels+y*2560,row->pixels+y*row->stride,2560);
     }
-    KBacklogRender render={b,row?&staged:NULL};
-    int result=kbacklog_replay(record->data,record->size,b->vm,backlog_replay_text,&render,voices,error);
+    KBacklogSequenceRender render={{b,row?&staged:NULL},0};
+    /* target_ip is the offset of the selected chronological row in the
+       concatenated stream.  The replay gate uses the same instruction IP. */
+    size_t offset=0;
+    for(unsigned i=0;i<target;i++){
+        size_t n=kbacklog_payload_size(&sequence[i]);
+        offset+=n;
+    }
+    render.target_ip=offset;
+    int result=kbacklog_replay_sequence(sequence,seq_count,target,b->vm,backlog_replay_sequence_text,&render,voices,error);
     if(!result&&row)for(unsigned y=0;y<54;y++)memcpy(row->pixels+y*row->stride,staged.pixels+y*2560,2560);
-    rmt_free(&staged);return result;
+    rmt_free(&staged);free(sequence);return result;
 }
 int bootstrap_backlog_native(const KBootstrap *b){return b&&backlog_use_native(b);}
