@@ -37,7 +37,8 @@ static unsigned name_utf8_count(const char *text){
 static unsigned name_offsets(const char *text,size_t offsets[6]){
     unsigned count=0;size_t n=0;offsets[0]=0;
     while(text[n]&&count<5){unsigned char c=(unsigned char)text[n];size_t step=c<0x80?1:c<0xe0?2:c<0xf0?3:4;
-        if(!text[n+step-1])break;n+=step;offsets[++count]=n;
+        if(!text[n+step-1])break;
+        n+=step;offsets[++count]=n;
     }
     return count;
 }

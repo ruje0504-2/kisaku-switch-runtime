@@ -38,7 +38,10 @@ export PKG_CONFIG_LIBDIR
 "$dkp/tools/bin/nacptool" --create 'Kisaku Port Preview' 'kisaku-switch contributors' '0.1.0' build-switch/kisaku.nacp
 # Original-game artwork stays local, outside the source repository.
 set --
-if [ -f kisaku-icon.jpg ]; then set -- --icon=kisaku-icon.jpg; elif [ -f local/kisaku-icon.jpg ]; then set -- --icon=local/kisaku-icon.jpg; fi
+if [ -f icon.png ]; then set -- --icon=icon.png
+elif [ -f kisaku-icon.jpg ]; then set -- --icon=kisaku-icon.jpg
+elif [ -f local/kisaku-icon.jpg ]; then set -- --icon=local/kisaku-icon.jpg
+fi
 "$dkp/tools/bin/elf2nro" build-switch/kisaku-runtime.elf build-switch/kisaku.nro --nacp=build-switch/kisaku.nacp "$@"
 
 # Keep the earlier preview filename byte-identical to the main entry point.

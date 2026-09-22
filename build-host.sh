@@ -22,6 +22,7 @@ ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime $(pkg-config --cflags sdl
     -lSDL2_test $(pkg-config --libs sdl2) $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample freetype2) -o build/message-panel-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/rmt.c runtime/akb.c tests/akb_test.c -o build/akb-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/ax.c tests/bowling_asset_test.c -o build/bowling-asset-test
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/font.c tests/font_test.c $(pkg-config --cflags --libs freetype2) -o build/font-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/image_sdl.c tools/image_viewer.c $(pkg-config --cflags --libs sdl2) -lSDL2_test -o build/kisaku-image-viewer
 
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/vm.c tests/vm_memory_test.c -o build/vm-memory-test

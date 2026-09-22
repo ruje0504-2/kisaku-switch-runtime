@@ -28,6 +28,9 @@ build/bowling-game-test
 build/bowling-rack-test
 build/bowling-draw-test "$game"
 build/bowling-asset-test "$game"
+if [ -f local/fonts/arshanghaisonggbpro_lt.otf ]; then
+    build/font-test local/fonts/arshanghaisonggbpro_lt.otf
+fi
 build/flags-test "$test_save/flags-test.dat"
 build/kisaku-bootstrap-test "$game" "$test_save"
 build/kisaku-bootstrap-test "$game" "$menu_save" --title-paths

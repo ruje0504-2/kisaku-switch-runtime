@@ -39,6 +39,27 @@ static int owned_value(KBootstrap *b,KValue *dst,KValue src){
     *dst=src;return 0;
 }
 static int equal(const char *a,const char *c){while(*a&&*c){if(tolower((unsigned char)*a++)!=tolower((unsigned char)*c++))return 0;}return *a==*c;}
+/* Runtime settings may name a font relative to the installed game root.  The
+ * PC version normally finds files from its working directory, but the Switch
+ * title is launched from an arbitrary CWD (and macOS tests often use one too).
+ * Resolve relative paths against b->root before falling back to the literal
+ * path, while retaining absolute-path overrides for development. */
+static KFont *open_font(KBootstrap *b,const char *path,int simplified){
+    if(path&&*path&&path[0]!='/'&&path[0]!='\\'&&!strchr(path,':')&&b&&b->root[0]){
+        char joined[4096];int n=snprintf(joined,sizeof(joined),"%s/%s",b->root,path);
+        if(n>0&&(size_t)n<sizeof(joined)){
+            FILE *f=fopen(joined,"rb");
+            if(f){fclose(f);return kfont_open(joined,simplified);}
+        }
+    }
+    return kfont_open(path,simplified);
+}
+static int root_file_exists(const KBootstrap *b,const char *name){
+    if(!b||!name||!name[0]||!b->root[0])return 0;
+    char path[4096];int n=snprintf(path,sizeof(path),"%s/%s",b->root,name);
+    if(n<=0||(size_t)n>=sizeof(path))return 0;
+    FILE *f=fopen(path,"rb");if(!f)return 0;fclose(f);return 1;
+}
 /* Japanese original only. Do not reinterpret valid CP932 private-use characters
  * as a translated encoding. Translation patches are outside this port stage. */
 static KTextEncoding text_encoding(KBootstrap *b){(void)b;return KTEXT_CP932;}
@@ -52,8 +73,8 @@ static int decode_text(KBootstrap *b,const uint8_t *data,size_t size,KTextChar *
 static KFont *text_font(KBootstrap *b,const char *path,const char *mincho,KTextEncoding encoding){
     int simplified=encoding==KTEXT_GBK;
     if(b->font&&b->font_simplified!=simplified){kfont_close(b->font);b->font=NULL;}
-    if(!b->font){b->font=kfont_open(path,simplified);b->font_simplified=simplified;}
-    if(mincho&&*mincho)b->novel_font=kfont_open(mincho,simplified);
+    if(!b->font){b->font=open_font(b,path,simplified);b->font_simplified=simplified;}
+    if(mincho&&*mincho&&!b->novel_font)b->novel_font=open_font(b,mincho,simplified);
     return b->font;
 }
 
@@ -65,6 +86,11 @@ static void ui_font_settings(KBootstrap *b,const char **path,const char **mincho
         if(equal(b->settings[i].key,"FontFile"))*path=b->settings[i].value;
         else if(equal(b->settings[i].key,"MinchoFontFile"))*mincho=b->settings[i].value;
     }
+    /* The supplied Chinese Song font is an optional generated resource.  Keep
+       the Japanese shared-font fallback when it is absent, and automatically
+       select it when package_sd.py placed it next to the game archives. */
+    if(!*path&&root_file_exists(b,"arshanghaisonggbpro_lt.otf"))
+        *path="arshanghaisonggbpro_lt.otf";
 }
 KTextEncoding bootstrap_text_encoding(const KBootstrap *b){
     return text_encoding((KBootstrap *)b);
@@ -946,8 +972,7 @@ static void choice_native_pixel(KBootstrap *b,unsigned state,int hover,unsigned 
 static int choice_page_text(KBootstrap *b,unsigned page,unsigned count,int top){
     memset(b->choice_text.pixels,0,640*480*4);
     KTextEncoding encoding=text_encoding(b);
-    const char *path=NULL;
-    for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,"Runtime")&&equal(b->settings[i].key,"FontFile"))path=b->settings[i].value;
+    const char *path=NULL,*mincho=NULL;ui_font_settings(b,&path,&mincho);
     for(unsigned i=0;i<count;i++){
         unsigned item=page*4+i;KTextChar chars[128];size_t n=0;
         if(decode_text(b,(const uint8_t *)b->choice_labels[item],b->choice_lengths[item],chars,128,&n,&encoding))return error(b,"choice text encoding invalid");
@@ -2806,11 +2831,10 @@ layer_fill_done:;
     b->handled++;if(v->status==KVM_SYSCALL)kvm_resume(v);return 0;
 }
 static int draw_text(KBootstrap *b){
-    KVM *v=b->vm;const char *path=NULL;
+    KVM *v=b->vm;const char *path=NULL,*mincho=NULL;ui_font_settings(b,&path,&mincho);
     for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,"Runtime")){
         if(equal(b->settings[i].key,"TextEncoding")&&!equal(b->settings[i].value,"CP932"))
             return error(b,"unsupported text encoding");
-        if(equal(b->settings[i].key,"FontFile"))path=b->settings[i].value;
     }
     KTextEncoding encoding=text_encoding(b);
     /* Kisaku 5059b0: measurement counts encoded bytes without drawing or
@@ -2839,7 +2863,7 @@ static int draw_text(KBootstrap *b){
 #ifdef __APPLE__
             if(!mincho)mincho="/System/Library/Fonts/ヒラギノ明朝 ProN.ttc";
 #endif
-            if(mincho&&*mincho){b->novel_font=kfont_open(mincho,encoding==KTEXT_GBK);if(!b->novel_font)return error(b,"cannot load MinchoFontFile");}
+            if(mincho&&*mincho){b->novel_font=open_font(b,mincho,encoding==KTEXT_GBK);if(!b->novel_font)return error(b,"cannot load MinchoFontFile");}
         }
         if(b->novel_font)active_font=b->novel_font;
     }
@@ -3615,7 +3639,7 @@ int bootstrap_name_submit(KBootstrap *b,const char *utf8){
 int bootstrap_name_preview(KBootstrap *b,const char *utf8,KImage *out){
     uint8_t name[33];size_t size,count;KTextChar chars[32];
     if(ktext_name_encode(utf8,name,&size)||ktext_decode(KTEXT_CP932,name,size,chars,32,&count))return -1;
-    if(!b->font){const char *path=NULL;for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,"Runtime")&&equal(b->settings[i].key,"FontFile"))path=b->settings[i].value;b->font=kfont_open(path,0);}
+    if(!b->font){const char *path=NULL,*mincho=NULL;ui_font_settings(b,&path,&mincho);b->font=open_font(b,path,0);}
     if(!b->font)return -1;
     KImage image={0,0,512,40,2048,calloc(512*40,4)};if(!image.pixels)return -1;
     unsigned x=0;for(size_t i=0;i<count;i++){if(kfont_draw(b->font,&image,chars[i].codepoint,(int)x,4,24,24,0xffffff)){rmt_free(&image);return -1;}x+=chars[i].columns*12;}
