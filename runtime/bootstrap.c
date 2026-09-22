@@ -456,6 +456,18 @@ static int option(KBootstrap *b,const char *section,const char *key,int fallback
     for(unsigned i=0;i<b->setting_count;i++)if(equal(b->settings[i].section,section)&&equal(b->settings[i].key,key))return atoi(b->settings[i].value);
     return fallback;
 }
+/* Independent output-pixel sharpening; zero selects the previous filter. */
+int bootstrap_edge_strength(const KBootstrap *b){
+    if(!b)return 55;
+    for(unsigned i=0;i<b->setting_count;i++)
+        if(equal(b->settings[i].section,"Display")&&equal(b->settings[i].key,"EdgeStrength")){
+            char *end=NULL;const char *value=b->settings[i].value;
+            double n=strtod(value,&end);
+            if(end==value||*end||!isfinite(n)||n<0)return 0;
+            return n>=100?100:(int)(n+.5);
+        }
+    return 55;
+}
 int bootstrap_cas_strength(const KBootstrap *b){
     /* Keep this presentation-only option independent of the 64-entry native
        CConfig table.  Existing settings files can use either a percentage

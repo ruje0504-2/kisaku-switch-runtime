@@ -14,8 +14,8 @@ static int SDL_GetRendererInfo(SDL_Renderer *r,SDL_RendererInfo *i){(void)r;i->n
 static int SDL_GetRendererOutputSize(SDL_Renderer *r,int *w,int *h){(void)r;*w=1280;*h=720;return 0;}
 static int SDL_RenderFlush(SDL_Renderer *r){(void)r;return 0;}
 typedef struct {GLint enabled,size,type,normalized,stride,buffer;void *ptr;} Attr;
-typedef struct {GLint program,active,tex[4],viewport[4],array,unpack,blend,scissor;Attr attr[2];} State;
-static State state;static int draws,uploads,fail_texture;static uint8_t uploaded[640*480*4];
+typedef struct {GLint program,active,tex[4],viewport[4],array,unpack,blend,scissor,framebuffer;Attr attr[2];} State;
+static State state;static int draws,uploads,fail_texture,fail_fbo;static GLuint next_texture=72;static uint8_t uploaded[640*480*4];
 GLuint glCreateShader(GLenum t){(void)t;return 11;}
 void glShaderSource(GLuint s,GLsizei n,const GLchar *const *v,const GLint *l){(void)s;(void)n;(void)v;(void)l;}
 void glCompileShader(GLuint s){(void)s;}
@@ -28,34 +28,40 @@ void glLinkProgram(GLuint p){(void)p;}
 void glGetProgramiv(GLuint p,GLenum n,GLint *v){(void)p;(void)n;*v=1;}
 void glDeleteProgram(GLuint p){(void)p;}
 GLint glGetUniformLocation(GLuint p,const GLchar *n){(void)p;(void)n;return 2;}
-void glGetIntegerv(GLenum p,GLint *v){switch(p){case GL_CURRENT_PROGRAM:*v=state.program;break;case GL_ACTIVE_TEXTURE:*v=state.active;break;case GL_TEXTURE_BINDING_2D:*v=state.tex[state.active-GL_TEXTURE0];break;case GL_VIEWPORT:memcpy(v,state.viewport,sizeof(state.viewport));break;case GL_ARRAY_BUFFER_BINDING:*v=state.array;break;case GL_UNPACK_ALIGNMENT:*v=state.unpack;break;default:assert(0);}}
+void glGetIntegerv(GLenum p,GLint *v){switch(p){case GL_FRAMEBUFFER_BINDING:*v=state.framebuffer;break;case GL_CURRENT_PROGRAM:*v=state.program;break;case GL_ACTIVE_TEXTURE:*v=state.active;break;case GL_TEXTURE_BINDING_2D:*v=state.tex[state.active-GL_TEXTURE0];break;case GL_VIEWPORT:memcpy(v,state.viewport,sizeof(state.viewport));break;case GL_ARRAY_BUFFER_BINDING:*v=state.array;break;case GL_UNPACK_ALIGNMENT:*v=state.unpack;break;default:assert(0);}}
 void glGetVertexAttribiv(GLuint i,GLenum p,GLint *v){assert(i<2);Attr *a=&state.attr[i];switch(p){case GL_VERTEX_ATTRIB_ARRAY_ENABLED:*v=a->enabled;break;case GL_VERTEX_ATTRIB_ARRAY_SIZE:*v=a->size;break;case GL_VERTEX_ATTRIB_ARRAY_TYPE:*v=a->type;break;case GL_VERTEX_ATTRIB_ARRAY_NORMALIZED:*v=a->normalized;break;case GL_VERTEX_ATTRIB_ARRAY_STRIDE:*v=a->stride;break;case GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING:*v=a->buffer;break;default:assert(0);}}
 void glGetVertexAttribPointerv(GLuint i,GLenum p,void **v){assert(i<2&&p==GL_VERTEX_ATTRIB_ARRAY_POINTER);*v=state.attr[i].ptr;}
 void glActiveTexture(GLenum t){state.active=(GLint)t;}
 void glBindTexture(GLenum t,GLuint n){assert(t==GL_TEXTURE_2D);state.tex[state.active-GL_TEXTURE0]=(GLint)n;}
-void glGenTextures(GLsizei n,GLuint *v){assert(n==1);*v=fail_texture?0:72;}
+void glGenTextures(GLsizei n,GLuint *v){assert(n==1);*v=fail_texture?0:next_texture++;}
 void glDeleteTextures(GLsizei n,const GLuint *v){(void)n;(void)v;}
-void glTexParameteri(GLenum t,GLenum p,GLint v){(void)p;(void)v;assert(t==GL_TEXTURE_2D&&state.tex[0]==72);}
+void glTexParameteri(GLenum t,GLenum p,GLint v){(void)p;(void)v;assert(t==GL_TEXTURE_2D&&state.tex[0]>=72);}
 void glPixelStorei(GLenum p,GLint v){assert(p==GL_UNPACK_ALIGNMENT);state.unpack=v;}
-void glTexImage2D(GLenum t,GLint l,GLint f,GLsizei w,GLsizei h,GLint b,GLenum fmt,GLenum type,const void *v){(void)l;(void)b;assert(t==GL_TEXTURE_2D&&f==GL_RGBA&&fmt==GL_RGBA&&type==GL_UNSIGNED_BYTE&&w==640&&h==480&&state.unpack==1);memcpy(uploaded,v,sizeof(uploaded));uploads++;}
+void glTexImage2D(GLenum t,GLint l,GLint f,GLsizei w,GLsizei h,GLint b,GLenum fmt,GLenum type,const void *v){(void)l;(void)b;if(!v){assert(w==960&&h==720);return;}assert(t==GL_TEXTURE_2D&&f==GL_RGBA&&fmt==GL_RGBA&&type==GL_UNSIGNED_BYTE&&w==640&&h==480&&state.unpack==1);memcpy(uploaded,v,sizeof(uploaded));uploads++;}
 void glTexSubImage2D(GLenum t,GLint l,GLint x,GLint y,GLsizei w,GLsizei h,GLenum f,GLenum type,const void *v){assert(x==0&&y==0);glTexImage2D(t,l,(GLint)f,w,h,0,f,type,v);}
 GLboolean glIsEnabled(GLenum p){return (GLboolean)(p==GL_BLEND?state.blend:p==GL_SCISSOR_TEST?state.scissor:0);}
 void glEnable(GLenum p){if(p==GL_BLEND)state.blend=1;else if(p==GL_SCISSOR_TEST)state.scissor=1;else assert(0);}
 void glDisable(GLenum p){if(p==GL_BLEND)state.blend=0;else if(p==GL_SCISSOR_TEST)state.scissor=0;else assert(0);}
 void glViewport(GLint x,GLint y,GLsizei w,GLsizei h){state.viewport[0]=x;state.viewport[1]=y;state.viewport[2]=w;state.viewport[3]=h;}
 void glUseProgram(GLuint p){state.program=(GLint)p;}
-void glUniform1i(GLint p,GLint v){(void)p;assert(v==0);}
+void glUniform1i(GLint p,GLint v){(void)p;assert(v==0||v==1);}
 void glUniform2f(GLint p,GLfloat x,GLfloat y){(void)p;assert(x>0&&y>0);}
 void glUniform1f(GLint p,GLfloat v){(void)p;assert(v>=0&&v<=1);}
 void glBindBuffer(GLenum p,GLuint b){assert(p==GL_ARRAY_BUFFER);state.array=(GLint)b;}
 void glEnableVertexAttribArray(GLuint i){assert(i<2);state.attr[i].enabled=1;}
 void glDisableVertexAttribArray(GLuint i){assert(i<2);state.attr[i].enabled=0;}
 void glVertexAttribPointer(GLuint i,GLint size,GLenum type,GLboolean norm,GLsizei stride,const void *v){assert(i<2);state.attr[i].size=size;state.attr[i].type=(GLint)type;state.attr[i].normalized=norm;state.attr[i].stride=stride;state.attr[i].buffer=state.array;state.attr[i].ptr=(void *)v;}
-void glDrawArrays(GLenum mode,GLint first,GLsizei count){assert(mode==GL_TRIANGLE_STRIP&&first==0&&count==4);assert(!state.array&&!state.blend&&!state.scissor&&state.active==GL_TEXTURE0&&state.tex[0]==72&&state.program==12);assert(state.attr[0].enabled&&state.attr[1].enabled&&state.attr[0].size==2&&state.attr[1].size==2);assert(state.viewport[0]==160&&state.viewport[2]==960&&state.viewport[3]==720);draws++;}
+void glDrawArrays(GLenum mode,GLint first,GLsizei count){assert(mode==GL_TRIANGLE_STRIP&&first==0&&count==4);assert(!state.array&&!state.blend&&!state.scissor&&state.active==GL_TEXTURE0&&state.tex[0]>=72&&state.program==12);assert(state.attr[0].enabled&&state.attr[1].enabled&&state.attr[0].size==2&&state.attr[1].size==2);assert(state.viewport[0]==(state.framebuffer==73?0:160)&&state.viewport[2]==960&&state.viewport[3]==720);draws++;}
+GLenum glGetError(void){return GL_NO_ERROR;}
+void glGenFramebuffers(GLsizei n,GLuint *v){assert(n==1);*v=73;}
+void glDeleteFramebuffers(GLsizei n,const GLuint *v){(void)n;(void)v;}
+void glBindFramebuffer(GLenum t,GLuint f){assert(t==GL_FRAMEBUFFER);state.framebuffer=(GLint)f;}
+void glFramebufferTexture2D(GLenum t,GLenum a,GLenum tt,GLuint tex,GLint level){assert(t==GL_FRAMEBUFFER&&a==GL_COLOR_ATTACHMENT0&&tt==GL_TEXTURE_2D&&tex&&level==0);}
+GLenum glCheckFramebufferStatus(GLenum t){assert(t==GL_FRAMEBUFFER);return fail_fbo?GL_FRAMEBUFFER_UNSUPPORTED:GL_FRAMEBUFFER_COMPLETE;}
 #define KPRESENT_GLES_TEST
 #include "../tools/present_gles.inc"
 int main(void){
-    state=(State){.program=77,.active=GL_TEXTURE3,.tex={101,102,103,104},.viewport={5,9,1280,720},.array=49,.unpack=8,.blend=1,.scissor=1,
+    state=(State){.program=77,.active=GL_TEXTURE3,.tex={101,102,103,104},.viewport={5,9,1280,720},.array=49,.unpack=8,.blend=1,.scissor=1,.framebuffer=67,
         .attr={{1,3,GL_FLOAT,0,28,49,(void *)(uintptr_t)12},{0,4,GL_UNSIGNED_BYTE,1,28,53,(void *)(uintptr_t)24}}};
     State original=state;KPresentGles pass={0};SDL_Renderer renderer={0};SDL_Rect dst={160,0,960,720};
     KImage source={0,0,640,480,640*4+16,NULL};source.pixels=malloc(source.stride*480);assert(source.pixels);
@@ -68,7 +74,12 @@ int main(void){
     }
     assert(draws==100&&uploads==1);
     source.pixels[0]^=7;assert(!present_gles_draw(&pass,&renderer,&source,&dst,50)&&uploads==2&&uploaded[0]==source.pixels[0]);
-    source.pixels[2560]^=1;assert(!present_gles_draw(&pass,&renderer,&source,&dst,50)&&uploads==2);present_gles_clear(&pass);fail_texture=1;
+    source.pixels[2560]^=1;assert(!present_gles_draw(&pass,&renderer,&source,&dst,50)&&uploads==2);pass.edge_strength=55;
+    assert(!present_gles_draw(&pass,&renderer,&source,&dst,100)&&!memcmp(&state,&original,sizeof(state)));
+    assert(pass.target_w==960&&pass.target_h==720);
+    fail_fbo=1;assert(present_gles_draw(&pass,&renderer,&source,&dst,100)<0&&!memcmp(&state,&original,sizeof(state)));fail_fbo=0;
+    assert(!present_gles_draw(&pass,&renderer,&source,&dst,100)&&!memcmp(&state,&original,sizeof(state)));
+    present_gles_clear(&pass);fail_texture=1;
     assert(present_gles_draw(&pass,&renderer,&source,&dst,0)<0&&!memcmp(&state,&original,sizeof(state)));
     present_gles_clear(&pass);free(source.pixels);puts("GLES presentation: BGRA shader input, padded stride, 100 frames / 1 upload, SDL vertex/texture/scissor state and allocation failure restoration: PASS");return 0;
 }

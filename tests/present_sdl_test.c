@@ -25,13 +25,15 @@ int main(int argc,char **argv){
         snprintf(path,sizeof(path),"%s-linear.bmp",shot);assert(!capture(r,path));
         KPresentGles preview={0};assert(!present_gles_draw(&preview,r,&b->layers[0],&area,0));
         snprintf(path,sizeof(path),"%s-cubic.bmp",shot);assert(!capture(r,path));
+        preview.edge_strength=55;assert(!present_gles_draw(&preview,r,&b->layers[0],&area,0));
+        snprintf(path,sizeof(path),"%s-edge.bmp",shot);assert(!capture(r,path));
         present_gles_clear(&preview);SDL_DestroyTexture(linear);
     }
     KImage source={0,0,640,480,2560,calloc(640*480,4)};assert(source.pixels);
     for(unsigned i=0;i<640*480;i++){source.pixels[4*i]=23;source.pixels[4*i+1]=53;source.pixels[4*i+2]=201;source.pixels[4*i+3]=255;}
     uint8_t *expected=malloc(960*720*4),*actual=malloc(960*720*4);assert(expected&&actual);
     const unsigned kinds[]={22,9,23,20,5,0};const char *names[]={"CG","music","video","scene appreciation","history","load/save"};
-    KPresentGles pass={0};SDL_Rect dst={160,0,960,720};
+    KPresentGles pass={.edge_strength=55};SDL_Rect dst={160,0,960,720};
     SDL_Texture *background=kimage_texture(r,&source);assert(background);
     assert(!SDL_SetTextureBlendMode(background,SDL_BLENDMODE_NONE));
     for(unsigned test=0;test<6;test++){

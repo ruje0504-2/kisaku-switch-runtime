@@ -275,6 +275,8 @@ int bootstrap_message_setting(KBootstrap *b,unsigned item,int change);
    (0..100); integer values are percentages and decimal values in 0..1 are
    accepted as normalized strength.  Zero disables sharpening; the viewer still uses bilinear scaling. */
 int bootstrap_cas_strength(const KBootstrap *b);
+/* Display/EdgeStrength: output-pixel GPU sharpening, 0..100, default 55. */
+int bootstrap_edge_strength(const KBootstrap *b);
 /* Returns a 640x480 clean presentation copy plus a 960x720 text overlay.
    Unsupported/modified text surfaces safely retain their authored pixels. */
 const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay);

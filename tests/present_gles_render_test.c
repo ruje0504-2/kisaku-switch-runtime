@@ -83,6 +83,55 @@ static void test_cubic(KPresentGles *pass,SDL_Renderer *renderer,KImage *source,
     assert(!present_gles_draw(pass,renderer,source,dst,100));read_frame(actual);
     for(unsigned i=0;i<640*480;i++)assert(source->pixels[i*4+3]==91);
 }
+static double smooth_gate(double v){
+    double t=(v-.02)/.14;if(t<0)t=0;if(t>1)t=1;return t*t*(3-2*t);
+}
+static double output_luma(const uint8_t *frame,int x,int y){
+    if(x<0)x=0;if(x>959)x=959;if(y<0)y=0;if(y>719)y=719;
+    const uint8_t *p=frame+((size_t)y*1280+160+x)*4;
+    return (.299*p[0]+.587*p[1]+.114*p[2])/255.;
+}
+static void test_edges(KPresentGles *pass,SDL_Renderer *r,KImage *src,const SDL_Rect *dst,uint8_t *actual,uint8_t *base){
+    /* Asymmetric ramps, flat areas, texture and hard edges catch Y/channel
+       reversal and check bounded luma changes across the entire output. */
+    pass->edge_strength=0;assert(!present_gles_draw(pass,r,src,dst,0));read_frame(base);
+    for(unsigned strength=25;strength<=100;strength+=25){
+        pass->edge_strength=strength;assert(!present_gles_draw(pass,r,src,dst,100));read_frame(actual);
+        unsigned changes=0,max_error=0;
+        for(int y=0;y<720;y++)for(int x=0;x<960;x++){
+            double l=output_luma(base,x,y),lo=l,hi=l,sum=0;
+            for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
+                double v=output_luma(base,x+i,y+j);sum+=v;if(v<lo)lo=v;if(v>hi)hi=v;
+            }
+            double delta=(l-sum/9.)*(strength/100.)*.9*smooth_gate(hi-lo);
+            if(delta>6./255)delta=6./255;if(delta< -6./255)delta= -6./255;
+            double out=l+delta;if(out<lo)out=lo;if(out>hi)out=hi;delta=out-l;
+            size_t at=((size_t)y*1280+160+x)*4;
+            for(unsigned c=0;c<3;c++){
+                int ref=(int)floor(base[at+c]+delta*255+.5);if(ref<0)ref=0;if(ref>255)ref=255;
+                unsigned error=(unsigned)abs(actual[at+c]-ref);if(error>max_error)max_error=error;
+                assert(abs(actual[at+c]-base[at+c])<=6);changes+=actual[at+c]!=base[at+c];
+            }
+            assert(actual[at+3]==255);
+        }
+        assert(max_error<=1&&changes>10000);
+        printf("Output edge pass %u: independent CPU max error %u/255; changed channels %u; bound 6/255: PASS\n",strength,max_error,changes);
+    }
+    /* Reallocation follows viewport dimensions; old mode remains available. */
+    SDL_Rect smaller={320,120,640,480};assert(!present_gles_draw(pass,r,src,&smaller,0));
+    assert(pass->target_w==640&&pass->target_h==480);
+    assert(!present_gles_draw(pass,r,src,dst,0));assert(pass->target_w==960&&pass->target_h==720);
+    pass->edge_strength=0;assert(!present_gles_draw(pass,r,src,dst,0));read_frame(actual);
+    assert(!memcmp(actual,base,1280u*720u*4u));
+    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+        uint8_t *p=src->pixels+y*src->stride+x*4;
+        p[0]=p[1]=p[2]=(uint8_t)(119+(x+y)%3);
+    }
+    assert(!present_gles_draw(pass,r,src,dst,0));read_frame(base);
+    pass->edge_strength=100;assert(!present_gles_draw(pass,r,src,dst,0));read_frame(actual);
+    assert(!memcmp(actual,base,1280u*720u*4u));
+    puts("Weak 2/255 texture unchanged at maximum edge strength: PASS");
+}
 int main(int argc,char **argv){
     assert(argc==2);EGLDisplay d=eglGetDisplay(EGL_DEFAULT_DISPLAY);EGLint major,minor;assert(eglInitialize(d,&major,&minor));assert(eglBindAPI(EGL_OPENGL_ES_API));
     EGLint config_attrs[]={EGL_SURFACE_TYPE,EGL_PBUFFER_BIT,EGL_RENDERABLE_TYPE,EGL_OPENGL_ES2_BIT,EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,EGL_ALPHA_SIZE,8,EGL_NONE};EGLConfig config;EGLint n;assert(eglChooseConfig(d,config_attrs,&config,1,&n)&&n==1);
@@ -94,7 +143,7 @@ int main(int argc,char **argv){
     KFont *font=kfont_open(argv[1],0);assert(font);const uint32_t text[]={0x65e5,0x672c,0x8a9e,0x6587,0x5b57,0x5c65,0x6b74};
     for(unsigned i=0;i<7;i++)assert(!kfont_draw(font,&letters,text[i],48+(int)i*30,610,24,24,0xffffff));
     unsigned ink=0;for(unsigned i=0;i<960*720;i++)ink+=letters.pixels[i*4+3]!=0;assert(ink>200);
-    uint8_t *expected=malloc(1280*720*4),*actual=malloc(1280*720*4);assert(expected&&actual);KPresentGles pass={0};SDL_Renderer renderer={0};SDL_Rect dst={160,0,960,720};
+    uint8_t *expected=malloc(1280*720*4),*actual=malloc(1280*720*4);assert(expected&&actual);KPresentGles pass={.edge_strength=55};SDL_Renderer renderer={0};SDL_Rect dst={160,0,960,720};
     for(unsigned art=0;art<2;art++){
         if(art)for(unsigned y=50;y<550;y++)for(unsigned x=200;x<850;x++){uint8_t *q=letters.pixels+y*letters.stride+x*4;q[0]=(uint8_t)(x%256);q[1]=(uint8_t)(y%256);q[2]=200;q[3]=255;}
         ui_upload(&source);glDrawArrays(GL_TRIANGLE_STRIP,0,4);ui_upload(&letters);glDrawArrays(GL_TRIANGLE_STRIP,0,4);read_frame(expected);
@@ -107,6 +156,8 @@ int main(int argc,char **argv){
         }
     }
     printf("Native 960x720 Japanese glyphs: %u ink pixels; 60 GLES story+text/menu frames match reference pixels exactly: PASS\n",ink);
+    pass.edge_strength=0;
     test_cubic(&pass,&renderer,&source,&dst,actual);
+    test_edges(&pass,&renderer,&source,&dst,actual,expected);
     present_gles_clear(&pass);kfont_close(font);free(source.pixels);free(letters.pixels);free(expected);free(actual);glDeleteTextures(1,&ui_texture);glDeleteBuffers(1,&ui_vbo);glDeleteProgram(ui_shader);eglMakeCurrent(d,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);eglDestroyContext(d,context);eglDestroySurface(d,surface);eglTerminate(d);return 0;
 }

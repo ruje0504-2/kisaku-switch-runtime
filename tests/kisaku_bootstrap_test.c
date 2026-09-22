@@ -1683,6 +1683,12 @@ int main(int argc,char **argv){
     assert(result==1&&!b->error[0]);assert(b->vm->syscall==31);
     /* Presentation-only CAS strength accepts normalized and percentage
        settings without entering the native CConfig index table. */
+    assert(bootstrap_edge_strength(b)==55);
+    test_setting(b,"Display","EdgeStrength","0");assert(bootstrap_edge_strength(b)==0);
+    test_setting(b,"Display","EdgeStrength","75");assert(bootstrap_edge_strength(b)==75);
+    test_setting(b,"Display","EdgeStrength","200");assert(bootstrap_edge_strength(b)==100);
+    test_setting(b,"Display","EdgeStrength","invalid");assert(bootstrap_edge_strength(b)==0);
+    test_setting(b,"Display","EdgeStrength","55");assert(bootstrap_edge_strength(b)==55);
     test_setting(b,"Display","CASStrength","0.25");assert(bootstrap_cas_strength(b)==25);
     test_setting(b,"Display","CASStrength","75");assert(bootstrap_cas_strength(b)==75);
     test_setting(b,"Display","CASStrength","200");assert(bootstrap_cas_strength(b)==100);

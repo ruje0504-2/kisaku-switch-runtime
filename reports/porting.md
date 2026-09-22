@@ -858,3 +858,20 @@ Logo 的 `logo.wav/potapota.wav` 保留在主总线，语音单独写入 `voice_
 - 实际Mesa GLES对独立16点CPU三次核参考：全960×720最大误差1/255，584978通道与双线性差异超过2/255；颜色、边界夹取、过冲限幅、透明源的最终Alpha和原始图层不变专项通过。
 - 真实SDL CG/音乐/视频/回想/历史/存读档及高清文字/局部上传专项通过；真实标题截图已检查。日志local/bicubic-gles.log、local/bicubic-preview.log。用户要求的复用笔记已更新reports/高清呈现与多核心移植笔记.md第5、13节，记录公式、成本与后备路径差异。
 - `./build-host.sh`、`./build-switch.sh`（-Werror）、`tools/test_present_gles.sh`和`git diff --check`通过；本轮未改变VM或存档逻辑，未重复全路线探针。主入口SHA-256：`ac52ad776e59b4598f36b9d9a22b0abee66d4523a141404fb497b214b76c39d0`。SD交付同步；Switch实机图像质量与性能尚未验证。
+
+## 2026-09-23：放大后的边缘自适应锐化
+
+按用户选择保留双三次放大，不接入FSR。正常GLES底图新增输出viewport尺寸RGBA8中间纹理/FBO：第一阶段执行原有受限Catmull-Rom，第二阶段在输出像素3×3亮度邻域上计算细节，按对比度smoothstep渐进增强，局部亮度范围与±6/255限制过冲。高清文字和原生SDL菜单在后面独立叠加；游戏内部640×480图层不变。
+
+`Display/EdgeStrength`默认55，范围0..100；0返回原有单pass及CASStrength设置。新模式不叠加旧CAS锐化。中间RGBA读取不再BGRA交换，独立UV处理FBO上下方向，所有路径恢复原framebuffer/SDL GL状态，包含FBO失败恢复。CPU后备维持现有算法；单独的原生CG等模态图片并未纳入新底图pass。
+
+验证：
+
+- `tools/test_present_gles.sh`：Mesa实际GLES，四种强度与独立CPU参考最大误差1/255，单通道改变量≤6/255；2/255弱纹理最大强度完全不变，960×720/640×480重分配与旧模式恢复通过。
+- 同脚本实际SDL GLES：CG、音乐、视频、回想、历史、存读档各12帧，HQ文字及局部更新参考像素一致；非默认framebuffer及FBO失败恢复夹具通过。日志 `local/edge-gles.log`。
+- `./build-host.sh`、`./build-switch.sh`：通过；`python3 tools/package_sd.py 鬼作`：通过。日志 `local/edge-host.log`、`local/edge-switch.log`、`local/edge-package.log`。
+- 真实标题对比截图 `local/edge-preview-cubic.png` / `local/edge-preview-edge.png` 已查看，颜色/方向/布局正常，轮廓变化轻微；不夸大为重建原始细节。
+
+产物主入口及交付主入口SHA-256：`50afeb4c852842693542467855b2dcb4d88612e010e90fe211649c8076415cc0`。GPU多一次pass和约2.64MiB中间目标，无新增CPU高清放大；驱动提交/等待仍有成本。Switch实机清晰度、GPU/CPU负载和60FPS稳定性未验证。复用细节补入 `reports/高清呈现与多核心移植笔记.md` 第14节。
+
+追加主机运行结果：`build/kisaku-bootstrap-test 鬼作 local/edge-setting-test` 与 `build/kisaku-bootstrap-test 鬼作 local/edge-hires-test --hires` 均完成；新增EdgeStrength默认/禁用/上限/无效配置断言及既有运行时、高清字层/工作线程回归通过。日志 `local/edge-bootstrap.log`、`local/edge-hires.log`。本轮未重复完整test-host.sh，未把这些检查当成实机或全路线验证。

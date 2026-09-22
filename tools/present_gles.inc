@@ -6,9 +6,11 @@
 #include <GLES2/gl2.h>
 #endif
 typedef struct {
-    GLuint program,source;
+    GLuint program,source,target,fbo;
+    unsigned edge_strength; /* 0 keeps the original single-pass filter. */
+    int target_w,target_h;
     uint8_t *bgra;
-    GLint pos,uv,tex,texel,strength;
+    GLint pos,uv,tex,texel,strength,output_stage;
     int ready,disabled;
 } KPresentGles;
 
@@ -24,9 +26,22 @@ static int present_gles_init(KPresentGles *p){
        leaving a 3x3 grid (9 fetches). Four central texels bound ringing.
        This uses source texel centres and highp to retain subpixel accuracy. */
     static const char fragment[]=
-        "precision highp float;uniform sampler2D u_tex;uniform vec2 u_texel;uniform float u_strength;varying vec2 v_uv;"
+        "precision highp float;uniform sampler2D u_tex;uniform vec2 u_texel;uniform float u_strength;uniform int u_output_stage;varying vec2 v_uv;"
         "vec3 px(vec2 p){return texture2D(u_tex,p*u_texel).bgr;}"
-        "void main(){vec2 p=v_uv/u_texel-.5;vec2 base=floor(p);vec2 f=p-base;"
+        /* Output stage reads an RGBA render target, without the source BGRA
+           swizzle. Luma-only detail avoids tint shifts. Smooth gating suppresses
+           weak texture/noise; local bounds and 6/255 limit contain halos. */
+        "float lum(vec3 c){return dot(c,vec3(.299,.587,.114));}"
+        "void main(){if(u_output_stage!=0){"
+        "vec3 c=texture2D(u_tex,v_uv).rgb;float l=lum(c),lo=l,hi=l,sum=0.;"
+        "for(int y=-1;y<=1;y++){for(int x=-1;x<=1;x++){"
+        "float v=lum(texture2D(u_tex,v_uv+vec2(float(x),float(y))*u_texel).rgb);"
+        "lo=min(lo,v);hi=max(hi,v);sum+=v;}}"
+        "float gate=smoothstep(.02,.16,hi-lo);"
+        "float delta=clamp((l-sum/9.)*u_strength*.9*gate,-.0235294,.0235294);"
+        "delta=clamp(l+delta,lo,hi)-l;"
+        "gl_FragColor=vec4(clamp(c+vec3(delta),0.,1.),1.);return;}"
+        "vec2 p=v_uv/u_texel-.5;vec2 base=floor(p);vec2 f=p-base;"
         "vec2 w0=f*(-.5+f*(1.-.5*f));vec2 w1=1.+f*f*(-2.5+1.5*f);"
         "vec2 w2=f*(.5+f*(2.-1.5*f));vec2 w3=f*f*(-.5+.5*f);vec2 wm=w1+w2;"
         "vec2 a=base-.5;vec2 m=base+.5+w2/wm;vec2 z=base+2.5;"
@@ -51,7 +66,8 @@ static int present_gles_init(KPresentGles *p){
     glAttachShader(p->program,vs);glAttachShader(p->program,fs);glBindAttribLocation(p->program,0,"a_pos");glBindAttribLocation(p->program,1,"a_uv");glLinkProgram(p->program);glDeleteShader(vs);glDeleteShader(fs);
     GLint ok=0;glGetProgramiv(p->program,GL_LINK_STATUS,&ok);if(!ok){glDeleteProgram(p->program);p->program=0;return -1;}
     p->pos=0;p->uv=1;p->tex=glGetUniformLocation(p->program,"u_tex");p->texel=glGetUniformLocation(p->program,"u_texel");p->strength=glGetUniformLocation(p->program,"u_strength");
-    p->ready=p->tex>=0&&p->texel>=0&&p->strength>=0;return p->ready?0:-1;
+    p->output_stage=glGetUniformLocation(p->program,"u_output_stage");
+    p->ready=p->output_stage>=0&&p->tex>=0&&p->texel>=0&&p->strength>=0;return p->ready?0:-1;
 }
 typedef struct {GLint enabled,size,type,normalized,stride,buffer;void *pointer;} KPresentAttrib;
 static void present_gles_attrib_save(GLuint index,KPresentAttrib *a){
@@ -84,8 +100,8 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage
         else for(unsigned y=0;y<480&&!changed;y++)changed=memcmp(p->bgra+y*2560,image->pixels+y*image->stride,2560)!=0;
     }
     if(changed)for(unsigned y=0;y<480;y++)memcpy(p->bgra+y*2560,image->pixels+y*image->stride,2560);
-    GLint program,active,texture0,viewport[4],array,unpack;KPresentAttrib attrib[2];
-    glGetIntegerv(GL_CURRENT_PROGRAM,&program);glGetIntegerv(GL_ACTIVE_TEXTURE,&active);
+    GLint program,active,texture0,viewport[4],array,unpack,framebuffer;KPresentAttrib attrib[2];
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING,&framebuffer);glGetIntegerv(GL_CURRENT_PROGRAM,&program);glGetIntegerv(GL_ACTIVE_TEXTURE,&active);
     glActiveTexture(GL_TEXTURE0);glGetIntegerv(GL_TEXTURE_BINDING_2D,&texture0);
     glGetIntegerv(GL_VIEWPORT,viewport);glGetIntegerv(GL_ARRAY_BUFFER_BINDING,&array);glGetIntegerv(GL_UNPACK_ALIGNMENT,&unpack);
     present_gles_attrib_save(0,&attrib[0]);present_gles_attrib_save(1,&attrib[1]);
@@ -101,24 +117,54 @@ static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage
         glBindTexture(GL_TEXTURE_2D,p->source);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
         glTexSubImage2D(GL_TEXTURE_2D,0,0,0,640,480,GL_RGBA,GL_UNSIGNED_BYTE,p->bgra);
     }
+    if(p->edge_strength){
+        if(!p->target||p->target_w!=vw||p->target_h!=vh){
+            if(p->target)glDeleteTextures(1,&p->target);
+            p->target=0;p->target_w=p->target_h=0;
+            glGenTextures(1,&p->target);
+            if(!p->target){failed=1;goto restore;}
+            glBindTexture(GL_TEXTURE_2D,p->target);
+            glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+            glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,vw,vh,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+            if(glGetError()!=GL_NO_ERROR){glDeleteTextures(1,&p->target);p->target=0;failed=1;goto restore;}
+            p->target_w=vw;p->target_h=vh;
+        }
+        if(!p->fbo)glGenFramebuffers(1,&p->fbo);
+        if(!p->fbo){failed=1;goto restore;}
+        glBindFramebuffer(GL_FRAMEBUFFER,p->fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,p->target,0);
+        if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE){failed=1;goto restore;}
+    }
     glBindTexture(GL_TEXTURE_2D,p->source);
     glDisable(GL_BLEND);glDisable(GL_SCISSOR_TEST);glViewport(vx,oh-(vy+vh),vw,vh);glUseProgram(p->program);
-    glUniform1i(p->tex,0);glUniform2f(p->texel,1.0f/640.0f,1.0f/480.0f);glUniform1f(p->strength,(float)(strength>100?100:strength)/100.0f);
+    if(p->edge_strength)glViewport(0,0,vw,vh);
+    glUniform1i(p->output_stage,0);glUniform1i(p->tex,0);glUniform2f(p->texel,1.0f/640.0f,1.0f/480.0f);glUniform1f(p->strength,p->edge_strength?0.f:(float)(strength>100?100:strength)/100.0f);
     static const GLfloat pos[]={-1,-1,1,-1,-1,1,1,1},uv[]={0,1,1,1,0,0,1,0};
     /* SDL may have a VBO bound and cache enabled attributes. Client pointers
        are only valid with ARRAY_BUFFER=0; restore both pointers and enables. */
     glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
     glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,pos);glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,0,uv);glDrawArrays(GL_TRIANGLE_STRIP,0,4);
+    if(p->edge_strength){
+        /* Render-target Y is bottom-up, unlike the authored upload. */
+        static const GLfloat target_uv[]={0,0,1,0,0,1,1,1};
+        glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)framebuffer);
+        glViewport(vx,oh-(vy+vh),vw,vh);glBindTexture(GL_TEXTURE_2D,p->target);
+        glUniform1i(p->output_stage,1);glUniform2f(p->texel,1.f/vw,1.f/vh);
+        glUniform1f(p->strength,(float)(p->edge_strength>100?100:p->edge_strength)/100.f);
+        glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,0,target_uv);glDrawArrays(GL_TRIANGLE_STRIP,0,4);
+    }
  restore:
+    glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)framebuffer);
     present_gles_attrib_restore(0,&attrib[0]);present_gles_attrib_restore(1,&attrib[1]);glBindBuffer(GL_ARRAY_BUFFER,(GLuint)array);
     glPixelStorei(GL_UNPACK_ALIGNMENT,unpack);glUseProgram((GLuint)program);glBindTexture(GL_TEXTURE_2D,(GLuint)texture0);glActiveTexture((GLenum)active);
     glViewport(viewport[0],viewport[1],viewport[2],viewport[3]);if(blend)glEnable(GL_BLEND);else glDisable(GL_BLEND);if(scissor)glEnable(GL_SCISSOR_TEST);else glDisable(GL_SCISSOR_TEST);
     return failed?-1:0;
 }
-static void present_gles_clear(KPresentGles *p){if(!p)return;if(p->source)glDeleteTextures(1,&p->source);if(p->program)glDeleteProgram(p->program);free(p->bgra);memset(p,0,sizeof(*p));}
+static void present_gles_clear(KPresentGles *p){if(!p)return;if(p->fbo)glDeleteFramebuffers(1,&p->fbo);if(p->target)glDeleteTextures(1,&p->target);if(p->source)glDeleteTextures(1,&p->source);if(p->program)glDeleteProgram(p->program);free(p->bgra);memset(p,0,sizeof(*p));}
 
 #else
-typedef struct {int unused;} KPresentGles;
+typedef struct {unsigned edge_strength;} KPresentGles;
 static int present_gles_draw(KPresentGles *p,SDL_Renderer *renderer,const KImage *image,const SDL_Rect *dst,unsigned strength){(void)p;(void)renderer;(void)image;(void)dst;(void)strength;return -1;}
 static void present_gles_clear(KPresentGles *p){(void)p;}
 #endif
