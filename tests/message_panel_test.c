@@ -72,10 +72,44 @@ static void test_saved_parameters(SaveMenu *m,KBootstrap *b,SDL_Renderer *r,cons
     m->selector=1;save_menu_action(m,b,7);assert(!m->param_detail);m->selector=0;
     unsigned old_detail=saved->bytes[108];saved->bytes[108]=1;m->draw_key=0;
     save_menu_pointer(m,b,30,80,1);assert(m->character_detail&&m->detail_index==0);
-    save_menu_draw(m,b,r);assert(m->detail_artwork.pixels&&m->detail_status_artwork.pixels&&m->character_detail);
+    m->detail_steps=0;save_menu_draw(m,b,r);assert(m->detail_artwork.pixels&&m->detail_status_artwork.pixels&&m->character_detail);
     uint64_t detail_pixels=ui_hash(1,m->canvas.pixels,m->canvas.stride*m->canvas.height);
     m->draw_key=0;save_menu_draw(m,b,r);assert(ui_hash(1,m->canvas.pixels,m->canvas.stride*m->canvas.height)==detail_pixels);
-    save_menu_action(m,b,1);assert(!m->character_detail&&m->active);
+    uint8_t *original=malloc(saved->byte_count);assert(original);memcpy(original,saved->bytes,saved->byte_count);
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[237]=1;saved->bytes[120]=23;
+    m->draw_key=0;save_menu_draw(m,b,r);
+    character_detail_pointer(m,b,40,65,0);assert(m->detail_hover==4);
+    character_detail_pointer(m,b,40,97,0);assert(m->detail_hover==5);
+    character_detail_pointer(m,b,40,129,0);assert(m->detail_hover==-1);
+    character_detail_action(m,b,3);assert(m->detail_hover==4);
+    character_detail_action(m,b,3);assert(m->detail_hover==5);
+    character_detail_action(m,b,3);assert(m->detail_hover==1000);
+    character_detail_action(m,b,2);assert(m->detail_hover==5);
+    character_detail_pointer(m,b,40,65,1);assert(m->detail_view&&m->detail_image.pixels);
+    m->detail_steps=0;save_menu_draw(m,b,r);
+    character_detail_action(m,b,1);m->detail_steps=0;save_menu_draw(m,b,r);
+    assert(m->character_detail&&!m->detail_view&&!m->detail_image.pixels);
+    for(unsigned role=0;role<8;role++){
+        memset(saved->bytes,0,saved->byte_count);m->detail_index=role;m->detail_hover=-1;
+        rmt_free(&m->detail_status_artwork);
+        for(unsigned item=0;item<character_counts[role];item++){
+            /* Hiro entries 5 and 6 intentionally share native byte 237. */
+            saved->bytes[character_flags[role][item]]=0;
+            assert(!character_enabled(saved,role,item));
+            saved->bytes[character_flags[role][item]]=2;assert(!character_enabled(saved,role,item));
+            saved->bytes[character_flags[role][item]]=1;assert(character_enabled(saved,role,item));
+            KImage cg={0};const char *name=bootstrap_character_image(role,item);
+            assert(name&&!ui_asset(b,name,&cg));rmt_free(&cg);
+        }
+        m->draw_key=0;save_menu_draw(m,b,r);assert(!m->status[0]);
+        unsigned last=character_counts[role]-1;
+        character_detail_pointer(m,b,40,65+(int)last*32,0);assert(m->detail_hover==(int)last);
+    }
+    memset(saved->bytes,0,saved->byte_count);saved->bytes[635]=1;assert(character_enabled(saved,1,8));
+    assert(!bootstrap_character_image(8,0)&&!bootstrap_character_image(0,9));
+    memcpy(saved->bytes,original,saved->byte_count);free(original);
+    m->detail_index=0;save_menu_action(m,b,1);m->detail_steps=0;character_detail_frame(m);
+    assert(!m->character_detail&&m->active);
     saved->bytes[108]=(uint8_t)old_detail;m->draw_key=0;
     memcpy(saved->words,words,sizeof(words));rmt_free(&image);rmt_free(&atlas);rmt_free(&m->previews[0]);m->draw_key=0;
     rmt_free(&m->detail_artwork);rmt_free(&m->detail_status_artwork);

@@ -571,3 +571,11 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 专项检查六个中间画面的边框/内容像素、目标Alpha保留、最终底图恢复、VM指令位置和输入隔离、加速四种组合及错误参数保留。日志见local/animation523-tests.log。
 - 精度边界：当前60Hz虚拟帧驱动，每次独立20ms等待量化为2帧，普通模式12帧，加速模式6帧。没有把帧数报成原版实际120ms，也未运行PC程序或Switch实机。
 - 主机构建、完整test-host、Switch交叉编译、SD打包和git diff --check通过。专项ASan/UBSan通过（macOS关闭LeakSanitizer），日志local/animation523-asan.log；静态证据local/animation523-disassembly.txt。四份NRO主入口/兼容名与交付副本SHA-256：61edb8ed933adaca766241ffe87ab18bf57d7b895cc374805fc5cfac1eba96b8。
+
+## 2026-09-22 存档角色簿详情子集
+
+- 接续907ed6f上的未提交改动。按4ac3b0/4b2110实现八角色解锁条目与紧凑排列、计数/完成章、空行及鼠标/方向选择；读取选中存档，不修改剧情VM。Hiro两个条目共用byte237，Madoka末项允许byte404或635等于1，不能用非零替代精确等于1。
+- 4b2820图片表按role*0x24+item*4（一基item）从已校验EXE静态提取，保留原版跨度；56个详情条目的真实图片均可解码。4b1ec0/4b1c70的-640/-320滑动及4b1b50淡化接入15ms前端时钟，动画期间隔离点击；图片随详情退出及菜单销毁释放。
+- 修正前端夹具误把共享byte237当成独立标记的问题。前端专项、主机构建、完整`./test-host.sh 鬼作`、Switch交叉编译和SD打包通过；八角色解锁字节还与004ac3b0伪代码逐项交叉核对。日志：`local/character-detail-{build,tests,panel,switch,package,static-check}.log`。
+- 构建主入口及SD交付主入口/兼容名SHA-256均为`ba3f8f69d44b3969ef86bb5a193bd2b134a3160fbfe012866e753cf108982390`。用户图标改动不纳入提交。
+- 此提交仅完成存档group5详情子集。剧情角色动态状态及语音组合、完整回看、精确20ms、受限调用和全部参数校验仍待继续；参数校验顺序在精确平台绘制差异之前。未运行PC原版，Switch实机及全路线/真实场景回归仍未验证。

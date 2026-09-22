@@ -49,7 +49,8 @@ static void save_menu_book(SaveMenu *m){
 }
 static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
     if(save_menu_assets(m,b)){snprintf(m->status,sizeof(m->status),"画面データを読み込めませんでした");return;}
-    int state[]={m->save,m->slot,m->selector,m->overwrite,m->loading,m->confirm_load,m->button,m->focus,m->hover,m->last_slot,(int)m->param_detail,(int)m->character_detail,(int)m->detail_index};
+    if(m->character_detail)character_detail_frame(m);
+    int state[]={m->save,m->slot,m->selector,m->overwrite,m->loading,m->confirm_load,m->button,m->focus,m->hover,m->last_slot,(int)m->param_detail,(int)m->character_detail,(int)m->detail_index,m->detail_hover,(int)m->detail_step,(int)m->detail_view,(int)m->detail_phase};
     uint64_t key=ui_hash(ui_hash(1469598103934665603ULL,state,sizeof(state)),m->status,strlen(m->status));key=ui_hash(key,m->note,strlen(m->note));
     unsigned param_step=0;if(m->param_detail){uint64_t elapsed=(SDL_GetTicks64()-m->param_started)/15;param_step=elapsed<m->param_steps?(unsigned)elapsed:m->param_steps;key=ui_hash(key,&param_step,sizeof(param_step));}
     if(key==m->draw_key&&m->texture){SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,m->texture,NULL,&dst);return;}m->draw_key=key;
@@ -128,36 +129,7 @@ static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
             for(unsigned c=0;c<3;c++)out[c]=(uint8_t)(s[c]*alpha/255+out[c]*(255-alpha)/255);
         }
     }
-    if(m->character_detail){
-        if(!m->detail_artwork.pixels&&ui_asset(b,"statfr.akb",&m->detail_artwork)){
-            snprintf(m->status,sizeof(m->status),"人物詳細データを読み込めませんでした");
-        }else if(m->detail_artwork.pixels){
-            for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++)for(unsigned c=0;c<3;c++)
-                d->pixels[y*d->stride+x*4+c]=(uint8_t)(d->pixels[y*d->stride+x*4+c]*63/255);
-            unsigned w=m->detail_artwork.width>640?640:m->detail_artwork.width;
-            unsigned h=m->detail_artwork.height>480?480:m->detail_artwork.height;
-            unsigned x=(640-w)/2,y=(480-h)/2;
-            ui_blit(d,&m->detail_artwork,0,0,w,h,x,y,1);
-            static const char *names[]={"ヒロ","マドカ","アヤン","モモ","ナデ","ショウ","ユリ","アオイ"};
-            ui_fill(d,12,12,180,28,0x241a12);
-            ui_text(b,d,names[m->detail_index<8?m->detail_index:0],22,17,160,20,0xffffff,0);
-            static const char *status_names[]={"stathiro.akb","statmado.akb","statayan.akb","statmomo.akb","statnade.akb","statshou.akb","statyuri.akb","stataoi.akb"};
-            static const unsigned status_rows[]={8,9,6,6,4,7,7,5};
-            unsigned role=m->detail_index<8?m->detail_index:0;
-            if(!m->detail_status_artwork.pixels&&ui_asset(b,status_names[role],&m->detail_status_artwork))
-                snprintf(m->status,sizeof(m->status),"人物状態データを読み込めませんでした");
-            if(m->detail_status_artwork.pixels){
-                unsigned rows=status_rows[role];
-                ui_blit(d,&m->detail_status_artwork,0,0,192,36,352,24,1);
-                for(unsigned row=0;row<rows;row++){
-                    unsigned sy=36+row*28;
-                    if(sy+28>m->detail_status_artwork.height)break;
-                    ui_blit(d,&m->detail_status_artwork,0,sy,272,28,352,64+row*32,1);
-                }
-            }
-            ui_text(b,d,"A/Enter・B/Esc: 戻る",360,454,260,20,0xffdf78,0);
-        }
-    }
+    if(m->character_detail)character_detail_draw(m,b);
     if(m->loading){
         ui_fill(d,170,200,300,158,0xa08948);ui_fill(d,173,203,294,152,0x241a12);
         ui_text(b,d,"ロード中…",188,224,260,24,0xffffff,0);

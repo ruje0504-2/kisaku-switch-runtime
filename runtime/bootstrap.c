@@ -1014,6 +1014,9 @@ static void draw_ax_extra(const uint32_t d[7],unsigned cell,void *context){
 #include "param_change.h"
 #include "title_initial.inc"
 #include "../build/media_tables.h"
+const char *bootstrap_character_image(unsigned role,unsigned item){
+    return role<8&&item<9?kisaku_character_images[role][item]:NULL;
+}
 #include "distort.inc"
 #include "movie.inc"
 

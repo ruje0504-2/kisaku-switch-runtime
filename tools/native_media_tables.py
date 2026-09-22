@@ -67,6 +67,19 @@ def extract(path):
         label.decode('cp932')
         locations.append(list(row))
     tables.append(locations)
+    # CGirlStatus 4b2820 indexes role*0x24 + item*4, item is one-based.
+    # Nine-pointer stride is intentional even for role 1's ninth item.
+    details = []
+    for role, count in enumerate((8, 9, 8, 7, 4, 7, 8, 5)):
+        row = []
+        for item in range(1, count + 1):
+            pointer = struct.unpack('<I', read(0x5a6ddc + role * 0x24 + item * 4, 4))[0]
+            resource = name(pointer)
+            if not resource.endswith('.AKB'):
+                raise ValueError('Invalid character detail image')
+            row.append(resource)
+        details.append(row)
+    tables.append(details)
     return tables
 
 def render(tables):
@@ -85,6 +98,10 @@ def render(tables):
     lines.append('static const unsigned char kisaku_location_names[][32]={')
     for row in tables[3]:
         lines.append('{' + ','.join(map(str, row)) + '},')
+    lines.append('};')
+    lines.append('static const char *const kisaku_character_images[8][9]={')
+    for row in tables[4]:
+        lines.append('{' + ','.join(json.dumps(value) for value in row) + '},')
     lines.append('};')
     return '\n'.join(lines) + '\n'
 

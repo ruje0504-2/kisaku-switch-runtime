@@ -233,6 +233,7 @@ void bootstrap_cancel(KBootstrap *b);
 void bootstrap_message_hide(KBootstrap *b,int hidden);
 int bootstrap_letter_exit(KBootstrap *b,int confirm);
 void bootstrap_message_action(KBootstrap *b,unsigned action);
+const char *bootstrap_character_image(unsigned role,unsigned item);
 const char *bootstrap_history_voice(const KBootstrap *b,unsigned back);
 int bootstrap_scene_draw(KBootstrap *b,unsigned selected,unsigned overview,KImage *out);
 /* Prepare a fresh title runtime from a live owner; copied string values are owned. */

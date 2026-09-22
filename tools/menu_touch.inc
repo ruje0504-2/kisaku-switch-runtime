@@ -5,7 +5,7 @@
 typedef struct {SDL_FingerID finger;unsigned active,owner,drag,moved;int x,y,last_x,last_y;uint64_t key,started;const KBootstrap *runtime;} MenuTouch;
 static void game_cancel(SaveMenu *,MessagePanel *,KBootstrap *);
 static void save_menu_pointer(SaveMenu *m,KBootstrap *b,int x,int y,int click){
-    if(m->character_detail){if(click)save_menu_action(m,b,1);return;}
+    if(m->character_detail){character_detail_pointer(m,b,x,y,click);return;}
     if(m->param_detail){if(click)save_menu_action(m,b,1);return;}
     if(click==2){save_menu_action(m,b,1);return;}
     if(!click&&m->loading)return;
@@ -30,6 +30,7 @@ static void save_menu_pointer(SaveMenu *m,KBootstrap *b,int x,int y,int click){
             return;
         }
         m->detail_index=index;rmt_free(&m->detail_artwork);rmt_free(&m->detail_status_artwork);m->character_detail=1;m->status[0]=0;
+        m->detail_hover=-1;m->detail_view=0;rmt_free(&m->detail_image);character_detail_motion(m,b,1);
     }
 }
 static void save_menu_touch(SaveMenu *m,KBootstrap *b,int x,int y){save_menu_pointer(m,b,x,y,1);}
@@ -102,7 +103,7 @@ static void panel_touch(MessagePanel *p,KBootstrap *b,MenuTouch *touch,int x,int
 }
 static uint64_t touch_owner_key(const SaveMenu *m,const MessagePanel *p,const KBootstrap *b){
     if(p->kind){unsigned state[]={p->kind,p->viewing,p->back,p->setting_page,p->config_motion};return ui_hash(1,state,sizeof(state));}
-    if(m->active){int state[]={m->save,m->slot,m->overwrite,m->confirm_load,m->loading,(int)m->param_detail,(int)m->character_detail,(int)m->detail_index};return ui_hash(2,state,sizeof(state));}
+    if(m->active){int state[]={m->save,m->slot,m->overwrite,m->confirm_load,m->loading,(int)m->param_detail,(int)m->character_detail,(int)m->detail_index,(int)m->detail_view,(int)m->detail_phase};return ui_hash(2,state,sizeof(state));}
     unsigned state[]={b->message_active,b->message_user_hidden,b->text_count,b->choice_active,b->title.active,b->title.extra,b->flag_dialog.active,b->area_active,b->bonus52_active};
     return ui_hash(3,state,sizeof(state));
 }

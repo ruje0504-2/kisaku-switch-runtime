@@ -7,8 +7,10 @@ typedef struct {
     int page_key,focus,button,request;unsigned valid[10];int64_t dates[10];
     uint64_t draw_key;KImage artwork,load_artwork,common,canvas,previews[10];SDL_Texture *texture;
     KFlags *states[10];KSlotInfo info[10];int last_slot,hover,areas[31][5];unsigned area_count;
+    KImage detail_image;int detail_hover;unsigned detail_view,detail_phase,detail_step,detail_steps;uint64_t detail_started;
     KImage dialog_artwork,note_artwork,detail_artwork,detail_status_artwork;unsigned param_detail,param_steps,character_detail,detail_index;uint64_t param_started;
 } SaveMenu;
+#include "character_detail.inc"
 static void save_menu_refresh(SaveMenu *m,const char *root){
     unsigned first=(unsigned)(m->slot-1)/10*10+1;
     int key=m->selector*10+(m->slot-1)/10+1;if(m->page_key==key)return;m->page_key=key;m->draw_key=0;
@@ -36,7 +38,7 @@ static void save_menu_open(SaveMenu *m,KBootstrap *b,int load){
    6 toggle save/load, 7 open the selected slot's parameter preview. */
 static void save_menu_action(SaveMenu *m,KBootstrap *b,int action){
     int load_confirmed=0;
-    if(m->character_detail){if(action==0||action==1){m->character_detail=0;rmt_free(&m->detail_artwork);rmt_free(&m->detail_status_artwork);}return;}
+    if(m->character_detail){character_detail_action(m,b,action);return;}
     if(m->param_detail){if(SDL_GetTicks64()-m->param_started>=(uint64_t)m->param_steps*15&&(action==0||action==1))m->param_detail=0;return;}
     if(m->loading){if(action==1){bootstrap_destroy(m->next);m->next=NULL;m->loading=0;snprintf(m->status,sizeof(m->status),"Load cancelled");}return;}
     if(action==1&&(m->overwrite||m->confirm_load)){SDL_StopTextInput();m->overwrite=m->confirm_load=0;m->status[0]=0;return;}
@@ -124,6 +126,7 @@ static int save_menu_step(SaveMenu *m,KBootstrap **live){
     if(ready){bootstrap_destroy(*live);*live=m->next;m->next=NULL;m->loading=m->active=0;m->page_key=0;return 1;}return 0;
 }
 static void save_menu_clear(SaveMenu *m){
+    rmt_free(&m->detail_image);
     rmt_free(&m->dialog_artwork);rmt_free(&m->note_artwork);rmt_free(&m->detail_artwork);rmt_free(&m->detail_status_artwork);
     rmt_free(&m->artwork);rmt_free(&m->load_artwork);rmt_free(&m->common);rmt_free(&m->canvas);for(unsigned i=0;i<10;i++){rmt_free(&m->previews[i]);kflags_free(m->states[i]);m->states[i]=NULL;}SDL_DestroyTexture(m->texture);m->texture=NULL;
 }
