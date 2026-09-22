@@ -682,3 +682,11 @@ CLetter `31/525/2` 已按 `0x48adf0/0x48a960` 实现私有表面保存与切换�
 - 增加分类、页签、锁定状态、变体页、数字完成数、普通/秃作切换和返回标题。查看已解锁项目时创建隔离运行时执行对应CG脚本，播放期间不改主剧情VM、栈或进度；退出释放隔离运行时并回到附录标题。
 - 专项覆盖普通/秃作入口、未解锁拒绝、解锁后缩略图、变体查看、隔离脚本播放、连续帧刷新及返回；专项ASan/UBSan通过。完整主机回归、`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。日志 `local/native-cg-{focused,sanitized,tests,switch,package}.log`。
 - 当前NRO及交付两个入口SHA-256均为 `f50415f0fc77916a30f4687455718a768814ac455d96ab3f8429e82188a30f34`。CG全目录逐槽实机、Switch设备、全路线仍未验证；音乐/视频附录接口仍待实现。
+
+## 2026-09-22 附录音乐与视频入口
+
+- 按原版 `CMusicMode`（`004812b0`、`00480f40`）修正音乐目录为10首 `bgm01/bgm02/bgm04/bgm06/bgm07/bgm08/bgm09/bgm10/bgm12/bgm23.wav`，解锁字节为3260..3269；31/340现在进入该原版顺序面板。
+- 按原版 `CVideoMode`（`0045c130`、`0045c2f0`、`0045c690`）接通31/70。视频目录为两行共78个槽，解锁字节为3600..3677；静态表从日文EXE提取对应的MOV预览名。选择后返回槽号给`video.mes`，由原脚本继续完成MOV/VSD、语音、演出和返回流程，未把视频误当成CG图片播放。
+- 主机验证：`./build-host.sh`、`./test-host.sh 鬼作`、标题附录往返专项通过；`./build-switch.sh`、`python3 tools/package_sd.py 鬼作`、`git diff --check`通过。日志为`local/appendix-media-build.log`、`local/appendix-media-tests.log`、`local/appendix-media-switch.log`、`local/appendix-media-package.log`。
+- 当前构建与SD交付三个入口SHA-256均为`fa24512fbc2c2ef1d6f7ebfe9413535bd57fa6c51d6fe6791e10dd9b708b40a9`。
+- Switch实机、完整视频槽逐项回放、全路线及原版PC实时画面对照仍未验证；未运行PC原版程序。

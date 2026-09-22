@@ -100,6 +100,7 @@ def extract(path):
         cg.append(rows)
     tables.append(cg)
     tables.append(list(struct.unpack('<20i',read(0x535040,80))))
+    tables.append([name(struct.unpack("<I",read(0x56bfb8+i*4,4))[0]) for i in range(78)])
     return tables
 
 def render(tables):
@@ -129,6 +130,7 @@ def render(tables):
             lines.append('{'+str(flag)+','+json.dumps(script)+','+json.dumps(atlas)+',{'+','.join(map(str,variants))+'}},')
         lines.append('};')
     lines.append('static const int kisaku_cg_tabs[10][2]={'+','.join('{'+str(tables[6][i])+','+str(tables[6][i+1])+'}' for i in range(0,20,2))+'};')
+    lines.append('static const char *const kisaku_video_previews[78]={'+','.join(json.dumps(n) for n in tables[7])+'};')
     return '\n'.join(lines) + '\n'
 
 def main():

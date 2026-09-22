@@ -128,7 +128,7 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         return;
     }
     if(p->kind==8){settings_panel_action(p,b,action);return;}
-    if(action==1){if(p->kind==13)nawa_panel_clear(p);if(p->kind==4){b->scene_modal=0;bootstrap_message_hide(b,0);}if(p->kind==12){bootstrap_replay_style(b,-1);p->kind=0;return;}if(p->kind==10&&p->viewing){p->viewing--;return;}if(p->kind==9||p->kind==10||p->kind==11||p->kind==13)bootstrap_extra_close(b);p->kind=0;return;}
+    if(action==1){if(p->kind==13)nawa_panel_clear(p);if(p->kind==4){b->scene_modal=0;bootstrap_message_hide(b,0);}if(p->kind==12){bootstrap_replay_style(b,-1);p->kind=0;return;}if(p->kind==10&&p->viewing){p->viewing--;return;}if(p->kind==9||p->kind==10||p->kind==11||p->kind==13||p->kind==23)bootstrap_extra_close(b);p->kind=0;return;}
     if(p->kind==13){
         p->status[0]=0;
         if(action>=2&&action<=5){
@@ -143,6 +143,15 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
             }
         }
         if(!action){if(!bootstrap_nawa_select(b,p->selected)){nawa_panel_clear(p);p->kind=0;}else snprintf(p->status,sizeof(p->status),"This scene is not unlocked yet");}
+        return;
+    }
+    if(p->kind==23){
+        unsigned count=bootstrap_video_count();
+        if(action==2)p->selected=(p->selected+count-1)%count;
+        if(action==3)p->selected=(p->selected+1)%count;
+        if(action==4)p->selected=(p->selected+count-10)%count;
+        if(action==5)p->selected=(p->selected+10)%count;
+        if(!action){ if(bootstrap_video_select(b,(int)p->selected))snprintf(p->status,sizeof(p->status),"Locked or unavailable"); else p->kind=0; }
         return;
     }
     if(p->kind==11){
@@ -225,6 +234,13 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind==16){navigation_panel_draw(p,b,r);return;}
     if(p->kind==8){settings_panel_draw(p,b,r);return;}
     if(p->kind==5){backlog_panel_draw(p,b,r);return;}
+    if(p->kind==23){
+        SDL_SetRenderDrawColor(r,16,20,28,255);SDL_Rect box={208,64,864,592};SDL_RenderFillRect(r,&box);
+        panel_text(r,272,108,"VIDEO");unsigned first=p->selected/10*10;
+        for(unsigned i=first;i<bootstrap_video_count()&&i<first+10;i++){char line[120];snprintf(line,sizeof(line),"%s %02u  %.60s  %s",i==p->selected?">":" ",i+1,bootstrap_video_preview_name(i),bootstrap_video_unlocked(b,i)?"Available":"Locked");panel_text(r,280,160+(int)(i%10)*36,line);}
+        if(p->status[0])panel_text(r,272,560,p->status);
+        panel_text(r,272,604,"D-pad: select   A: play   B: back");return;
+    }
     if(p->kind==11&&!replay_panel_draw(p,b,r,SDL_GetTicks64()))return;
     if(p->kind==9&&!music_panel_draw(p,b,r))return;
     if(p->kind==12&&!style_panel_draw(p,b,r))return;

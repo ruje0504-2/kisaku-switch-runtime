@@ -1236,6 +1236,12 @@ int bootstrap_dispatch(KBootstrap *b){
     /* Peek first: unsupported handlers preserve their arguments for diagnostics. */
     if(!v->sp||v->stack[v->sp-1].string)return error(b,"missing integer subcall");
     sub=v->stack[v->sp-1].number;
+    /* Native appendix selectors: music.mes 330+10, video.mes 60+10. */
+    if(main==31&&(sub==340||sub==70)){
+        v->sp--;b->extra_active=1;b->extra_kind=b->extra_request=sub==340?9:23;
+        b->handled++;return kvm_resume(v);
+    }
+
     if(main==23&&sub==8){
         /* 4fe060 -> 40b470 -> 406280 reads the slot vector count.
            4fe5f0 discards EAX: no extra operand, VM result or state change. */
@@ -3398,11 +3404,22 @@ void bootstrap_message_action(KBootstrap *b,unsigned action){
     else if((action>=2&&action<=6)||action==8)b->message_request=action;
 }
 
-/* Native music menu uses 4fd878 and unlock bytes 2900..2915, not ARC order. */
-static const char *const music_catalog[16]={"BGM01.wav","BGM01B.wav","BGM03.wav","BGM04.wav","BGM06.wav","BGM07.wav","BGM08.wav","BGM09.wav","BGM10.wav","BGM11.wav","BGM12.wav","BGM13.wav","BGM14.wav","BGM15.wav","BGM16.wav","BGM17.wav"};
-unsigned bootstrap_music_count(void){return 16;}
-const char *bootstrap_music_name(unsigned index){return index<16?music_catalog[index]:NULL;}
-int bootstrap_music_unlocked(const KBootstrap *b,unsigned index){return b&&index<16&&b->vm->byte_count>2900+index&&b->vm->bytes[2900+index]==1;}
+/* CMusicMode 481720/480f40: ten tracks, progress bytes 3260..3269. */
+static const char *const music_catalog[]={"bgm01.wav","bgm02.wav","bgm04.wav","bgm06.wav","bgm07.wav","bgm08.wav","bgm09.wav","bgm10.wav","bgm12.wav","bgm23.wav"};
+unsigned bootstrap_music_count(void){return 10;}
+const char *bootstrap_music_name(unsigned index){return index<10?music_catalog[index]:NULL;}
+int bootstrap_music_unlocked(const KBootstrap *b,unsigned index){return b&&index<10&&b->vm->byte_count>3260+index&&b->vm->bytes[3260+index]!=0;}
+/* CVideoMode 45c2f0/45c690: 2 rows of 39, exact byte == 1.  The
+   selector returns the zero-based slot to video.mes; that script owns the
+   complete scene playback, voice, and return to this menu. */
+unsigned bootstrap_video_count(void){return 78;}
+const char *bootstrap_video_preview_name(unsigned index){return index<78?kisaku_video_previews[index]:NULL;}
+int bootstrap_video_unlocked(const KBootstrap *b,unsigned index){return b&&index<78&&b->vm->byte_count>3600+index&&b->vm->bytes[3600+index]==1;}
+int bootstrap_video_select(KBootstrap *b,int index){
+    if(!b||!b->extra_active||b->extra_kind!=23||index< -1||(index>=0&&!bootstrap_video_unlocked(b,(unsigned)index)))return -1;
+    if(kvm_push(b->vm,(KValue){index,NULL}))return error(b,"video selection return overflow");
+    b->extra_active=b->extra_request=b->extra_kind=0;return 0;
+}
 void bootstrap_music_stop(KBootstrap *b){
     if(!b||!b->extra_active||b->extra_kind!=9)return;
     b->music_active=b->music_fading=0;b->audio_size=b->audio_cursor=b->audio_loop_start=b->audio_loop_end=0;b->audio_serial++;
@@ -3415,6 +3432,7 @@ int bootstrap_music_select(KBootstrap *b,unsigned index){
 }
 void bootstrap_extra_close(KBootstrap *b){
     if(!b||!b->extra_active)return;
+    if(b->extra_kind==23){(void)bootstrap_video_select(b,-1);return;}
     if(b->extra_kind==10&&b->gallery_movie_base.pixels)bootstrap_gallery_movie_stop(b);
     b->extra_active=b->extra_request=b->extra_kind=0;b->music_active=b->music_fading=0;
     b->audio_size=b->audio_cursor=b->audio_loop_start=b->audio_loop_end=0;b->audio_serial++;
