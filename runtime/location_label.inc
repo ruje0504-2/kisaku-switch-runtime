@@ -73,9 +73,9 @@ static int exec526_location(KBootstrap *b){
     if(!atlas->pixels||atlas->width<512||atlas->height<368||!screen->pixels||screen->width!=640||screen->height!=480)
         return error(b,"31/526 location surfaces missing (arguments preserved)");
     const unsigned char *name=kisaku_location_names[place];size_t length=strlen((const char *)name),count=0;
-    KTextChar chars[32];KTextPosition positions[32];int x=168,y=344;
+    KTextChar chars[32];KTextPosition positions[32];int x=168,y=344;KTextEncoding encoding;
     int advance=v->globals[0][30].number/2,line=v->globals[0][31].number;
-    if(advance<1||advance>128||line<1||line>256||ktext_decode(KTEXT_CP932,name,length,chars,32,&count)||
+    if(advance<1||advance>128||line<1||line>256||decode_text(b,name,length,chars,32,&count,&encoding)||
        ktext_layout_native(chars,count,168,344,639,479,advance,line,&x,&y,positions))
         return error(b,"31/526 location text layout invalid (arguments preserved)");
     KFont *font=bootstrap_ui_font(b);
@@ -87,7 +87,7 @@ static int exec526_location(KBootstrap *b){
     /* Render at local coordinates, preserving the native 8px inset. */
     for(size_t i=0;i<count;i++)if(kfont_draw(font,&pair[1],chars[i].codepoint,positions[i].x-160,positions[i].y-336,
         (unsigned)b->font_width,(unsigned)b->font_height,(uint32_t)v->globals[0][33].number))goto failed;
-    unsigned visible=(unsigned)length*8+16;
+    unsigned text_width=(unsigned)(x-168),visible=text_width+16;
     for(unsigned row=0;row<32;row++)memset(pair[1].pixels+row*1344+visible*4,0,(336-visible)*4);
     uint8_t color[4];KImage pixel={0,0,1,1,4,color};message_skin_color(b,&pixel);
     for(unsigned row=0;row<32;row++)for(unsigned col=0;col<visible;col++){
@@ -98,7 +98,7 @@ static int exec526_location(KBootstrap *b){
         if(s[0]==0&&s[1]==0&&s[2]==255)memcpy(d,color,4);else memcpy(d,s,4);
     }
     exec526_release(b);memcpy(b->exec526_surfaces,pair,sizeof(pair));b->exec526_backing=backing;
-    b->exec526_x=608-(int)length*8;b->exec526_y=16;b->exec526_width=336;b->exec526_height=32;b->exec526_active=1;
+    b->exec526_x=608-(int)text_width;b->exec526_y=16;b->exec526_width=336;b->exec526_height=32;b->exec526_active=1;
     /* 47b020 leaves the constructed background in the shared scratch rect. */
     for(unsigned row=0;row<32;row++){
         uint8_t *d=atlas->pixels+(336+row)*atlas->stride+160*4;
