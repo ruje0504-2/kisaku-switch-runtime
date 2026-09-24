@@ -61,12 +61,12 @@ static int root_file_exists(const KBootstrap *b,const char *name){
     FILE *f=fopen(path,"rb");if(!f)return 0;fclose(f);return 1;
 }
 /* Japanese original only. Do not reinterpret valid CP932 private-use characters
- * as a translated encoding. Translation patches are outside this port stage. */
+ * as a translated encoding. External Chinese text is applied after decoding. */
 static KTextEncoding text_encoding(KBootstrap *b){(void)b;return KTEXT_CP932;}
 static int decode_text(KBootstrap *b,const uint8_t *data,size_t size,KTextChar *out,size_t capacity,size_t *count,KTextEncoding *used){
     if(used)*used=KTEXT_CP932;
     int result=ktext_decode(KTEXT_CP932,data,size,out,capacity,count);
-    if(!result)ktranslation_apply(b?&b->translation:NULL,out,*count);
+    if(!result)result=ktranslation_apply(b?&b->translation:NULL,out,count,capacity);
     return result;
 }
 /* The shared font must carry the glyph set of the active script language, so

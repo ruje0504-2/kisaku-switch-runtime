@@ -1,9 +1,9 @@
 {
   "patch_directory": "汉化补丁",
-  "encoding_strategy": "External UTF-8 full-text table generated from original mes.arc and the patch character_substitution mapping; original CP932 bytecode remains unchanged.",
+  "encoding_strategy": "Pair original and Chinese-patch MES string instructions, then apply uif_config.json glyph substitutions to produce UTF-8 external text.",
   "source_character_count": 1014,
   "target_character_count": 1014,
-  "runtime_support": "integrated: game/zh_CN.txt is loaded at startup and applied to story, choices, backlog and history rendering",
+  "runtime_support": "integrated: game/zh_CN.txt loads full Chinese sentence mappings plus character fallback",
   "standard_valid_scripts": 213,
   "standard_failures": 468,
   "failed_entries_valid_as_raw": 0,
@@ -45,7 +45,9 @@
     }
   ],
   "original_backup_valid_scripts": 681,
-  "text_entries": 16522,
+  "text_entries": 26493,
   "translation_table": "assets/zh_CN.txt",
-  "patch_archive_note": "The patch mes.arc has 1-7 bytes of compressor padding after some declared outputs; extraction stops at each directory-declared size."
+  "patch_archive_note": "The patch mes.arc has 1-7 bytes of compressor padding after some declared outputs; extraction stops at each directory-declared size.",
+  "source_text_instructions": 249672,
+  "translated_text_instructions": 71257
 }

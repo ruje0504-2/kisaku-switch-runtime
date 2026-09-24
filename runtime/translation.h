@@ -9,10 +9,16 @@ typedef struct {
     uint32_t *target;
     size_t target_count;
 } KTranslationEntry;
-typedef struct { KTranslationEntry *entries; size_t count; } KTranslation;
+typedef struct {
+    KTranslationEntry *entries;
+    size_t count;
+    size_t *buckets;
+    size_t bucket_count;
+    size_t max_source_count;
+} KTranslation;
 
 int ktranslation_load(KTranslation *translation, const char *path);
 void ktranslation_free(KTranslation *translation);
-void ktranslation_apply(const KTranslation *translation, KTextChar *chars, size_t count);
+int ktranslation_apply(const KTranslation *translation, KTextChar *chars, size_t *count, size_t capacity);
 
 #endif
