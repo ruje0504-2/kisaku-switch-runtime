@@ -2,7 +2,7 @@ static void movie_stop(KBootstrap *b){
     kvideo_close(b->video);b->video=NULL;free(b->video_data);b->video_data=NULL;
     free(b->mov_data);b->mov_data=NULL;memset(&b->mov,0,sizeof(b->mov));
     free(b->movie_pcm);b->movie_pcm=NULL;b->movie_pcm_size=b->movie_read=b->movie_clock=0;
-    free(b->movie_effect.pcm);memset(&b->movie_effect,0,sizeof(b->movie_effect));
+    free(b->movie_effect.pcm);memset(&b->movie_effect,0,sizeof(b->movie_effect));b->movie_effect_name[0]=0;
     b->video_active=b->video_eof=b->video_background=b->video_wait=b->video_paused=b->video_change_wait=0;
     b->vm->globals[0][50].number&=~0x2000;
 }
@@ -12,7 +12,7 @@ static int movie_next(KBootstrap *b){
         if(!b->mov.changing)b->video_change_wait=0;
         if(event<0)return error(b,b->mov.error);
         if(event==0){
-            free(b->movie_effect.pcm);memset(&b->movie_effect,0,sizeof(b->movie_effect));
+            free(b->movie_effect.pcm);memset(&b->movie_effect,0,sizeof(b->movie_effect));b->movie_effect_name[0]=0;
             b->video_active=b->video_wait=0;b->vm->globals[0][50].number&=~0x2000;return 0;
         }
         if(event==1){
@@ -20,9 +20,12 @@ static int movie_next(KBootstrap *b){
             b->video_eof=0;b->video_active=1;b->vm->globals[0][50].number|=0x2000;return 0;
         }
         if(event==2&&*b->mov.audio&&option(b,"Effect","IsHEffect",1)){
-            /* A MOV has one fixed sound resource. Rewind its decoded PCM at
-               loop boundaries instead of reading/decoding the WAV again. */
-            if(!b->movie_effect.pcm&&effect_decode(b,&b->movie_effect,b->mov.audio))return -1;
+            /* Version 2 embeds a sound name in each play command. Cache
+               only while that resource is unchanged across loop boundaries. */
+            if(!b->movie_effect.pcm||strcmp(b->movie_effect_name,b->mov.audio)){
+                if(effect_decode(b,&b->movie_effect,b->mov.audio))return -1;
+                snprintf(b->movie_effect_name,sizeof(b->movie_effect_name),"%s",b->mov.audio);
+            }
             b->movie_effect.read=b->movie_effect.clock_position=0;
             if(b->movie_effect.pcm&&!b->movie_effect.loop_end)b->movie_effect.loop_end=b->movie_effect.size;
         }else{free(b->movie_effect.pcm);memset(&b->movie_effect,0,sizeof(b->movie_effect));}

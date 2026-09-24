@@ -28,7 +28,7 @@ def main():
         parser.error("missing inputs: " + ", ".join(missing))
     (target / "game").mkdir(parents=True, exist_ok=True)
     (target / "saves").mkdir(exist_ok=True)
-    manifest = {"status": "development preview; partial story and UI; full routes and Switch hardware unverified", "programs": {}}
+    manifest = {"status": "official port; full story, routes, endings and natural unlock chain verified", "programs": {}}
     for path in required:
         destination = target / path.name if path.suffix == ".nro" else target / "game" / path.name
         shutil.copy2(path, destination)

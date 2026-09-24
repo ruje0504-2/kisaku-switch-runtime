@@ -92,6 +92,7 @@ typedef struct {
     unsigned choice_active,choice_normal,choice_count,choice_rendered_page,choice_page;int choice_selected,choice_page_hover,choice_values[64],choice_returns[64];
     char choice_labels[64][61];unsigned choice_lengths[64];
     KEffectTrack effect_tracks[64],movie_effect;
+    char movie_effect_name[264];
     KMov mov;uint8_t *mov_data;
     unsigned video_background,video_wait,video_paused,video_change_wait;
     uint8_t *movie_pcm;size_t movie_pcm_size,movie_read,movie_clock;

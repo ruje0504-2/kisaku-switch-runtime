@@ -4,7 +4,7 @@
 #include <stdint.h>
 typedef struct {
     const uint8_t *data;size_t size,ip,begin;
-    unsigned count,entry,requested,changing,depth;
+    unsigned count,entry,requested,changing,depth,command_size;
     struct {size_t ip;int32_t remaining;} loops[64];
     const char *video,*audio;
     int32_t first,last;

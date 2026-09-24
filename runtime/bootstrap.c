@@ -726,6 +726,7 @@ static int message_slide_skip(KBootstrap *b){
 static int message_begin(KBootstrap *b,int id){
     KVM *v=b->vm;
 
+
     if(id< -1||(id>=0&&(size_t)id>=b->read_size*8)||v->globals[0][49].number!=1||v->globals[0][42].number!=32||v->globals[0][43].number!=8||v->globals[0][44].number!=592||v->globals[0][45].number!=62)return error(b,"message region/read id unsupported");
     if(!b->message_skin.atlas.pixels&&message_skin_reload(b))return -1;
     if(!b->message_base.pixels){b->message_base=(KImage){0,0,640,480,2560,malloc(640*480*4)};if(!b->message_base.pixels)return error(b,"message backdrop allocation failed");}
@@ -1870,7 +1871,6 @@ int bootstrap_dispatch(KBootstrap *b){
         v->sp--;b->handled++;return kvm_resume(v);
     }
     if(main==13&&(sub<0||sub>12))return error(b,"AX script command unsupported (arguments preserved)");
-    if(getenv("KISAKU_TRACE_CALLS")){fprintf(stderr,"%s @%zx %d/%d stack=",v->modules[v->module].name,v->instruction_ip,main,sub);for(unsigned i=0;i<v->sp;i++)if(v->stack[i].string)fprintf(stderr," [string]");else fprintf(stderr," %d",v->stack[i].number);fputc('\n',stderr);}
     /* 486160 returns immediately with no selected native media stream.
        Preserve the error boundary for the still-unmapped active-stream case. */
     if(main==31&&sub==1010&&v->sp>=2&&!v->stack[v->sp-2].string&&!b->video&&!b->mov_data){
@@ -1950,6 +1950,12 @@ int bootstrap_dispatch(KBootstrap *b){
             if(v->global_count[1]<=60)return error(b,"31/527 flag bank missing (arguments preserved)");
             v->sp-=2;if(kvm_push(v,v->globals[1][60]))return error(b,"31/527 return allocation failed");
         }else{
+            if(b->exec_status&(action?8u:16u)){
+                /* CExec reports a menu request as an edge.  The script polls
+                   the same request while the frontend is closing the modal;
+                   retain the edge so that poll cannot reopen it recursively. */
+                v->sp-=2;b->handled++;return kvm_resume(v);
+            }
             b->exec_status|=action?8:16;b->file_modal=action?1:3;b->message_request=action?3:2;v->sp-=2;
         }
         b->handled++;return kvm_resume(v);
@@ -3371,7 +3377,8 @@ void bootstrap_confirm(KBootstrap *b){
         if(b->message_revealing){message_copy_text(b);message_compose(b);return;}
         if(!b->message_keep_on_confirm&&message_init(b))return;
         if(kvm_push(b->vm,(KValue){0,NULL})){error(b,"message result stack overflow");return;}
-        b->message_active=0;message_compose(b);return;
+        b->message_active=0;message_compose(b);
+        return;
     }
     b->wait_input=0;b->wait_clock=0;
 }
@@ -3865,3 +3872,4 @@ const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay){
     }
     *overlay=&b->present_overlay;return &b->present_clean;
 }
+

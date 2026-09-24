@@ -293,11 +293,14 @@ du -sh "$TMP/romfs" | awk '{print "romfs:", $1}'
 
 echo "[5/6] hacbrewpack 打包 NSP"
 mkdir -p "$(dirname "$OUT")"
+OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 cd "$TMP"
 "$HOME/bin/hacbrewpack" --keyset "$HOME/.switch/prod.keys" \
     --titleid "$TITLE_ID" --titlename "$TITLE_NAME" --titlepublisher "$PUBLISHER" \
     --nologo >/dev/null
-cp "hacbrewpack_nsp/$TITLE_ID.nsp" "$OUT"
+NSP_RESULT="$(find hacbrewpack_nsp -maxdepth 1 -type f -name '*.nsp' -print -quit)"
+[ -n "$NSP_RESULT" ] || { echo "hacbrewpack 未生成 NSP" >&2; exit 1; }
+cp "$NSP_RESULT" "$OUT"
 
 echo "[6/6] 自检：从产物 NSP 的 Control NCA 读回 NACP"
 # hacbrewpack 会按 --titlename/--titlepublisher 重写 16 个语言槽，所以必须从
