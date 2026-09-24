@@ -1,9 +1,9 @@
 {
   "patch_directory": "汉化补丁",
-  "encoding_strategy": "CP932 character substitution via uif_config.json; not plain GBK",
+  "encoding_strategy": "External UTF-8 full-text table generated from original mes.arc and the patch character_substitution mapping; original CP932 bytecode remains unchanged.",
   "source_character_count": 1014,
   "target_character_count": 1014,
-  "runtime_support": "not integrated; original data used in current package",
+  "runtime_support": "integrated: game/zh_CN.txt is loaded at startup and applied to story, choices, backlog and history rendering",
   "standard_valid_scripts": 213,
   "standard_failures": 468,
   "failed_entries_valid_as_raw": 0,
@@ -44,5 +44,8 @@
       "error": "LZSS output exceeds declared size"
     }
   ],
-  "original_backup_valid_scripts": 681
+  "original_backup_valid_scripts": 681,
+  "text_entries": 16522,
+  "translation_table": "assets/zh_CN.txt",
+  "patch_archive_note": "The patch mes.arc has 1-7 bytes of compressor padding after some declared outputs; extraction stops at each directory-declared size."
 }

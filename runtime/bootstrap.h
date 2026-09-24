@@ -19,6 +19,7 @@
 #include "scene_history.h"
 #include "mam.h"
 #include "text_encoding.h"
+#include "translation.h"
 #include "font.h"
 #include "overlay_state.h"
 #include "bowling.h"
@@ -208,6 +209,7 @@ typedef struct {
      * separate: panels/history/name input use the HOS shared font, while
      * story text and choices may use the supplied Runtime FontFile. */
     int text_gbk,font_simplified,ui_font_simplified;
+    KTranslation translation;
     unsigned handled,missing_read_flags;
     /* Game data is read from root; every save, flag, history and settings file
        is written under save_root.  An installed NSP passes romfs: and save:,
