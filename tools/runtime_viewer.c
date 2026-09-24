@@ -18,19 +18,33 @@
 #include "present_gles.inc"
 #include "present_worker.inc"
 #include "texture_cache.inc"
-/* Keep portable panel text legible inside the 960x720 game viewport. */
-static void panel_text(SDL_Renderer *r,int x,int y,const char *text){
-    float sx,sy;SDL_RenderGetScale(r,&sx,&sy);
-    SDL_RenderSetScale(r,sx*1.5f,sy*1.5f);
-    while(*text){
-        size_t n=strlen(text);if(n>60)n=60;
-        char line[65];memcpy(line,text,n);line[n]=0;
-        SDLTest_DrawString(r,(int)(x/1.5f),(int)(y/1.5f),line);
-        text+=n;y+=20;
-    }
-    SDL_RenderSetScale(r,sx,sy);
-}
 #include "native_ui.inc"
+/* Compose UTF-8 panel labels once per frame; reuse a streaming texture. */
+static KImage panel_text_image;
+static SDL_Texture *panel_text_texture;
+static int panel_text_dirty;
+static void panel_text_begin(void){panel_text_dirty=0;}
+static void panel_text(KBootstrap *b,SDL_Renderer *r,int x,int y,const char *text){
+    if(!b||!r||!text||!*text)return;
+    if(!panel_text_image.pixels)panel_text_image=(KImage){0,0,640,480,2560,calloc(640u*480u,4)};
+    if(!panel_text_image.pixels)return;
+    if(!panel_text_dirty)memset(panel_text_image.pixels,0,640u*480u*4);
+    panel_text_dirty=1;
+    int gx=(x-160)*2/3,gy=y*2/3;if(gx<0)gx=0;if(gy<0)gy=0;
+    if(gy>464)gy=464;
+    ui_text(b,&panel_text_image,text,gx,gy,640-gx,480-gy,0xf0f0f0,0);
+}
+static void panel_text_end(SDL_Renderer *r){
+    if(!panel_text_dirty)return;
+    if(!panel_text_texture){
+        panel_text_texture=SDL_CreateTexture(r,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+        if(panel_text_texture)SDL_SetTextureBlendMode(panel_text_texture,SDL_BLENDMODE_BLEND);
+    }
+    if(panel_text_texture){
+        SDL_UpdateTexture(panel_text_texture,NULL,panel_text_image.pixels,2560);
+        SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,panel_text_texture,NULL,&dst);
+    }
+}
 #include "save_menu.inc"
 #include "message_panel.inc"
 #include "menu_touch.inc"
@@ -261,7 +275,7 @@ int main(int argc,char **argv){
             if(e.type==SDL_MOUSEBUTTONUP||e.type==SDL_MOUSEMOTION||e.type==SDL_MOUSEWHEEL)continue;
                 if(e.type==SDL_TEXTINPUT){
                     if(name_insert_text(&panel,e.text.text))
-                        snprintf(panel.status,sizeof(panel.status),"名前は5文字まで入力できます");
+                        snprintf(panel.status,sizeof(panel.status),"%s",ui_string(b,"status.name_limit"));
                     continue;
                 }
                 if(e.type==SDL_KEYDOWN){
@@ -309,7 +323,7 @@ int main(int argc,char **argv){
                     scene_mode_pointer(&panel,b,cursor.x,cursor.y,click);
                 }else if(panel.kind==22&&(e.type==SDL_MOUSEMOTION||e.type==SDL_MOUSEBUTTONDOWN)){
                     int click=e.type==SDL_MOUSEMOTION?0:e.button.button==SDL_BUTTON_LEFT?1:e.button.button==SDL_BUTTON_RIGHT?2:0;
-                    if(bootstrap_native_cg_pointer(b,cursor.x,cursor.y,click))snprintf(panel.status,sizeof(panel.status),"CGを表示できませんでした");
+                    if(bootstrap_native_cg_pointer(b,cursor.x,cursor.y,click))snprintf(panel.status,sizeof(panel.status),"%s",ui_string(b,"status.cg_failed"));
                     if(!b->native_cg)panel.kind=0;
                 }
                 if(e.type==SDL_KEYDOWN){SDL_Keycode key=e.key.keysym.sym;int action=key==SDLK_RETURN?0:(key==SDLK_BACKSPACE||key==SDLK_ESCAPE)?1:key==SDLK_UP?2:key==SDLK_DOWN?3:key==SDLK_LEFT?4:key==SDLK_RIGHT?5:key==SDLK_x&&(panel.kind==22||panel.kind==20||panel.kind==11||panel.kind==10)?7:key==SDLK_y&&(panel.kind==22||panel.kind==20||panel.kind==11||panel.kind==10)?6:key==SDLK_TAB?(panel.kind==4?1:6):key==SDLK_PAGEUP&&(panel.kind==22||panel.kind==20||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?8:key==SDLK_PAGEDOWN&&(panel.kind==22||panel.kind==20||panel.kind==10||panel.kind==5||panel.kind==8||panel.kind==16)?9:(key==SDLK_r||key==SDLK_g)&&(panel.kind==4||panel.kind==10||panel.kind==8||panel.kind==11||panel.kind==23)?7:-1;if(action>=0)message_panel_action(&panel,b,action);}
@@ -390,7 +404,7 @@ int main(int argc,char **argv){
         if(menu.request){panel.kind=(unsigned)menu.request;panel.selected=panel.back=panel.viewing=0;panel.status[0]=0;menu.request=0;}
         if(panel.nav_load_request){
             unsigned slot=panel.nav_load_request;panel.nav_load_request=0;menu.active=1;menu.save=0;menu.selector=0;menu.slot=(int)slot;menu.focus=0;menu.overwrite=0;
-            save_menu_action(&menu,b,0);if(menu.loading){panel.kind=0;b->scene_modal=0;}else{menu.active=0;snprintf(panel.status,sizeof(panel.status),"ロードできませんでした");}
+            save_menu_action(&menu,b,0);if(menu.loading){panel.kind=0;b->scene_modal=0;}else{menu.active=0;snprintf(panel.status,sizeof(panel.status),"%s",ui_string(b,"status.load_failed"));}
         }
         int navigation_change=scene_replay_step(&navigation,&b,&panel);
         if(navigation_change==1){
@@ -403,15 +417,15 @@ int main(int argc,char **argv){
         if(b->title_load_requested){b->title_load_requested=0;save_menu_open(&menu,b,1);}
         if(panel.animation_request){
             panel.animation_request=0;menu.next=bootstrap_create_split(b->root,b->save_root);
-            if(menu.next&&!menu.next->error[0]&&!bootstrap_enable_async_voice(menu.next)&&!bootstrap_enable_async_images(menu.next)){menu.loading=4;menu.active=1;menu.selector=b->vm->bytes[8100]>3?3:b->vm->bytes[8100];menu.ticks=0;snprintf(menu.status,sizeof(menu.status),"表示を切り替えています…");}
-            else{bootstrap_destroy(menu.next);menu.next=NULL;menu.active=1;snprintf(menu.status,sizeof(menu.status),"表示の切替に失敗しました");}
+            if(menu.next&&!menu.next->error[0]&&!bootstrap_enable_async_voice(menu.next)&&!bootstrap_enable_async_images(menu.next)){menu.loading=4;menu.active=1;menu.selector=b->vm->bytes[8100]>3?3:b->vm->bytes[8100];menu.ticks=0;snprintf(menu.status,sizeof(menu.status),"%s",ui_string(b,"status.display_switching"));}
+            else{bootstrap_destroy(menu.next);menu.next=NULL;menu.active=1;snprintf(menu.status,sizeof(menu.status),"%s",ui_string(b,"status.display_switch_failed"));}
         }
         if(panel.return_title){
             panel.return_title=0;
             if(!bootstrap_flush_progress(b)){menu.next=bootstrap_create_split(b->root,b->save_root);
-                if(menu.next&&!menu.next->error[0]&&!bootstrap_enable_async_voice(menu.next)&&!bootstrap_enable_async_images(menu.next)){menu.loading=3;menu.active=1;menu.ticks=0;snprintf(menu.status,sizeof(menu.status),"Returning to title...");}
-                else{bootstrap_destroy(menu.next);menu.next=NULL;menu.active=1;snprintf(menu.status,sizeof(menu.status),"Cannot initialize title");}
-            }else{menu.active=1;snprintf(menu.status,sizeof(menu.status),"Could not preserve progress");}
+                if(menu.next&&!menu.next->error[0]&&!bootstrap_enable_async_voice(menu.next)&&!bootstrap_enable_async_images(menu.next)){menu.loading=3;menu.active=1;menu.ticks=0;snprintf(menu.status,sizeof(menu.status),"%s",ui_string(b,"status.returning_title"));}
+                else{bootstrap_destroy(menu.next);menu.next=NULL;menu.active=1;snprintf(menu.status,sizeof(menu.status),"%s",ui_string(b,"status.title_init_failed"));}
+            }else{menu.active=1;snprintf(menu.status,sizeof(menu.status),"%s",ui_string(b,"status.progress_save_failed"));}
         }
         if(save_menu_step(&menu,&b)){state=1;serial=~b->audio_serial;audio_queued=0;status_serial=~0u;}
 
@@ -431,8 +445,8 @@ int main(int argc,char **argv){
             }else SDL_ClearQueuedAudio(audio);
             audio_queued=0;serial=b->audio_serial;
         }
-        if(settings_panel_audio(&panel,&history_audio,audio,audio_rate,audio_channels))goto done;
-        if(history_voice_audio(&panel,&history_audio,audio,audio_rate,audio_channels,&history_serial))goto done;
+        if(settings_panel_audio(&panel,b,&history_audio,audio,audio_rate,audio_channels))goto done;
+        if(history_voice_audio(&panel,b,&history_audio,audio,audio_rate,audio_channels,&history_serial))goto done;
         if(restore_navigation_audio&&audio){
             history_audio=navigation.sound;if(khistory_audio_restore(&history_audio,audio))goto done;
             audio_queued=navigation.queued;restore_navigation_audio=0;
@@ -565,6 +579,7 @@ int main(int argc,char **argv){
     rmt_free(&panel.direct_artwork);rmt_free(&panel.direct_parts);rmt_free(&panel.direct_thumb);rmt_free(&panel.direct_from);rmt_free(&panel.direct_background);
     rmt_free(&panel.appendix_artwork);rmt_free(&panel.appendix_parts);
     rmt_free(&panel.image);SDL_DestroyTexture(panel.name_help_texture);rmt_free(&panel.name_help);present_gles_clear(&present_gles);free(present_pixels);texture_cache_clear(&hires_cache);texture_cache_clear(&panel.cg_frame);SDL_DestroyTexture(present_texture);SDL_DestroyTexture(panel.texture);SDL_DestroyTexture(status_texture);
+    SDL_DestroyTexture(panel_text_texture);rmt_free(&panel_text_image);
     if(audio)SDL_CloseAudioDevice(audio);
     SDL_DestroyTexture(controls.texture);rmt_free(&controls.image);
     bootstrap_destroy(navigation.next);bootstrap_destroy(navigation.owner);bootstrap_destroy(menu.next);bootstrap_destroy(b);SDL_DestroyTexture(fade);SDL_DestroyTexture(texture);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return rc;

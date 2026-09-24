@@ -165,7 +165,7 @@ static void character_detail_action(SaveMenu *m,KBootstrap *b,int action){
     const char *name=bootstrap_character_image(role,(unsigned)m->detail_hover);
     rmt_free(&m->detail_image);
     if(!name||ui_asset(b,name,&m->detail_image)){
-        snprintf(m->status,sizeof(m->status),"詳細画像を読み込めませんでした");return;
+        snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.character_image_failed"));return;
     }
     m->detail_view=1;character_detail_motion(m,b,3);
 }
@@ -191,7 +191,7 @@ static void character_detail_draw(SaveMenu *m,KBootstrap *b){
     unsigned role=m->detail_index,row=0;const KFlags *f=m->states[(m->slot-1)%10];
     if(role>=8||!f||ui_asset(b,"statfr.akb",&m->detail_artwork)||
        ui_asset(b,names[role],&m->detail_status_artwork)){
-        snprintf(m->status,sizeof(m->status),"人物詳細データを読み込めませんでした");return;
+        snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.character_data_failed"));return;
     }
     KImage *d=&m->canvas,*a=&m->detail_artwork,*status=&m->detail_status_artwork;
     /* 4b1ec0/4b1c70 move the native 640px private surfaces -640 <-> -320. */

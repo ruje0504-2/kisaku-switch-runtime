@@ -100,7 +100,7 @@ static void config_close(MessagePanel *p,KBootstrap *b,int commit){
     p->setting_values[KSET_CONFIG_PAGE]=(int)page;
     int failed=commit?bootstrap_settings_apply(b,p->setting_values,KSET_COUNT):
         bootstrap_message_setting(b,KSET_CONFIG_PAGE,(int)page-bootstrap_message_setting(b,KSET_CONFIG_PAGE,0))<0;
-    if(failed){snprintf(p->status,sizeof(p->status),"設定を保存できませんでした");return;}
+    if(failed){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.settings_save_failed"));return;}
     kconfig_audio_stop(&p->config_audio);
     p->config_next_kind=0;b->message_hover=-1;config_motion_begin(p,b,4);
 }
@@ -125,7 +125,7 @@ static void config_audition(MessagePanel *p,KBootstrap *b,int id){
     int group=(id>>8)-4;
     if(group<0||group>3)return;
     if(kconfig_audio_begin(&p->config_audio,b,(unsigned)group))
-        snprintf(p->status,sizeof(p->status),"試聴音声を読み込めませんでした");
+        snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.preview_voice_load_failed"));
 }
 static void config_drag(MessagePanel *p,KBootstrap *b,int id,int x){
     if(p->config_motion)return;
@@ -159,7 +159,7 @@ static void settings_panel_action(MessagePanel *p,KBootstrap *b,int action){
         else config_close(p,b,0);
         return;
     }
-    if(config_assets(p,b)){snprintf(p->status,sizeof(p->status),"設定画面の素材を読み込めませんでした");return;}
+    if(config_assets(p,b)){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.settings_assets"));return;}
     if(action==7){config_activate(p,b,p->setting_page==3?200*256:13*256+2);return;}
     if(action==6||action==8||action==9){
         if(p->setting_page!=3)config_switch(p,b,(p->setting_page+(action==8?2:1))%3);
@@ -189,7 +189,7 @@ static void settings_panel_action(MessagePanel *p,KBootstrap *b,int action){
     }
     if(best>=0){p->selected=(unsigned)best;p->config_hover=p->config_areas[p->setting_page][best].id;}
 }
-static int settings_panel_audio(MessagePanel *p,KHistoryAudio *saved,SDL_AudioDeviceID device,unsigned rate,unsigned channels){
+static int settings_panel_audio(MessagePanel *p,KBootstrap *b,KHistoryAudio *saved,SDL_AudioDeviceID device,unsigned rate,unsigned channels){
     KConfigAudio *a=&p->config_audio;
     if(p->kind!=8)kconfig_audio_stop(a);
     if(a->until&&SDL_GetTicks64()>=a->until)kconfig_audio_release(a);
@@ -199,7 +199,7 @@ static int settings_panel_audio(MessagePanel *p,KHistoryAudio *saved,SDL_AudioDe
         return 0;
     }
     if(!device||rate!=44100||channels!=2){
-        kconfig_audio_stop(a);snprintf(p->status,sizeof(p->status),"試聴音声を出力できませんでした");return 0;
+        kconfig_audio_stop(a);snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.preview_voice_output_failed"));return 0;
     }
     if(khistory_audio_suspend(saved,device))return -1;
     a->output_owned=1;

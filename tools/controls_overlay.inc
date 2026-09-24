@@ -9,34 +9,35 @@ static void controls_focus(SDL_Renderer *r,int x,int y,int w,int h){
     }
 }
 static const char *controls_text(const MessagePanel *p,const SaveMenu *m,const KBootstrap *b){
-    if(m->active&&m->live_character)return "左スティック：\n左右回転\n操作後は自動停止\n十字：項目選択\nA：詳細\nB：戻る";
-    if(m->active)return m->character_detail?"十字：項目選択\nA：詳細\nB：戻る":"十字：選択\nL/R：ページ\nA：決定\nB：戻る";
+    if(m->active&&m->live_character)return "controls.live_character";
+    if(m->active)return m->character_detail?"controls.character_detail":"controls.character_list";
     switch(p->kind){
     case 14:return NULL; /* CName uses this same anchor and its own cache. */
-    case 20:return scene_mode_hage((KBootstrap *)b)||p->direct_sub>=0?"十字：選択\nL/R：ページ\nA：再生\nB：戻る":"十字：選択\nX：前の人物\nY：次の人物\nL/R：ページ\nA：再生\nB：戻る";
-    case 22:return !bootstrap_native_cg_categories(b)?"十字：選択\nL/R：ページ\nA：決定／次へ\nB：戻る":"十字：選択\nX：前の人物\nY：次の人物\nL/R：ページ\nA：決定／次へ\nB：戻る";
-    case 10:if(p->viewing==2)return "十字：移動\nA/Y：拡大縮小\nX：スクロール\nB：戻る";
-        if(p->viewing)return "十字：選択\nL/R：ページ\nA：決定\nB：戻る";
+    case 20:return scene_mode_hage((KBootstrap *)b)||p->direct_sub>=0?"controls.scene_replay_simple":"controls.scene_replay_characters";
+    case 22:return !bootstrap_native_cg_categories(b)?"controls.cg_simple":"controls.cg_characters";
+    case 10:if(p->viewing==2)return "controls.cg_viewer";
+        if(p->viewing)return "controls.cg_variants";
         /* fall through */
-    case 11:return "十字：選択\nX：前の人物\nY：次の人物\nL/R：ページ\nA：決定\nB：戻る";
-    case 9:return "十字：曲選択\nA：再生\nY：停止\nB：戻る";
-    case 23:return "十字：動画選択\nA：再生\nB：戻る";
-    case 5:return "十字：履歴選択\nL/R：ページ\nA：音声再生\nB：戻る";
-    case 8:return "十字：選択／調整\nL/R：ページ\nA：決定\nB：戻る";
-    case 4:return "十字：移動\nA：場面選択\nY：拡大縮小\nB：戻る";
-    case 16:return "十字：選択\nL/R：ページ\nY：切替\nA：決定\nB：戻る";
-    default:if(p->kind)return "十字：選択\nA：決定\nB：戻る";
+    case 11:return "controls.replay_characters";
+    case 9:return "controls.music";
+    case 23:return "controls.video";
+    case 5:return "controls.history";
+    case 8:return "controls.settings";
+    case 4:return "controls.navigation";
+    case 16:return "controls.scene_navigation";
+    default:if(p->kind)return "controls.generic";
     }
-    if(b->area_active)return "十字：対象選択\nA：調べる／使用\nB：戻る／道具";
-    if(b->bonus52_active)return "スティック移動\nA：連打";
-    if(b->title.active||b->choice_active)return "十字：選択\nA：決定";
-    if(b->scene_replay)return "A：次へ\nB：メニュー";
+    if(b->area_active)return "controls.area";
+    if(b->bonus52_active)return "controls.bonus_game";
+    if(b->title.active||b->choice_active)return "controls.choice";
+    if(b->scene_replay)return "controls.replay_menu";
     return NULL;
 }
 static void controls_overlay_draw(ControlsOverlay *c,MessagePanel *p,SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
-    const char *text=controls_text(p,m,b);
-    if(c->replay&&!p->kind&&!m->active)text="A：次へ\nZL：本編に戻る";
-    if(text){
+    const char *key=controls_text(p,m,b);
+    if(c->replay&&!p->kind&&!m->active)key="controls.replay_story";
+    if(key){
+        const char *text=bootstrap_ui_text(b,key);
         if(strcmp(c->text,text)){
             SDL_DestroyTexture(c->texture);c->texture=NULL;rmt_free(&c->image);c->text[0]=0;
             c->image=(KImage){0,0,144,164,576,calloc(144u*164u,4)};

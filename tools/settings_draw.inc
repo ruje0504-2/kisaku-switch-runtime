@@ -88,7 +88,7 @@ static void settings_panel_draw_at(MessagePanel *p,KBootstrap *b,SDL_Renderer *r
     if(ui_canvas(&p->image))return;
     if(config_assets(p,b)){
         ui_scale(&p->image,&b->layers[0],0,0,640,480);
-        ui_text(b,&p->image,"設定画面の素材を読み込めませんでした\nB / Esc：戻る",120,210,400,60,0xffffff,0);
+        ui_text_key(b,&p->image,"status.settings_assets_with_back",120,210,400,60,0xffffff);
         ui_present(r,&p->image,&p->texture);return;
     }
     unsigned page=p->setting_page==3?1:p->setting_page;

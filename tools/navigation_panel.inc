@@ -14,7 +14,7 @@ static int scene_mode_copy(KImage *dst,const KImage *src){
 /* 46bbe0(16): 8/4/0 steps, or 16 when flag4000 is set. */
 static unsigned scene_mode_steps(KBootstrap *b){int speed=bootstrap_message_setting(b,8,0);return b->vm->globals[0][50].number&0x4000?16:speed==2?0:speed==1?4:8;}
 static int scene_mode_motion(MessagePanel *p,KBootstrap *b,unsigned motion){
-    if(scene_mode_copy(&p->direct_from,&p->image)){snprintf(p->status,sizeof(p->status),"场景动画缓冲分配失败");return -1;}
+    if(scene_mode_copy(&p->direct_from,&p->image)){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_buffer_failed"));return -1;}
     p->direct_motion=motion;p->direct_steps=motion==4?1:scene_mode_steps(b);p->direct_alpha=0;p->direct_clock=SDL_GetTicks64();p->direct_hover=-1;
     return 0;
 }
@@ -39,7 +39,7 @@ static void scene_mode_prepare(MessagePanel *p,KBootstrap *b){
     int hage=scene_mode_hage(b),cat=scene_mode_bank(b,12),page=scene_mode_bank(b,13),slot=scene_mode_bank(b,14),variant=scene_mode_bank(b,15);
     p->direct_count=hage?30:kscene_mode_total();p->direct_sub=-1;p->direct_focus=0;
     p->direct_thumb_name[0]=0;p->direct_hover=-1;
-    if(scene_mode_copy(&p->image,&b->layers[0])||scene_mode_copy(&p->direct_background,hage?NULL:&b->layers[3])){p->direct_count=0;snprintf(p->status,sizeof(p->status),"场景背景分配失败");return;}
+    if(scene_mode_copy(&p->image,&b->layers[0])||scene_mode_copy(&p->direct_background,hage?NULL:&b->layers[3])){p->direct_count=0;snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_background_failed"));return;}
     for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){uint8_t *q=p->direct_background.pixels+y*p->direct_background.stride+x*4;for(unsigned c=0;c<3;c++)q[c]=(uint8_t)(q[c]*127/255);}
     if(scene_mode_motion(p,b,1)){p->direct_count=0;return;}
     if(hage){page=cat>=0&&cat<4?cat:0;cat=0;slot=0;}
@@ -61,7 +61,7 @@ static void scene_mode_page(MessagePanel *p,KBootstrap *b,unsigned cat,unsigned 
     if(scene_mode_hage(b))b->vm->globals[1][12]=(KValue){(int32_t)page,NULL};
 }
 static int scene_mode_finish_now(MessagePanel *p,KBootstrap *b,int result){
-    if(kvm_push(b->vm,(KValue){result,NULL})){snprintf(p->status,sizeof(p->status),"返回值压栈失败");return -1;}
+    if(kvm_push(b->vm,(KValue){result,NULL})){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_result_failed"));return -1;}
     /* Commit selector parameters only once the delayed return can be pushed. */
     if(result>=0&&!scene_mode_hage(b)){
         unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);
@@ -96,7 +96,7 @@ static void scene_mode_action(MessagePanel *p,KBootstrap *b,int action){
     if(f==0x300){scene_mode_action(p,b,1);return;}
     if(f>=0x200){if(p->direct_sub<0&&(unsigned)(f&255)<pages)scene_mode_page(p,b,cat,(unsigned)(f&255));return;}
     if(f>=0x100){unsigned c=(unsigned)(f&255);if(!hage&&p->direct_sub<0&&c<11&&(c!=10||b->vm->bytes[4006]))scene_mode_page(p,b,c,0);return;}
-    if(!scene_mode_unlocked(p,b,(unsigned)f)){snprintf(p->status,sizeof(p->status),"该场景尚未解锁");return;}
+    if(!scene_mode_unlocked(p,b,(unsigned)f)){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_locked"));return;}
     if(!hage&&p->direct_sub<0){item=page*9+(unsigned)f;p->direct_selected=scene_mode_base(cat)+item;if(kscene_mode_variants(cat,item)){if(scene_mode_motion(p,b,2))return;p->direct_sub=0;p->direct_focus=0;p->status[0]=0;return;}}
     /* 4735ca..473655 stores category, page, page*9+slot, variant. */
     scene_mode_finish(p,b,hage?(int)(page*256)+(f&255):0);
@@ -140,7 +140,7 @@ static int scene_mode_draw_at(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint
         }
         for(unsigned i=0;i<scene_mode_visible(p,b);i++){
             if(p->direct_frames[i]&&(p->direct_thumb.width<p->direct_frames[i]*149||p->direct_thumb.height<(i+1)*112)){
-                snprintf(p->status,sizeof(p->status),"回想缩略图尺寸不足");return -1;
+                snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_thumbnail_small"));return -1;
             }
         }
         p->direct_thumb_serial++;p->direct_hover=-1;snprintf(p->direct_thumb_name,sizeof(p->direct_thumb_name),"%s",asset);
@@ -249,7 +249,7 @@ static void navigation_panel_action(MessagePanel *p,KBootstrap *b,int action){
     if(action==3||action==5)p->variant=(p->variant+1)%count;
     if(action==8||action==9){unsigned pages=(count+3)/4,page=(p->variant/4+(action==8?pages-1:1))%pages;p->variant=page*4;}
     if(!action){if(p->nav_mode)p->nav_load_request=p->nav_slots[p->variant%count];
-        else{p->scene_request=navigation_checkpoint(p,b,p->variant+1);if(!p->scene_request)snprintf(p->status,sizeof(p->status),"この場面はまだ再生できません");}}
+        else{p->scene_request=navigation_checkpoint(p,b,p->variant+1);if(!p->scene_request)snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_locked"));}}
 }
 static void navigation_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     navigation_panel_refresh(p,b);
@@ -268,10 +268,10 @@ static void navigation_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r)
         if(p->nav_mode){ui_scale(&p->image,&p->nav_previews[i],x,192,120,90);}
         else if(navigation_checkpoint(p,b,item+1))ui_blit(&p->image,&p->nav_scene,(int)item*120,0,120,90,x,192,0);
         if(item==p->variant){ui_fill(&p->image,x-2,190,124,2,0xffe37b);ui_fill(&p->image,x-2,282,124,2,0xffe37b);}
-        char label[48];snprintf(label,sizeof(label),p->nav_mode?"SAVE %03u":"SCENE %u",p->nav_mode?p->nav_slots[item]:item+1);ui_text(b,&p->image,label,x,306,124,20,0xffe37b,0);
+        char label[48];snprintf(label,sizeof(label),ui_string(b,p->nav_mode?"menu.navigation.save":"menu.navigation.scene"),p->nav_mode?p->nav_slots[item]:item+1);ui_text(b,&p->image,label,x,306,124,20,0xffe37b,0);
         if(p->nav_mode&&p->nav_dates[i]){time_t stamp=(time_t)p->nav_dates[i];struct tm *tm=localtime(&stamp);if(tm){strftime(label,sizeof(label),"%m/%d %H:%M",tm);ui_text(b,&p->image,label,x,330,124,20,0xffffff,0);}}
     }
-    if(!count)ui_text(b,&p->image,p->nav_mode?"この場面のセーブはありません":"再生できる場面がありません",24,222,480,32,0xffffff,0);
+    if(!count)ui_text_key(b,&p->image,p->nav_mode?"status.scene_no_save":"status.scene_no_replay",24,222,480,32,0xffffff);
 
     if(p->status[0])ui_text(b,&p->image,p->status,24,368,604,32,0xffdf74,0);
     ui_present(r,&p->image,&p->texture);

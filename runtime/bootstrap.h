@@ -210,6 +210,7 @@ typedef struct {
      * story text and choices may use the supplied Runtime FontFile. */
     int text_gbk,font_simplified,ui_font_simplified;
     KTranslation translation;
+    KUiTranslation ui_translation;
     unsigned handled,missing_read_flags;
     /* Game data is read from root; every save, flag, history and settings file
        is written under save_root.  An installed NSP passes romfs: and save:,
@@ -223,6 +224,7 @@ KBootstrap *bootstrap_create_split(const char *root,const char *save_root);
 static inline const char *bootstrap_save_dir(const KBootstrap *b){
     return b->save_root[0]?b->save_root:b->root;
 }
+const char *bootstrap_ui_text(const KBootstrap *b,const char *key);
 void bootstrap_destroy(KBootstrap *b);
 /* Run real start.mes; stop on the first unsupported call, never fake completion. */
 int bootstrap_run(KBootstrap *b,unsigned budget);

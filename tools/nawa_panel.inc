@@ -110,7 +110,7 @@ static int nawa_panel_open(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint64_
 bad:free(data);nawa_panel_clear(p);return -1;
 }
 static int nawa_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint64_t now){
-    if(!p->nawa&&nawa_panel_open(p,b,r,now)){snprintf(p->status,sizeof(p->status),"Nawatsuna menu resources could not be loaded");return -1;}
+    if(!p->nawa&&nawa_panel_open(p,b,r,now)){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.nawa_resources"));return -1;}
     KNawaPanel *n=p->nawa;
     if(n->selected!=p->selected){
         if(n->selected>=40&&n->selected<43)n->ax.cells[n->selected-40].state=1;
@@ -120,7 +120,7 @@ static int nawa_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint64_
     /* Limit catch-up after suspension, retaining the native 20 ms cadence. */
     if(now<n->clock||now-n->clock>200)n->clock=now;
     while(now-n->clock>=AX_TICK_MS){n->clock+=AX_TICK_MS;if(!ax_tick(&n->ax,nawa_ax_draw,n))n->error=1;}
-    if(n->error){snprintf(p->status,sizeof(p->status),"Nawatsuna animation data invalid");return -1;}
+    if(n->error){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.nawa_data_invalid"));return -1;}
     gallery_panel_copy(r,n->background,0,0,640,480,0,0);
     for(unsigned item=0;item<40;item++)if(bootstrap_nawa_unlocked(b,item)){
         unsigned col=item%20,row=item/20;
@@ -142,7 +142,7 @@ static int nawa_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint64_
             else {gallery_panel_copy(r,n->preview_texture,0,0,240,180,200,284);shown=1;}
         }
         if(!shown)gallery_panel_copy(r,n->parts,436,0,240,180,200,284);
-        if(n->preview_state==3)snprintf(p->status,sizeof(p->status),"Preview unavailable; A still opens the scene");
+        if(n->preview_state==3)snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.preview_unavailable"));
     }
     const int bx[3]={464,4,412},by[3]={140,136,156},sy[3]={92,0,184};
     for(unsigned i=0;i<3;i++)if(p->selected==40+i)gallery_panel_copy(r,n->balloon,0,sy[i],172,92,bx[i],by[i]);
@@ -151,10 +151,10 @@ static int nawa_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint64_
     }
     SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,225);SDL_Rect footer={160,696,960,24};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(r,245,245,245,255);char line[100];
-    if(p->selected<40)snprintf(line,sizeof(line),"Scene %02u  %s",p->selected+1,bootstrap_nawa_unlocked(b,p->selected)?"Available":"Locked");
-    else snprintf(line,sizeof(line),"Bonus game %u",p->selected-39);
+    if(p->selected<40)snprintf(line,sizeof(line),ui_string(b,"menu.nawa.footer"),p->selected+1,ui_string(b,bootstrap_nawa_unlocked(b,p->selected)?"common.available":"common.locked"));
+    else snprintf(line,sizeof(line),ui_string(b,"menu.nawa.bonus")," ",p->selected-39);
     char footer_text[128];
     if(p->status[0])snprintf(footer_text,sizeof(footer_text),"%.78s",p->status);
     else snprintf(footer_text,sizeof(footer_text),"%.40s",line);
-    panel_text(r,176,701,footer_text);return 0;
+    panel_text(b,r,176,701,footer_text);return 0;
 }

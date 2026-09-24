@@ -1,0 +1,221 @@
+# 界面外挂文本：键名<TAB>中文；UTF-8；\n 换行；\\ 表示反斜线。
+# 格式串中的 %u、%03u、%.24s 等占位符须保持原样和顺序；格式串中百分号写为 %%。
+# 原版图片内的文字不属于本表。修改后重新启动游戏生效。
+common.yes	是
+common.no	否
+common.on	开
+common.off	关
+common.normal	普通
+common.fast	快速
+common.instant	即时
+common.available	可用
+common.locked	已锁定
+common.cg	CG
+common.movie	影片
+
+controls.live_character	左摇杆：\n左右旋转\n操作后自动停止\n十字键：选择项目\nA：详情\nB：返回
+controls.character_detail	十字键：选择项目\nA：详情\nB：返回
+controls.character_list	十字键：选择\nL/R：翻页\nA：确定\nB：返回
+controls.scene_replay_simple	十字键：选择\nL/R：翻页\nA：播放\nB：返回
+controls.scene_replay_characters	十字键：选择\nX：上一个人物\nY：下一个人物\nL/R：翻页\nA：播放\nB：返回
+controls.cg_simple	十字键：选择\nL/R：翻页\nA：确定／下一步\nB：返回
+controls.cg_characters	十字键：选择\nX：上一个人物\nY：下一个人物\nL/R：翻页\nA：确定／下一步\nB：返回
+controls.cg_viewer	十字键：移动\nA/Y：缩放\nX：滚动\nB：返回
+controls.cg_variants	十字键：选择\nL/R：翻页\nA：确定\nB：返回
+controls.replay_characters	十字键：选择\nX：上一个人物\nY：下一个人物\nL/R：翻页\nA：确定\nB：返回
+controls.music	十字键：选择曲目\nA：播放\nY：停止\nB：返回
+controls.video	十字键：选择影片\nA：播放\nB：返回
+controls.history	十字键：选择记录\nL/R：翻页\nA：播放语音\nB：返回
+controls.settings	十字键：选择/调整\nL/R：翻页\nA：确定\nB：返回
+controls.navigation	十字键：移动\nA：选择场景\nY：缩放\nB：返回
+controls.scene_navigation	十字键：选择\nL/R：翻页\nY：切换\nA：确定\nB：返回
+controls.generic	十字键：选择\nA：确定\nB：返回
+controls.area	十字键：选择目标\nA：调查／使用\nB：返回／道具
+controls.bonus_game	摇杆移动\nA：连打
+controls.choice	十字键：选择\nA：确定
+controls.replay_menu	A：下一步\nB：菜单
+controls.replay_story	A：下一步\nZL：返回正文
+
+name.help	十字键：选择文字\nA：输入\nX：删除\nY：切换类型\nZR：确定
+dialog.name_confirm	确定要这样吗？
+dialog.history_reset	要删除选中的回看记录吗？
+history.read	已读记录
+history.choice	选项记录
+history.navigation	场景导航记录
+history.all	全部记录与存档
+
+status.cg_failed	无法显示 CG
+status.letter_return_failed	无法返回信件界面
+status.reset_failed	初始化失败
+status.replay_return_failed	无法返回回想界面
+status.progress_save_failed	无法保存进度
+status.name_unavailable	该名称不可用
+status.name_limit	名称最多输入 5 个字符
+status.name_required	请输入名称
+status.scene_locked	该场景尚未解锁
+status.scene_no_save	该场景没有存档
+status.scene_no_replay	没有可播放的场景
+status.scene_buffer_failed	场景动画缓冲分配失败
+status.scene_background_failed	场景背景分配失败
+status.scene_result_failed	返回值压栈失败
+status.scene_thumbnail_small	回想缩略图尺寸不足
+status.character_locked	人物详情尚未解锁
+status.character_image_failed	无法读取人物详细图片
+status.character_data_failed	无法读取人物详细数据
+status.settings_assets	无法读取设置界面资源
+status.settings_assets_with_back	无法读取设置界面资源\nB / Esc：返回
+status.settings_save_failed	无法保存设置
+status.preview_voice_load_failed	无法读取试听语音
+status.preview_voice_output_failed	无法输出试听语音
+status.history_assets_with_back	无法读取回看界面资源\nB / Esc：返回
+status.history_draw_failed	无法绘制回看文本
+status.voice_loading	正在读取语音……
+status.voice_off	语音已关闭
+status.save_assets	无法读取存档界面资源
+status.save_preview	无法读取存档参数
+status.loading	读取中……
+status.load_cancelled	已取消读取
+status.save_checkpoint_required	必须在对白停稳后才能保存
+status.save_name_limit	最多输入 13 个全角字符
+status.save_failed	保存失败（已保留旧数据）[%.24s]
+status.saved	已保存
+status.slot_unreadable	存档为空或无法读取
+status.read_history_save_failed	无法保存已读记录
+status.load_init_failed	无法初始化读取运行时
+status.loading_cancel_hint	正在读取…… B／Backspace：取消
+status.load_failed	读取失败，已保留当前游戏
+status.save_damaged	存档不支持或已损坏
+status.restoring_scene	正在恢复场景……
+status.display_switching	正在切换显示……
+status.display_switch_failed	切换显示失败
+status.replay_returned	已返回正文
+status.replay_failed	回放失败，已保留原剧情
+status.replay_complete	回放完成
+status.replay_merge_failed	已返回，但无法合并回放进度
+status.replay_cancelled	已取消回放
+status.replay_prepare_failed	无法准备回放
+status.replay_init_failed	无法初始化回放
+status.replay_unavailable	无法回放，已保留原剧情
+status.replay_checkpoint_mismatch	检查点与当前游戏版本不匹配
+status.replay_preparing	正在准备场景……
+status.replay_no_checkpoint	没有匹配的已完成场景检查点。
+status.gallery_resources	无法读取回看缩略图资源
+status.nawa_resources	无法读取奖励菜单资源
+status.nawa_data_invalid	奖励动画数据无效
+status.preview_unavailable	预览不可用；按 A 仍可进入场景
+status.history_no_voice	这条记录没有语音
+
+settings.title	设置 - 第 %u/%u 页
+settings.number	%d / %d
+settings.item	%s %s：%s
+settings.footer	设置将在下一条消息、语音或画面效果中生效。
+settings.text_speed	文字速度
+settings.auto_speed	自动播放速度
+settings.voice_volume	语音音量
+settings.music_volume	音乐音量
+settings.effect_volume	音效音量
+settings.voice_playback	播放语音
+settings.music_playback	播放音乐
+settings.sound_effects	播放音效
+settings.visual_effects	画面效果
+settings.message_transparency	消息透明度
+settings.mouth_animation	嘴部动画
+settings.message_red	消息红色
+settings.message_green	消息绿色
+settings.message_blue	消息蓝色
+settings.male_voices	男性语音
+settings.female_voices	女性语音
+settings.read_skip	已读跳过
+settings.auto_dialogue	自动对白
+settings.movies_3d	3D 影片
+settings.scene_sound_effects	场景音效
+settings.right_click_menu	右键菜单
+settings.scene_animation	场景动画
+settings.navigation_preview	场景导航预览
+settings.scene_effect_volume	场景音效音量
+settings.movie_sync	影片同步
+settings.sungeki_animation	短剧动画
+settings.schedule_check	日程检查
+settings.minigame_difficulty	小游戏难度
+settings.sungeki_sound	短剧音效
+settings.text_speed_enabled	启用文字速度
+settings.configuration_page	设置页
+settings.character_voice_00	角色语音 00
+settings.character_voice_01	角色语音 01
+settings.character_voice_02	角色语音 02
+settings.character_voice_03	角色语音 03
+settings.character_voice_04	角色语音 04
+settings.character_voice_05	角色语音 05
+settings.character_voice_06	角色语音 06
+settings.character_voice_07	角色语音 07
+settings.character_voice_08	角色语音 08
+settings.character_voice_09	角色语音 09
+settings.character_voice_10	角色语音 10
+settings.character_voice_11	角色语音 11
+settings.character_voice_12	角色语音 12
+settings.character_voice_13	角色语音 13
+settings.character_voice_14	角色语音 14
+settings.character_voice_15	角色语音 15
+settings.character_voice_16	角色语音 16
+settings.character_voice_17	角色语音 17
+settings.character_voice_18	角色语音 18
+settings.character_voice_19	角色语音 19
+settings.character_voice_20	角色语音 20
+settings.character_voice_21	角色语音 21
+settings.character_voice_22	角色语音 22
+settings.character_voice_23	角色语音 23
+settings.character_voice_24	角色语音 24
+settings.character_voice_25	角色语音 25
+settings.character_voice_26	角色语音 26
+settings.character_voice_27	角色语音 27
+settings.character_voice_28	角色语音 28
+settings.character_voice_29	角色语音 29
+settings.character_voice_30	角色语音 30
+settings.character_voice_31	角色语音 31
+settings.character_voice_32	角色语音 32
+
+menu.video.title	影片
+menu.video.item	%s %02u  %.60s  %s
+menu.navigation.title	导航：回放已完成场景
+menu.navigation.item	%s 第 %u 部分
+menu.nawa.title	奖励与小游戏
+menu.nawa.item	%s 场景 %02u   %s
+menu.nawa.bonus	%s 奖励游戏 %u
+menu.replay.title	场景回放：%s（%u / 5）
+menu.replay.item	%s 场景 %02u
+menu.replay.footer	场景 %02u/%02u  %s
+menu.playback.title	选择场景播放方式
+menu.playback.animation_selected	> 动画
+menu.playback.animation	  动画
+menu.playback.still_selected	> 静态图片
+menu.playback.still	  静态图片
+menu.cg.title	CG 分类 %u / 7%s
+menu.cg.variants	 - 差分
+menu.cg.movie_item	%s 影片 %02u  %s
+menu.cg.variant_item	%s 差分 %03u  %s
+menu.cg.item	%s CG %03u   %u / %u 个差分
+menu.music.title	音乐
+menu.music.item	%s %02u  %.55s
+menu.history.title	回看记录 %u / %u
+menu.gallery.footer	第 %u/%u 页  %s %03u  %s
+menu.gallery.variant_footer	%s %u/%u
+menu.nav_map	导航地图  场景 %03u
+status.returning_title	正在返回标题……
+status.title_init_failed	无法初始化标题界面
+status.reset_recovery	重置失败，请重启恢复；原文件已保留。
+status.locked_or_unavailable	尚未解锁或无法使用
+status.movie_unavailable	该影片尚未解锁或无法读取
+status.animation_unavailable	动画尚未解锁或无法读取
+status.variant_unavailable	该差分尚未解锁或图片无法读取
+status.track_unavailable	该曲目尚未解锁或无法播放
+status.cg_upload_failed	CG 纹理上传失败
+status.voice_queue_failed	无法创建语音队列
+status.voice_load_failed	无法读取语音
+status.voice_output_failed	无法输出语音
+status.voice_decode_failed	无法解码语音
+status.voice_playing	正在播放语音……
+status.voice_replay_hint	A／Enter：重播语音
+status.backlog_replay_failed	回看播放失败：%.64s
+menu.nawa.footer	场景 %02u  %s
+menu.navigation.save	存档 %03u
+menu.navigation.scene	场景 %u

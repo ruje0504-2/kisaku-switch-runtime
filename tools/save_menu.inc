@@ -3,7 +3,7 @@
 /* Kisaku CSaveDialog / CLoadDialog; port files remain isolated from originals. */
 typedef struct {
     int active,save,slot,selector,overwrite,loading,confirm_load;unsigned ticks;
-    char status[100],labels[10][64],comments[10][43],note[129];KBootstrap *next;
+    char status[512],labels[10][64],comments[10][43],note[129];KBootstrap *next;
     int page_key,focus,button,request;unsigned valid[10];int64_t dates[10];
     uint64_t draw_key;KImage artwork,load_artwork,common,canvas,previews[10];SDL_Texture *texture;
     KFlags *states[10];KSlotInfo info[10];int last_slot,hover,areas[31][5];unsigned area_count;
@@ -41,7 +41,7 @@ static void save_menu_action(SaveMenu *m,KBootstrap *b,int action){
     int load_confirmed=0;
     if(m->character_detail){character_detail_action(m,b,action);return;}
     if(m->param_detail){if(SDL_GetTicks64()-m->param_started>=(uint64_t)m->param_steps*15&&(action==0||action==1))m->param_detail=0;return;}
-    if(m->loading){if(action==1){bootstrap_destroy(m->next);m->next=NULL;m->loading=0;snprintf(m->status,sizeof(m->status),"Load cancelled");}return;}
+    if(m->loading){if(action==1){bootstrap_destroy(m->next);m->next=NULL;m->loading=0;snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.load_cancelled"));}return;}
     if(action==1&&(m->overwrite||m->confirm_load)){SDL_StopTextInput();m->overwrite=m->confirm_load=0;m->status[0]=0;return;}
     if(action==1){m->active=0;m->overwrite=0;b->load_modal=b->file_modal=0;b->exec_status&=m->save?~16u:~8u;bootstrap_message_hide(b,0);return;}
     if(m->overwrite||m->confirm_load){
@@ -73,36 +73,36 @@ static void save_menu_action(SaveMenu *m,KBootstrap *b,int action){
     if(action==7){
         unsigned row=(unsigned)(m->slot-1)%10;
         if(m->selector||m->focus||!m->states[row])return;
-        if(!m->previews[row].pixels&&bootstrap_saved_param_image(b,m->states[row],&m->previews[row])){snprintf(m->status,sizeof(m->status),"パラメータを読み込めませんでした");return;}
+        if(!m->previews[row].pixels&&bootstrap_saved_param_image(b,m->states[row],&m->previews[row])){snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.save_preview"));return;}
         int speed=bootstrap_message_setting(b,8,0);
         m->param_steps=b->vm->globals[0][50].number&0x4000?24:speed==2?0:speed==1?6:12;
         m->param_started=SDL_GetTicks64();m->param_detail=1;return;
     }
     if(action)return;
     if(m->save){
-        if(!bootstrap_can_save(b)){snprintf(m->status,sizeof(m->status),"Save requires a settled dialogue checkpoint");return;}
+        if(!bootstrap_can_save(b)){snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.save_checkpoint_required"));return;}
         if(!m->overwrite){m->overwrite=1;m->button=2;ui_utf8_note(m->comments[(m->slot-1)%10],m->note);m->status[0]=0;SDL_StartTextInput();return;}
         uint8_t encoded[33];size_t length;
-        if(m->note[0]&&(ktext_name_encode(m->note,encoded,&length)||length>27)){snprintf(m->status,sizeof(m->status),"全角13文字まで入力できます");return;}
+        if(m->note[0]&&(ktext_name_encode(m->note,encoded,&length)||length>27)){snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.save_name_limit"));return;}
         int failed=bootstrap_save_slot_comment(b,(unsigned)m->slot,m->note);m->overwrite=0;SDL_StopTextInput();
         /* 失败时把存档根一并显示：NSP 下应是 save:，回退时是 SD 路径，
            落在 romfs 就说明存档根接错了。 */
         if(failed){
-            snprintf(m->status,sizeof(m->status),"保存に失敗しました（旧データを保持）[%.24s]",bootstrap_save_dir(b));
-        }else {snprintf(m->status,sizeof(m->status),"保存しました");m->last_slot=m->slot;}
+            snprintf(m->status,sizeof(m->status),ui_string(b,"status.save_failed"),bootstrap_save_dir(b));
+        }else {snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.saved"));m->last_slot=m->slot;}
         m->page_key=0;save_menu_refresh(m,bootstrap_save_dir(b));
     }else{
         KFlags *f=NULL;KControlStore *c=NULL;
         int bad=kslot_read(bootstrap_save_dir(b),(unsigned)m->selector,(unsigned)m->slot,&f,&c);
-        if(bad||!memchr(f->module,0,260)||!f->module[0]){kflags_free(f);kcontrol_free(c);snprintf(m->status,sizeof(m->status),"Slot is empty or unreadable");return;}
+        if(bad||!memchr(f->module,0,260)||!f->module[0]){kflags_free(f);kcontrol_free(c);snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.slot_unreadable"));return;}
         kflags_free(f);kcontrol_free(c);
         if(!load_confirmed){m->confirm_load=1;m->button=2;return;}
-        if(bootstrap_flush_progress(b)){snprintf(m->status,sizeof(m->status),"Could not save read history");return;}
+        if(bootstrap_flush_progress(b)){snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.read_history_save_failed"));return;}
         m->next=bootstrap_create_split(b->root,bootstrap_save_dir(b));
         if(!m->next||m->next->error[0]||bootstrap_enable_async_voice(m->next)||bootstrap_enable_async_images(m->next)){
-            bootstrap_destroy(m->next);m->next=NULL;snprintf(m->status,sizeof(m->status),"Cannot initialize load runtime");return;
+            bootstrap_destroy(m->next);m->next=NULL;snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.load_init_failed"));return;
         }
-        m->loading=1;m->ticks=0;snprintf(m->status,sizeof(m->status),"Loading... B / Backspace: cancel");
+        m->loading=1;m->ticks=0;snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.loading_cancel_hint"));
     }
 }
 /* CParamaterWnd uses the same 102/103 skip inputs as CConfig fades.  The
@@ -117,12 +117,12 @@ static int save_menu_step(SaveMenu *m,KBootstrap **live){
     /* Loading runs on the private runtime; use a larger VM slice so parsing
        and resource indexing finish in fewer UI frames without blocking input. */
     bootstrap_frame(m->next);int state=bootstrap_run(m->next,500000);
-    if(state<0||state==0||++m->ticks>36000){snprintf(m->status,sizeof(m->status),"Load failed; current game retained");bootstrap_destroy(m->next);m->next=NULL;m->loading=0;return 0;}
+    if(state<0||state==0||++m->ticks>36000){snprintf(m->status,sizeof(m->status),"%s",ui_string(*live,"status.load_failed"));bootstrap_destroy(m->next);m->next=NULL;m->loading=0;return 0;}
     int ready=m->loading==3&&m->next->title.active;
     if((m->loading==1||m->loading==4)&&m->next->title.active){
         if(m->loading==4?bootstrap_load_animation_switch(m->next,(unsigned)m->selector):bootstrap_load_slot(m->next,(unsigned)m->selector,(unsigned)m->slot)){
-            bootstrap_destroy(m->next);m->next=NULL;m->loading=0;snprintf(m->status,sizeof(m->status),"Unsupported or damaged save");return 0;
-        }m->loading=2;snprintf(m->status,sizeof(m->status),"Restoring scene...");
+            bootstrap_destroy(m->next);m->next=NULL;m->loading=0;snprintf(m->status,sizeof(m->status),"%s",ui_string(*live,"status.save_damaged"));return 0;
+        }m->loading=2;snprintf(m->status,sizeof(m->status),"%s",ui_string(m->next,"status.restoring_scene"));
     }else if(m->loading==2&&!m->next->restore_pending&&(m->next->message_active||m->next->choice_active))ready=1;
     if(ready){bootstrap_destroy(*live);*live=m->next;m->next=NULL;m->loading=m->active=0;m->page_key=0;return 1;}return 0;
 }

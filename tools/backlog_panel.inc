@@ -118,7 +118,7 @@ static void backlog_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     backlog_panel_init(p);if(ui_canvas(&p->image))return;
     if(backlog_assets(p,b)){
         ui_scale(&p->image,&b->layers[0],0,0,640,480);
-        ui_text(b,&p->image,"履歴画面の素材を読み込めませんでした\nB / Esc：戻る",120,210,400,60,0xffffff,0);
+        ui_text_key(b,&p->image,"status.history_assets_with_back",120,210,400,60,0xffffff);
         ui_present(r,&p->image,&p->texture);return;
     }
     unsigned state[]={p->backlog_offset,(unsigned)p->backlog_hover,p->back,b->history_next,bootstrap_backlog_count(b),b->text_count,p->voice_loading,p->voice_pcm!=NULL,p->backlog_mouse_drag};
@@ -144,7 +144,7 @@ static void backlog_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             kbacklog_voices_free(&voices);
         }else failed=backlog_text(b,d,b->history[(b->history_next+63-(unsigned)back)%64],row*80+10);
         if(failed){
-            snprintf(p->status,sizeof(p->status),"履歴テキストを描画できませんでした");
+            snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.history_draw_failed"));
             ui_text(b,d,p->status,32,row*80+10,560,54,0xffffff,0);
         }
         if(has_voice)ui_blit(d,art,32,selected&&playing?184:164,16,20,4,row*80+10,1);

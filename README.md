@@ -71,10 +71,6 @@ local/venv/bin/python tools/decompile_r2.py 鬼作/AI6WIN.exe \
 打包结果位于 `交付/SD卡根目录/switch/kisaku/`；源码变更后重新执行构建与打包命令即可更新。将 `switch` 文件夹合并到 SD 卡根目录，在支持自制软件的环境中以完整内存模式运行：
 
 - `kisaku.nro`：主程序，支持完整正篇、全路线、全部结局、后期剧情与系统界面。
-- `kisaku-preview.nro`：兼容此前文件名，与 `kisaku.nro` 内容完全一致。
-- `kisaku-image-viewer.nro`：原版 AKB 资源查看器，左右切换，X 切换透明混合。
-- `kisaku-bootstrap.nro`：启动接口诊断，结果写到 `bootstrap-result.txt`。
-- `kisaku-diagnostic.nro`：七个归档和启动脚本检查。
 
 数据放在 `switch/kisaku/game/`，设置与存档放在 `switch/kisaku/saves/`。用 HOME 菜单关闭；没有把 + 映射为退出。
 
@@ -104,12 +100,7 @@ NSP 单文件约 3.4 GB，可以放进 FAT32 SD 卡（单文件需小于 4 GiB�
 
 运行时从游戏目录读取可选的 `zh_CN.txt`。该文件由原版 `mes.arc` 与 `汉化补丁/uif_config.json` 整理为 UTF-8，每行是“原文 TAB 中文文本”，完整句子优先匹配，字符替换表作为兜底。缺少该文件时继续显示日文原文；打包脚本会把 `assets/zh_CN.txt` 放入 SD/NSP 的 `game/` 目录。正文、选项、消息回看和历史记录共用这张表。
 
-## 下一步
-
-1. 根据静态反编译结果继续推进 open.mes 后续分支，接通开场媒体与进度恢复。
-2. 补齐普通/附录选择框资源变体和键鼠输入边界。
-3. 完成消息窗口可见状态下的原生精灵运动，继续核对《鬼作》的扩展调用表。
-4. 适配原生进度、存读档、日程/地图、鉴赏及各小游戏，再做逐路线回归和实机验证。
+运行时界面使用另一张可编辑的外挂表 `ui_zh_CN.txt`，同样放在 `game/` 目录。每行格式为“键名 TAB 中文文本”，支持 `\\n`、`\\r`、`\\t` 和 `\\\\` 转义；带格式参数的条目必须保留原有 `%s`、`%u`、`%.24s` 等参数及顺序。该表覆盖确认、返回、等待、保存/读取状态、键位说明、设置和菜单文字；翻译后的选择项按实际中文宽度重新居中。原始图片保持原样。修改外挂表后重启游戏即可生效。
 
 详见 [移植记录](reports/porting.md)、[资源审计](reports/inventory.json)、[原生接口表](reports/exec-dispatch.json)。`runtime/` 中仍保留参考运行时的其他游戏功能，未通过《鬼作》验证的扩展接口会明确报错，不会静默跳过。
 

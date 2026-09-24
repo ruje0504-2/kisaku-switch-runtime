@@ -5,7 +5,7 @@
 #include "../runtime/name_tables.h"
 typedef struct {int id,x0,y0,x1,y1;} ConfigArea;
 typedef struct KNawaPanel KNawaPanel;
-typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_cancel,cg_zoom;int cg_x,cg_y;char status[96],name[129];
+typedef struct {unsigned kind,selected,back,viewing,variant,scene_request,scene_cancel,cg_zoom;int cg_x,cg_y;char status[512],name[129];
     /* CName (0047b380) keeps a five-character CP932 buffer and a separate
        grid/category cursor.  These fields mirror that transient state so the
        date/name modal does not fall back to the Switch system keyboard. */
@@ -120,7 +120,7 @@ static int name_help_prepare(MessagePanel *p,KBootstrap *b){
     p->name_help=(KImage){0,0,144,104,144*4,calloc(144u*104u,4)};
     if(!p->name_help.pixels)return -1;
     ui_fill(&p->name_help,0,0,144,104,0x0c0f14);
-    if(ui_text(b,&p->name_help,"十字：文字選択\nA：入力\nX：削除\nY：種類\nZR：決定",0,0,144,104,0xffe9a0,0)){
+    if(ui_text_key(b,&p->name_help,"name.help",0,0,144,104,0xffe9a0)){
         rmt_free(&p->name_help);return -1;
     }
     return 0;
@@ -156,12 +156,12 @@ static unsigned scene_replay_slots(MessagePanel *p,KBootstrap *b,unsigned slots[
 }
 #include "navigation_panel.inc"
 static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
-    if(p->kind==22){if(bootstrap_native_cg_action(b,action))snprintf(p->status,sizeof(p->status),"CGを表示できませんでした");if(!b->native_cg)p->kind=0;return;}
+    if(p->kind==22){if(bootstrap_native_cg_action(b,action))snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.cg_failed"));if(!b->native_cg)p->kind=0;return;}
     if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){
         if(action==1){
             if(p->kind==21&&bootstrap_title_reset_close(b,0))return;
             if(p->kind==6)bootstrap_quit_dialog_close(b,0);
-            if(p->kind==19&&bootstrap_letter_exit(b,0)){snprintf(p->status,sizeof(p->status),"信件画面に戻れませんでした");return;}
+            if(p->kind==19&&bootstrap_letter_exit(b,0)){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.letter_return_failed"));return;}
             p->kind=0;p->viewing=0;b->message_hover=-1;return;
         }
         if(!p->viewing){p->selected=2;p->viewing=1;}
@@ -169,12 +169,12 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         if(action==3||action==5)p->selected=0;
         if(!action&&p->selected<2){
             if(p->kind==21){
-                if(bootstrap_title_reset_close(b,p->selected==1)){snprintf(p->status,sizeof(p->status),"初期化に失敗しました");return;}
+                if(bootstrap_title_reset_close(b,p->selected==1)){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.reset_failed"));return;}
             }else if(p->kind==19){
-                if(bootstrap_letter_exit(b,p->selected==1)){snprintf(p->status,sizeof(p->status),"回想画面に戻れませんでした");return;}
+                if(bootstrap_letter_exit(b,p->selected==1)){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.replay_return_failed"));return;}
             }else if(p->selected==1){
                 if(p->kind==18)p->return_title=1;
-                else if(bootstrap_quit_dialog_close(b,1)){snprintf(p->status,sizeof(p->status),"進行状況を保存できませんでした");return;}
+                else if(bootstrap_quit_dialog_close(b,1)){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.progress_save_failed"));return;}
             }
             if(p->kind==6&&p->selected==0)bootstrap_quit_dialog_close(b,0);
             p->kind=0;p->viewing=0;b->message_hover=-1;
@@ -219,7 +219,7 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
     }
     if(p->kind==15){
         if(action==1){bootstrap_history_reset(b,0);p->kind=0;}
-        else if(!action){if(!bootstrap_history_reset(b,1))p->kind=0;else snprintf(p->status,sizeof(p->status),"Reset failed. Restart to recover; original files are preserved.");}
+        else if(!action){if(!bootstrap_history_reset(b,1))p->kind=0;else snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.reset_recovery"));}
         return;
     }
     if(p->kind==14){
@@ -234,7 +234,7 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
             if(!action){
                 if(p->selected==0){
                     if(!bootstrap_name_submit(b,p->name)){SDL_StopTextInput();p->kind=0;return;}
-                    snprintf(p->status,sizeof(p->status),"その名前は使用できません");p->name_confirm=0;
+                    snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.name_unavailable"));p->name_confirm=0;
                 }else{p->name_confirm=0;p->name_focus=0;}
             }
             return;
@@ -267,9 +267,9 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
             if(p->name_focus==1){
                 unsigned row=p->name_cursor/18,col=p->name_cursor%18;uint16_t raw=name_table_value(p,row,col);
                 if(raw!=0xffff&&!name_append_value(p,raw))return;
-                snprintf(p->status,sizeof(p->status),"名前は5文字まで入力できます");return;
+                snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.name_limit"));return;
             }
-            if(!p->name[0]){snprintf(p->status,sizeof(p->status),"名前を入力してください");return;}
+            if(!p->name[0]){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.name_required"));return;}
             p->name_confirm=1;p->selected=0;
         }
         return;
@@ -289,7 +289,7 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
                 if(action==2||action==3){const unsigned column[3]={19,0,17};p->selected=(action==2?20:0)+column[bonus];}
             }
         }
-        if(!action){if(!bootstrap_nawa_select(b,p->selected)){nawa_panel_clear(p);p->kind=0;}else snprintf(p->status,sizeof(p->status),"This scene is not unlocked yet");}
+        if(!action){if(!bootstrap_nawa_select(b,p->selected)){nawa_panel_clear(p);p->kind=0;}else snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_locked"));}
         return;
     }
     if(p->kind==23){
@@ -298,14 +298,14 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
         if(action==3)p->selected=(p->selected+1)%count;
         if(action==4)p->selected=(p->selected+count-10)%count;
         if(action==5)p->selected=(p->selected+10)%count;
-        if(!action){ if(bootstrap_video_select(b,(int)p->selected))snprintf(p->status,sizeof(p->status),"Locked or unavailable"); else p->kind=0; }
+        if(!action){ if(bootstrap_video_select(b,(int)p->selected))snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.locked_or_unavailable")); else p->kind=0; }
         return;
     }
     if(p->kind==11){
         p->status[0]=0;
         if(action==6||action==7){p->back=(p->back+(action==6?1:4))%5;p->selected=0;}
         if(action>=2&&action<=5)p->selected=replay_grid_move(p->back,p->selected,action);
-        if(!action){if(!bootstrap_replay_select(b,p->back,p->selected))p->kind=0;else snprintf(p->status,sizeof(p->status),"This scene is not unlocked yet");}
+        if(!action){if(!bootstrap_replay_select(b,p->back,p->selected))p->kind=0;else snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_locked"));}
         return;
     }
     if(p->kind==12){
@@ -332,18 +332,18 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
             unsigned images=kgallery_group_count(&b->gallery,p->back);
             if(p->back==5&&p->selected>=images){
                 if(!bootstrap_gallery_movie(b,p->selected-images)){p->cg_movie_return=0;p->viewing=3;}
-                else snprintf(p->status,sizeof(p->status),"This movie is locked or could not be loaded");
+                else snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.movie_unavailable"));
             }else{p->viewing=1;p->variant=0;}
             return;
         }
         if(!action&&p->viewing==1&&p->back==5&&p->selected==45&&p->variant>=4){
             if(!bootstrap_gallery_animation(b,p->variant-4)){p->cg_movie_return=1;p->viewing=3;}
-            else snprintf(p->status,sizeof(p->status),"Animation is locked or could not be loaded");
+            else snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.animation_unavailable"));
             return;
         }
         if(!action||p->viewing==2){
             if(!bootstrap_gallery_variant(b,p->back,p->selected,p->variant,&p->image)){p->viewing=2;p->cg_zoom=0;p->cg_x=p->cg_y=0;}
-            else{p->viewing=1;snprintf(p->status,sizeof(p->status),"This variant is locked or its image could not be loaded");}
+            else{p->viewing=1;snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.variant_unavailable"));}
             SDL_DestroyTexture(p->texture);p->texture=NULL;
         }
         return;
@@ -362,7 +362,7 @@ static void message_panel_action(MessagePanel *p,KBootstrap *b,int action){
             p->selected=visible[at];
         }
         if(action==6)bootstrap_music_stop(b);
-        if(!action&&bootstrap_music_select(b,p->selected))snprintf(p->status,sizeof(p->status),"This track is locked or unavailable");
+        if(!action&&bootstrap_music_select(b,p->selected))snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.track_unavailable"));
         return;
     }
     if(p->kind==8){settings_panel_action(p,b,action);return;
@@ -382,14 +382,14 @@ static void message_dialog_pointer(MessagePanel *p,KBootstrap *b,int x,int y,int
     if(click==2)message_panel_action(p,b,1);
     else if(click==1&&hit>=0)message_panel_action(p,b,0);
 }
-static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
+static void message_panel_draw_body(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind==22){
         const KImage *image=bootstrap_native_cg_image(b);
         if(image){
-            if(texture_cache_update(&p->cg_frame,r,image,SDL_BLENDMODE_BLEND))snprintf(p->status,sizeof(p->status),"CG texture upload failed");
+            if(texture_cache_update(&p->cg_frame,r,image,SDL_BLENDMODE_BLEND))snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.cg_upload_failed"));
             else{SDL_Rect dst={160,0,960,720};SDL_RenderCopy(r,p->cg_frame.texture,NULL,&dst);}
         }
-        if(p->status[0])panel_text(r,208,690,p->status);
+        if(p->status[0])panel_text(b,r,208,690,p->status);
         return;
     }
     if(p->kind!=5&&p->kind!=8){p->native_kind=0;p->native_key=0;}
@@ -411,9 +411,9 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             ui_present(r,&p->image,&p->texture);return;
         }
         SDL_SetRenderDrawColor(r,16,20,28,255);SDL_Rect box={208,64,864,592};SDL_RenderFillRect(r,&box);
-        panel_text(r,272,108,"VIDEO");unsigned first=p->selected/10*10;
-        for(unsigned i=first;i<bootstrap_video_count()&&i<first+10;i++){char line[120];snprintf(line,sizeof(line),"%s %02u  %.60s  %s",i==p->selected?">":" ",i+1,bootstrap_video_preview_name(i),bootstrap_video_unlocked(b,i)?"Available":"Locked");panel_text(r,280,160+(int)(i%10)*36,line);}
-        if(p->status[0])panel_text(r,272,560,p->status);
+        panel_text(b,r,272,108,ui_string(b,"menu.video.title"));unsigned first=p->selected/10*10;
+        for(unsigned i=first;i<bootstrap_video_count()&&i<first+10;i++){char line[120];snprintf(line,sizeof(line),ui_string(b,"menu.video.item"),i==p->selected?">":" ",i+1,bootstrap_video_preview_name(i),ui_string(b,bootstrap_video_unlocked(b,i)?"common.available":"common.locked"));panel_text(b,r,280,160+(int)(i%10)*36,line);}
+        if(p->status[0])panel_text(b,r,272,560,p->status);
         return;
     }
     if(p->kind==11&&!replay_panel_draw(p,b,r,SDL_GetTicks64()))return;
@@ -430,15 +430,15 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     SDL_SetRenderDrawColor(r,240,240,240,255);
     if(p->kind==20){scene_mode_draw(p,b,r);return;}
     if(p->kind==16||p->kind==17){
-        panel_text(r,272,108,"NAVIGATION - REPLAY COMPLETED SCENE");
-        if(p->kind==17){panel_text(r,272,240,"Preparing scene...");return;}
+        panel_text(b,r,272,108,ui_string(b,"menu.navigation.title"));
+        if(p->kind==17){panel_text(b,r,272,240,ui_string(b,"status.replay_preparing"));return;}
         unsigned slots[600],count=scene_replay_slots(p,b,slots);
-        if(!count)panel_text(r,272,240,"No matching completed checkpoint for this scene.");
+        if(!count)panel_text(b,r,272,240,ui_string(b,"status.replay_no_checkpoint"));
         for(unsigned i=0;i<count;i++){
             KSceneCheckpoint cp;char line[100];khistory_checkpoint(&b->scene_history,slots[i],&cp);
-            snprintf(line,sizeof(line),"%s Part %u",p->variant==i?">":" ",cp.part);panel_text(r,280,180+(int)i*32,line);
+            snprintf(line,sizeof(line),ui_string(b,"menu.navigation.item"),p->variant==i?">":" ",cp.part);panel_text(b,r,280,180+(int)i*32,line);
         }
-        if(p->status[0])panel_text(r,272,544,p->status);
+        if(p->status[0])panel_text(b,r,272,544,p->status);
         return;
     }
     if(p->kind==14){
@@ -494,9 +494,10 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         if(p->status[0])ui_text(b,&p->image,p->status,128,8,384,20,0xff8a7a,0);
         if(p->name_confirm){
             ui_fill(&p->image,80,188,480,116,0x080b12);ui_fill(&p->image,80,188,480,2,0xd0a83c);ui_fill(&p->image,80,302,480,2,0xd0a83c);
-            ui_text(b,&p->image,"これでよろしいですか？",176,208,288,24,0xffffff,0);
-            ui_text(b,&p->image,p->selected==0?"> はい":"  はい",210,258,90,20,p->selected==0?0xffe36a:0xffffff,0);
-            ui_text(b,&p->image,p->selected==1?"> いいえ":"  いいえ",348,258,110,20,p->selected==1?0xffe36a:0xffffff,0);
+            ui_text_key(b,&p->image,"dialog.name_confirm",176,208,288,24,0xffffff);
+            char yes[32],no[32];snprintf(yes,sizeof(yes),"%s%s",p->selected==0?"> ":"  ",ui_string(b,"common.yes"));snprintf(no,sizeof(no),"%s%s",p->selected==1?"> ":"  ",ui_string(b,"common.no"));
+            ui_text(b,&p->image,yes,210,258,90,20,p->selected==0?0xffe36a:0xffffff,0);
+            ui_text(b,&p->image,no,348,258,110,20,p->selected==1?0xffe36a:0xffffff,0);
         }
         ui_present(r,&p->image,&p->texture);
         name_help_draw(p,b,r);
@@ -505,9 +506,9 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->kind==15){
         if(ui_canvas(&p->image))return;
         ui_scale(&p->image,&b->layers[0],0,0,640,480);ui_fill(&p->image,112,122,416,262,0xa08948);ui_fill(&p->image,115,125,410,256,0x291e14);
-        ui_text(b,&p->image,"選択した履歴を消去しますか？",136,144,368,24,0xffffff,0);
-        const char *labels[]={"既読履歴","選択肢履歴","シーンナビゲーション履歴","全履歴とセーブデータ"};unsigned row=0;
-        for(unsigned i=0;i<4;i++)if(b->flag_dialog.checked[i]==1)ui_text(b,&p->image,labels[i],144,186+(int)row++*28,352,24,0xffdf78,0);
+        ui_text_key(b,&p->image,"dialog.history_reset",136,144,368,24,0xffffff);
+        const char *labels[]={"history.read","history.choice","history.navigation","history.all"};unsigned row=0;
+        for(unsigned i=0;i<4;i++)if(b->flag_dialog.checked[i]==1)ui_text_key(b,&p->image,labels[i],144,186+(int)row++*28,352,24,0xffdf78);
         ui_present(r,&p->image,&p->texture);return;
     }
     if(p->kind==6||p->kind==18||p->kind==19||p->kind==21){
@@ -518,44 +519,44 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         ui_present(r,&p->image,&p->texture);return;
     }
     if(p->kind==8){
-        char title[80];snprintf(title,sizeof(title),"SETTINGS - PAGE %u/%u",p->selected/7+1,(bootstrap_setting_count()+6)/7);panel_text(r,272,108,title);
+        char title[80];snprintf(title,sizeof(title),ui_string(b,"settings.title"),p->selected/7+1,(bootstrap_setting_count()+6)/7);panel_text(b,r,272,108,title);
         unsigned first=p->selected/7*7;
         for(unsigned i=first;i<first+7&&i<bootstrap_setting_count();i++){
             char line[90],value[24];int current=bootstrap_message_setting(b,i,0),limit=bootstrap_setting_limit(i);
-            if(limit==1)snprintf(value,sizeof(value),"%s",current?"On":"Off");
-            else if(limit==2)snprintf(value,sizeof(value),"%s",current==0?"Normal":current==1?"Fast":"Instant");
-            else snprintf(value,sizeof(value),"%d / %d",current,limit);
-            snprintf(line,sizeof(line),"%s %s: %s",p->selected==i?">":" ",bootstrap_setting_label(i),value);panel_text(r,280,166+(int)(i-first)*48,line);
+            if(limit==1)snprintf(value,sizeof(value),"%s",ui_string(b,current?"common.on":"common.off"));
+            else if(limit==2)snprintf(value,sizeof(value),"%s",ui_string(b,current==0?"common.normal":current==1?"common.fast":"common.instant"));
+            else snprintf(value,sizeof(value),ui_string(b,"settings.number"),current,limit);
+            snprintf(line,sizeof(line),ui_string(b,"settings.item"),p->selected==i?">":" ",ui_string(b,bootstrap_setting_label(i)),value);panel_text(b,r,280,166+(int)(i-first)*48,line);
         }
 
-        panel_text(r,272,566,p->status[0]?p->status:"Applies to the next message, sound or visual effect.");return;
+        panel_text(b,r,272,566,p->status[0]?p->status:ui_string(b,"settings.footer"));return;
     }
     if(p->kind==13){
-        panel_text(r,272,108,"NAWATSUNA / BONUS GAMES");unsigned first=p->selected/10*10;
+        panel_text(b,r,272,108,ui_string(b,"menu.nawa.title"));unsigned first=p->selected/10*10;
         for(unsigned i=first;i<43&&i<first+10;i++){
-            char line[100];if(i<40)snprintf(line,sizeof(line),"%s Scene %02u   %s",i==p->selected?">":" ",i+1,bootstrap_nawa_unlocked(b,i)?"Available":"Locked");
-            else snprintf(line,sizeof(line),"%s Bonus game %u",i==p->selected?">":" ",i-39);
-            panel_text(r,280,160+(int)(i%10)*36,line);
+            char line[100];if(i<40)snprintf(line,sizeof(line),ui_string(b,"menu.nawa.item"),i==p->selected?">":" ",i+1,ui_string(b,bootstrap_nawa_unlocked(b,i)?"common.available":"common.locked"));
+            else snprintf(line,sizeof(line),ui_string(b,"menu.nawa.bonus"),i==p->selected?">":" ",i-39);
+            panel_text(b,r,280,160+(int)(i%10)*36,line);
         }
-        if(p->status[0])panel_text(r,272,560,p->status);
+        if(p->status[0])panel_text(b,r,272,560,p->status);
         return;
     }
     if(p->kind==11){
         const char *names[]={"Anna","Maki","Suzune","Mika","Natsuko"};char line[100];
-        snprintf(line,sizeof(line),"SCENE REPLAY - %s (%u / 5)",names[p->back],p->back+1);panel_text(r,240,36,line);
+        snprintf(line,sizeof(line),ui_string(b,"menu.replay.title"),names[p->back],p->back+1);panel_text(b,r,240,36,line);
         for(unsigned i=0;i<bootstrap_replay_count(p->back);i++){
             const unsigned *xy=replay_positions[p->back<3?0:p->back-2][i];
             int x=160+(int)xy[0]*3/2,y=(int)xy[1]*3/2;
-            snprintf(line,sizeof(line),"%s Scene %02u",i==p->selected?">":" ",i+1);panel_text(r,x,y,line);
-            panel_text(r,x,y+24,bootstrap_replay_unlocked(b,p->back,i)?"Available":"Locked");
+            snprintf(line,sizeof(line),ui_string(b,"menu.replay.item"),i==p->selected?">":" ",i+1);panel_text(b,r,x,y,line);
+            panel_text(b,r,x,y+24,ui_string(b,bootstrap_replay_unlocked(b,p->back,i)?"common.available":"common.locked"));
         }
-        if(p->status[0])panel_text(r,272,554,p->status);
+        if(p->status[0])panel_text(b,r,272,554,p->status);
         return;
     }
     if(p->kind==12){
-        panel_text(r,272,160,"SELECT SCENE PLAYBACK");
-        panel_text(r,280,260,p->selected==0?"> Animation":"  Animation");
-        panel_text(r,280,320,p->selected==1?"> Still images":"  Still images");
+        panel_text(b,r,272,160,ui_string(b,"menu.playback.title"));
+        panel_text(b,r,280,260,p->selected==0?ui_string(b,"menu.playback.animation_selected"):ui_string(b,"menu.playback.animation"));
+        panel_text(b,r,280,320,p->selected==1?ui_string(b,"menu.playback.still_selected"):ui_string(b,"menu.playback.still"));
         return;
     }
     if(p->kind==10){
@@ -572,7 +573,7 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
             SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,210);SDL_Rect footer={160,684,960,36};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
             SDL_SetRenderDrawColor(r,245,245,245,255);return;
         }else{
-            char title[100];snprintf(title,sizeof(title),"CG CATEGORY %u / 7%s",p->back+1,p->viewing?" - VARIANTS":"");panel_text(r,272,108,title);
+            char title[100];snprintf(title,sizeof(title),ui_string(b,"menu.cg.title"),p->back+1,p->viewing?ui_string(b,"menu.cg.variants"):"");panel_text(b,r,272,108,title);
             unsigned selected=p->viewing?p->variant:p->selected;
             unsigned count=p->viewing?gallery_variant_count(p,b):kgallery_group_count(&b->gallery,p->back)+(p->back==5?14:0);
             unsigned first=selected/10*10;
@@ -582,24 +583,24 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
                 else for(unsigned v=0;v<total;v++){kgallery_variant(&b->gallery,p->back,item,v,images);seen+=kgallery_variant_unlocked(&b->gallery,b->vm->bytes,b->vm->byte_count,images);}
                 char line[100];
                 unsigned image_count=kgallery_group_count(&b->gallery,p->back);
-                if(!p->viewing&&p->back==5&&item>=image_count)snprintf(line,sizeof(line),"%s Movie %02u  %s",i==selected?">":" ",item-image_count+1,bootstrap_gallery_movie_unlocked(b,item-image_count)?"Available":"Locked");
-                else if(p->viewing)snprintf(line,sizeof(line),"%s Variant %03u  %s",i==selected?">":" ",i+1,seen?"Available":"Locked");
-                else snprintf(line,sizeof(line),"%s CG %03u   %u / %u variants",i==selected?">":" ",i+1,seen,total);
-                panel_text(r,280,160+(int)(i%10)*36,line);
+                if(!p->viewing&&p->back==5&&item>=image_count)snprintf(line,sizeof(line),ui_string(b,"menu.cg.movie_item"),i==selected?">":" ",item-image_count+1,ui_string(b,bootstrap_gallery_movie_unlocked(b,item-image_count)?"common.available":"common.locked"));
+                else if(p->viewing)snprintf(line,sizeof(line),ui_string(b,"menu.cg.variant_item"),i==selected?">":" ",i+1,ui_string(b,seen?"common.available":"common.locked"));
+                else snprintf(line,sizeof(line),ui_string(b,"menu.cg.item"),i==selected?">":" ",i+1,seen,total);
+                panel_text(b,r,280,160+(int)(i%10)*36,line);
             }
         }
-        if(p->status[0])panel_text(r,272,560,p->status);
+        if(p->status[0])panel_text(b,r,272,560,p->status);
         return;
     }
     if(p->kind==9){
-        panel_text(r,272,108,"MUSIC");unsigned first=p->selected/10*10;
-        for(unsigned i=first;i<bootstrap_music_count()&&i<first+10;i++){char line[100];snprintf(line,sizeof(line),"%s %02u  %.55s",i==p->selected?">":" ",i+1,bootstrap_music_name(i));panel_text(r,280,160+(int)(i%10)*36,line);}
+        panel_text(b,r,272,108,ui_string(b,"menu.music.title"));unsigned first=p->selected/10*10;
+        for(unsigned i=first;i<bootstrap_music_count()&&i<first+10;i++){char line[100];snprintf(line,sizeof(line),ui_string(b,"menu.music.item"),i==p->selected?">":" ",i+1,bootstrap_music_name(i));panel_text(b,r,280,160+(int)(i%10)*36,line);}
         return;
     }
     if(p->kind==4){
         if(!navigation_map_draw(p,b)){
             ui_fill(&p->image,0,0,640,24,0x1e1910);ui_fill(&p->image,0,452,640,28,0x1e1910);
-            char label[80];snprintf(label,sizeof(label),"ナビマップ  SCENE %03u",b->scene->nodes[p->selected].id);ui_text(b,&p->image,label,12,3,616,20,0xffdf78,0);
+            char label[80];snprintf(label,sizeof(label),ui_string(b,"menu.nav_map"),b->scene->nodes[p->selected].id);ui_text(b,&p->image,label,12,3,616,20,0xffdf78,0);
             ui_present(r,&p->image,&p->texture);
         }return;
     }
@@ -613,8 +614,12 @@ static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
         }
         if(p->texture){SDL_UpdateTexture(p->texture,NULL,p->image.pixels,(int)p->image.stride);SDL_Rect dst={224,80,832,544};SDL_RenderCopy(r,p->texture,NULL,&dst);}
     }
-    char line[100];snprintf(line,sizeof(line),"HISTORY %u / %u",b->history_count?p->back+1:0,b->history_count);panel_text(r,272,108,line);
-    if(p->status[0])panel_text(r,272,552,p->status);
-    else if(!bootstrap_history_voice(b,p->back))panel_text(r,272,552,"No voice for this entry");
+    char line[100];snprintf(line,sizeof(line),ui_string(b,"menu.history.title"),b->history_count?p->back+1:0,b->history_count);panel_text(b,r,272,108,line);
+    if(p->status[0])panel_text(b,r,272,552,p->status);
+    else if(!bootstrap_history_voice(b,p->back))panel_text(b,r,272,552,ui_string(b,"status.history_no_voice"));
 
+}
+
+static void message_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
+    panel_text_begin();message_panel_draw_body(p,b,r);panel_text_end(r);
 }

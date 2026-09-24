@@ -61,6 +61,12 @@ static inline int ui_text_scroll(KBootstrap *b,KImage *p,const char *text,int x,
 static inline int ui_text(KBootstrap *b,KImage *p,const char *text,int x,int y,int width,int height,unsigned color,int encoded){
     return ui_text_scroll(b,p,text,x,y,width,height,color,encoded,0)<0?-1:0;
 }
+static inline const char *ui_string(const KBootstrap *b,const char *key){
+    return bootstrap_ui_text(b,key);
+}
+static inline int ui_text_key(KBootstrap *b,KImage *p,const char *key,int x,int y,int width,int height,unsigned color){
+    return ui_text(b,p,ui_string(b,key),x,y,width,height,color,0);
+}
 
 static inline uint64_t ui_hash(uint64_t hash,const void *data,size_t size){
     const uint8_t *p=data;for(size_t i=0;i<size;i++)hash=(hash^p[i])*1099511628211ULL;return hash;

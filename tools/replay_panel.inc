@@ -63,6 +63,6 @@ static int replay_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r,uint6
     for(unsigned group=0;group<5;group++)gallery_panel_copy(r,p->cg_textures[2],group==p->back?96:0,148+group*48,48,48,560,48+group*56);
     gallery_panel_copy(r,p->cg_textures[2],0,96,96,52,532,388);
     SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,225);SDL_Rect footer={160,676,960,44};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(r,245,245,245,255);char text[96];snprintf(text,sizeof(text),"Scene %02u/%02u  %s",p->selected+1,count,bootstrap_replay_unlocked(b,p->back,p->selected)?"Available":"Locked");
-    panel_text(r,200,680,p->status[0]?p->status:text);return 0;
+    SDL_SetRenderDrawColor(r,245,245,245,255);char text[96];snprintf(text,sizeof(text),ui_string(b,"menu.replay.footer"),p->selected+1,count,ui_string(b,bootstrap_replay_unlocked(b,p->back,p->selected)?"common.available":"common.locked"));
+    panel_text(b,r,200,680,p->status[0]?p->status:text);return 0;
 }

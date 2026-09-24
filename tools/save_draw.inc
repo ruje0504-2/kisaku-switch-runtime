@@ -64,7 +64,7 @@ static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
         ui_present(r,&m->canvas,&m->texture);return;
     }
 
-    if(save_menu_assets(m,b)){snprintf(m->status,sizeof(m->status),"画面データを読み込めませんでした");return;}
+    if(save_menu_assets(m,b)){snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.save_assets"));return;}
     if(m->character_detail)character_detail_frame(m);
     int state[]={m->save,m->slot,m->selector,m->overwrite,m->loading,m->confirm_load,m->button,m->focus,m->hover,m->last_slot,(int)m->param_detail,(int)m->character_detail,(int)m->detail_index,m->detail_hover,(int)m->detail_step,(int)m->detail_view,(int)m->detail_phase};
     uint64_t key=ui_hash(ui_hash(1469598103934665603ULL,state,sizeof(state)),m->status,strlen(m->status));key=ui_hash(key,m->note,strlen(m->note));
@@ -84,7 +84,7 @@ static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
     save_menu_book(m);
     if(!m->selector&&!m->focus&&m->states[row]){
         KImage *preview=&m->previews[row];
-        if(!preview->pixels&&bootstrap_saved_param_image(b,m->states[row],preview))snprintf(m->status,sizeof(m->status),"パラメータを読み込めませんでした");
+        if(!preview->pixels&&bootstrap_saved_param_image(b,m->states[row],preview))snprintf(m->status,sizeof(m->status),"%s",ui_string(b,"status.save_preview"));
         if(preview->pixels){
             unsigned height=(unsigned)((float)(268.0/preview->width)*preview->height);
             ui_scale(d,preview,8,272,268,height);
@@ -148,7 +148,8 @@ static void save_menu_draw(SaveMenu *m,KBootstrap *b,SDL_Renderer *r){
     if(m->character_detail)character_detail_draw(m,b);
     if(m->loading){
         ui_fill(d,170,200,300,158,0xa08948);ui_fill(d,173,203,294,152,0x241a12);
-        ui_text(b,d,"ロード中…",188,224,260,24,0xffffff,0);
+        ui_text_key(b,d,"status.loading",188,224,260,24,0xffffff);
+        if(m->status[0])ui_text(b,d,m->status,188,258,260,84,0xffdf78,0);
     }
     ui_present(r,d,&m->texture);
 }

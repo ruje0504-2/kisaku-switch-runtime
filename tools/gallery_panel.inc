@@ -21,7 +21,7 @@ static int gallery_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(p->cg_cached!=1||p->cg_group!=p->back||p->cg_page!=current.page||p->cg_count!=current.count){
         SDL_Texture *next[3]={gallery_panel_texture(b,r,current.background,640,480,0),
             gallery_panel_texture(b,r,current.atlas,480,90,0),gallery_panel_texture(b,r,"sp_cg_p.rmt",432,616,1)};
-        if(!next[0]||!next[1]||!next[2]){for(unsigned i=0;i<3;i++)SDL_DestroyTexture(next[i]);snprintf(p->status,sizeof(p->status),"Thumbnail resources could not be loaded");return -1;}
+        if(!next[0]||!next[1]||!next[2]){for(unsigned i=0;i<3;i++)SDL_DestroyTexture(next[i]);snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.gallery_resources"));return -1;}
         gallery_panel_clear(p);memcpy(p->cg_textures,next,sizeof(next));p->cg_cached=1;p->cg_group=p->back;p->cg_page=current.page;p->cg_count=current.count;
     }
     gallery_panel_copy(r,p->cg_textures[0],0,0,640,480,0,0);
@@ -56,7 +56,7 @@ static int gallery_panel_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     if(percent>=10)gallery_panel_copy(r,p->cg_textures[2],144+(int)(percent/10%10)*12,148,12,12,88,62);
     gallery_panel_copy(r,p->cg_textures[2],144+(int)(percent%10)*12,148,12,12,100,62);
     SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,225);SDL_Rect footer={160,674,960,46};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(r,245,245,245,255);char line[100];snprintf(line,sizeof(line),"Page %u/%u  %s %03u  %s",current.page+1,current.pages,p->selected<images?"CG":"Movie",p->selected<images?p->selected+1:p->selected-images+1,current.tile>=0?"Available":"Locked");panel_text(r,200,678,line);
+    SDL_SetRenderDrawColor(r,245,245,245,255);char line[100];snprintf(line,sizeof(line),ui_string(b,"menu.gallery.footer"),current.page+1,current.pages,ui_string(b,p->selected<images?"common.cg":"common.movie"),p->selected<images?p->selected+1:p->selected-images+1,ui_string(b,current.tile>=0?"common.available":"common.locked"));panel_text(b,r,200,678,line);
     return 0;
 }
 
@@ -111,7 +111,7 @@ static int gallery_variants_draw(MessagePanel *p,KBootstrap *b,SDL_Renderer *r){
     gallery_panel_copy(r,p->cg_textures[2],48,page+1<(total+14)/15?436:520,48,28,256,424);
     gallery_panel_copy(r,p->cg_textures[2],96,520,96,28,328,424);
     SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,12,18,28,225);SDL_Rect footer={160,684,960,36};SDL_RenderFillRect(r,&footer);SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(r,240,240,240,255);char line[100];snprintf(line,sizeof(line),"%s %u/%u",special&&p->variant>=4?"MOV":"CG",p->variant+1,total);panel_text(r,192,696,p->status[0]?p->status:line);
+    SDL_SetRenderDrawColor(r,240,240,240,255);char line[100];snprintf(line,sizeof(line),ui_string(b,"menu.gallery.variant_footer"),ui_string(b,special&&p->variant>=4?"common.movie":"common.cg"),p->variant+1,total);panel_text(b,r,192,696,p->status[0]?p->status:line);
     return 0;
 }
 

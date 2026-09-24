@@ -411,13 +411,13 @@ static void test_native_backlog(const char *root,const char *saves,SDL_Renderer 
     assert(!SDL_InitSubSystem(SDL_INIT_AUDIO));SDL_AudioSpec spec={0};spec.freq=44100;spec.format=AUDIO_S16LSB;spec.channels=2;spec.samples=512;
     SDL_AudioDeviceID device=SDL_OpenAudioDevice(NULL,0,&spec,NULL,0);assert(device);
     KHistoryAudio saved={0};unsigned serial=0;
-    assert(!history_voice_audio(&p,&saved,device,44100,2,&serial));
+    assert(!history_voice_audio(&p,b,&saved,device,44100,2,&serial));
     assert(p.voice_loading&&p.voice_next==2&&p.voice_sequence.count==2&&!b->voice_active&&!b->voice_loading);
     uint8_t *pcm=NULL;size_t bytes=0;ready=0;
     for(unsigned i=0;i<1000&&!ready;i++){ready=kvoice_worker_poll(p.voice_worker,&pcm,&bytes);if(!ready)SDL_Delay(5);}
     assert(ready==1&&pcm&&bytes);free(pcm);
     backlog_pointer(&p,b,0,0,2);assert(!p.voice_loading&&!p.voice_sequence.count&&!p.voice_runtime&&p.kind==5);
-    backlog_close(&p,b);assert(!history_voice_audio(&p,&saved,device,44100,2,&serial)&&!saved.suspended);
+    backlog_close(&p,b);assert(!history_voice_audio(&p,b,&saved,device,44100,2,&serial)&&!saved.suspended);
     KMessageRecord *grown=realloc(b->messages,70*sizeof(*grown));assert(grown);b->messages=grown;
     for(unsigned i=1;i<70;i++){b->messages[i]=(KMessageRecord){0};b->messages[i].data=malloc(at);assert(b->messages[i].data);memcpy(b->messages[i].data,code,at);b->messages[i].size=b->messages[i].capacity=at;b->messages[i].flag=1;}
     b->message_count=70;b->history_count=64;p.kind=5;p.viewing=0;p.status[0]=0;
@@ -620,11 +620,11 @@ static void test_config_audio(const char *root,const char *saves){
     KHistoryAudio saved={0};uint8_t queued[1024];memset(queued,0x35,sizeof(queued));
     assert(!khistory_audio_queue(&saved,device,queued,sizeof(queued)));
     p.setting_values[7]=1;config_drag(&p,b,5*256+2,512);
-    assert(!settings_panel_audio(&p,&saved,device,44100,2)&&saved.suspended&&p.config_audio.output_owned);
+    assert(!settings_panel_audio(&p,b,&saved,device,44100,2)&&saved.suspended&&p.config_audio.output_owned);
     assert(saved.saved_size==sizeof(queued)&&!memcmp(saved.saved,queued,sizeof(queued)));
-    unsigned serial=0;assert(!history_voice_audio(&p,&saved,device,44100,2,&serial)&&saved.suspended);
+    unsigned serial=0;assert(!history_voice_audio(&p,b,&saved,device,44100,2,&serial)&&saved.suspended);
     config_close(&p,b,0);config_motion_tick(&p,p.config_clock+2000);assert(!p.kind);
-    assert(!settings_panel_audio(&p,&saved,device,44100,2)&&!saved.suspended&&!p.config_audio.output_owned);
+    assert(!settings_panel_audio(&p,b,&saved,device,44100,2)&&!saved.suspended&&!p.config_audio.output_owned);
     assert(SDL_GetQueuedAudioSize(device)==sizeof(queued)&&!memcmp(saved.tail,queued,sizeof(queued)));
     SDL_CloseAudioDevice(device);kconfig_audio_clear(&p.config_audio);
     for(unsigned i=0;i<5;i++)rmt_free(&p.config_art[i]);bootstrap_destroy(b);

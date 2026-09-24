@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 static int utf8_one(const unsigned char *p,size_t size,uint32_t *out,size_t *used){
     if(!p||!size||!out||!used)return -1;
@@ -103,4 +104,91 @@ int ktranslation_apply(const KTranslation *translation,KTextChar *chars,size_t *
         else{result[out++]=chars[at++];}
     }
     memcpy(chars,result,out*sizeof(*result));free(result);*count=out;return 0;
+}
+
+static const struct {const char *key,*value;} ui_defaults[]={
+#include "ui_text_defaults.inc"
+};
+const char *kui_translation_default(const char *key){
+    if(!key)return "";
+    size_t lo=0,hi=sizeof(ui_defaults)/sizeof(*ui_defaults);
+    while(lo<hi){
+        size_t mid=lo+(hi-lo)/2;int order=strcmp(key,ui_defaults[mid].key);
+        if(!order)return ui_defaults[mid].value;
+        if(order<0)hi=mid;else lo=mid+1;
+    }
+    return key;
+}
+/* A loose translation cannot change printf's argument types or precision.
+ * The current UI uses only fixed-width %s/%d/%u, with %% for literal percent. */
+static int ui_format_matches(const char *source,const char *value){
+    if(!strchr(source,'%'))return 1; /* Plain labels are never printf formats. */
+    while((source=strchr(source,'%'))!=NULL){
+        if(source[1]=='%'){source+=2;continue;}
+        while((value=strchr(value,'%'))!=NULL&&value[1]=='%')value+=2;
+        if(!value)return 0;
+        const char *end=source+1;
+        while(*end&&strchr("-+ #0.123456789",*end))end++;
+        if(!*end||!strchr("sdu",*end))return 0;
+        size_t n=(size_t)(end-source)+1;
+        if(strncmp(source,value,n))return 0;
+        source+=n;value+=n;
+    }
+    while((value=strchr(value,'%'))!=NULL){if(value[1]!='%')return 0;value+=2;}
+    return 1;
+}
+static char *ui_unescape(const char *text){
+    size_t length=strlen(text),out=0;char *copy=malloc(length+1);if(!copy)return NULL;
+    for(size_t i=0;i<length;i++){
+        if(text[i]=='\\'){
+            if(i+1==length){free(copy);return NULL;}
+            char next=text[++i];
+            if(next=='n')copy[out++]='\n';
+            else if(next=='r')copy[out++]='\r';
+            else if(next=='t')copy[out++]='\t';
+            else if(next=='\\')copy[out++]='\\';
+            else{free(copy);return NULL;}
+        }else copy[out++]=text[i];
+    }
+    copy[out]=0;
+    for(size_t at=0;at<out;){uint32_t cp;size_t used;
+        if(utf8_one((const unsigned char *)copy+at,out-at,&cp,&used)){free(copy);return NULL;}
+        at+=used;
+    }
+    return copy;
+}
+int kui_translation_load(KUiTranslation *translation,const char *path){
+    if(!translation||!path)return -1;
+    kui_translation_free(translation);FILE *f=fopen(path,"rb");if(!f)return errno==ENOENT?0:-1;
+    char line[32768];int result=0,first=1;
+    while(fgets(line,sizeof(line),f)){
+        size_t length=strlen(line);
+        if(length==sizeof(line)-1&&line[length-1]!='\n'){result=-1;break;}
+        if(first&&length>=3&&!memcmp(line,"\xef\xbb\xbf",3)){memmove(line,line+3,length-2);length-=3;}
+        first=0;
+        while(length&&(line[length-1]=='\n'||line[length-1]=='\r'))line[--length]=0;
+        if(!length||line[0]=='#')continue;
+        char *tab=strchr(line,'\t');if(!tab||tab==line||!tab[1]){result=-1;break;}*tab=0;
+        size_t key_length=strlen(line);
+        if(key_length>127||strspn(line,"abcdefghijklmnopqrstuvwxyz0123456789_.")!=key_length||
+           kui_translation_get(translation,line)){result=-1;break;}
+        char *key=malloc(key_length+1),*value=ui_unescape(tab+1);
+        if(key)memcpy(key,line,key_length+1);
+        if(!key||!value||!ui_format_matches(kui_translation_default(line),value)){free(key);free(value);result=-1;break;}
+        KUiTranslationEntry *grown=realloc(translation->entries,(translation->count+1)*sizeof(*grown));
+        if(!grown){free(key);free(value);result=-1;break;}
+        translation->entries=grown;translation->entries[translation->count++]=(KUiTranslationEntry){key,value};
+    }
+    if(ferror(f))result=-1;
+    fclose(f);if(result){kui_translation_free(translation);return -1;}return 0;
+}
+void kui_translation_free(KUiTranslation *translation){
+    if(!translation)return;
+    for(size_t i=0;i<translation->count;i++){free(translation->entries[i].key);free(translation->entries[i].value);}
+    free(translation->entries);translation->entries=NULL;translation->count=0;
+}
+const char *kui_translation_get(const KUiTranslation *translation,const char *key){
+    if(!translation||!key)return NULL;
+    for(size_t i=translation->count;i;i--)if(!strcmp(translation->entries[i-1].key,key))return translation->entries[i-1].value;
+    return NULL;
 }
