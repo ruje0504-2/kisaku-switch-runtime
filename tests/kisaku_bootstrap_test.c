@@ -2050,11 +2050,13 @@ int main(int argc,char **argv){
         assert(!memcmp(b->diary_surface.pixels+(96+y)*b->diary_surface.stride+120*4,diary_atlas.pixels+(256+y)*diary_atlas.stride,152*4));
         assert(!memcmp(b->diary_surface.pixels+(96+y)*b->diary_surface.stride+272*4,diary_atlas.pixels+(756+y)*diary_atlas.stride+152*4,336*4));
     }
+    /* Unknown native record ids are retained for save/state compatibility
+       and render through the blank atlas row instead of stopping gameplay. */
     KValue bad_event[]={{28,NULL},{4,NULL},{21,NULL},{528,NULL}};
-    assert(call_anime520(b,bad_event,4)<0&&b->vm->sp==4&&b->vm->words[304]==26&&b->diary_events[4]==26);
+    assert(!call_anime520(b,bad_event,4)&&b->vm->sp==0&&b->vm->words[304]==28&&b->diary_events[4]==28);
     bad_event[1].number=96;assert(call_anime520(b,bad_event,4)<0&&b->vm->sp==4);
     rmt_free(&diary_atlas);b->diary_scroll=16;assert(!call(b,528,24)&&b->diary_scroll==16);
-    assert(b->vm->words[204]==1&&b->vm->words[304]==26); /* Reset is private only. */
+    assert(b->vm->words[204]==1&&b->vm->words[304]==28); /* Reset is private only. */
     puts("Kisaku diary reset, scroll bounds and backing bitmap: PASS");
     for(int rows=1;rows<=4;rows++){
         b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;

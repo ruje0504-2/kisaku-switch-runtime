@@ -1,9 +1,10 @@
-/* CDiaryWnd 4be480 / 4bdd40. Build before publishing so invalid indices or
-   allocation failures cannot leave a partially updated diary. */
+/* CDiaryWnd 4be480 / 4bdd40. Build before publishing so allocation failures
+   cannot leave a partially updated diary.  The values stored in the diary
+   arrays are script record ids, while the atlas only contains a finite set
+   of visible rows.  The original keeps records that have no visible atlas
+   row; those records must render as blank instead of stopping the VM. */
 static int diary_draw(KBootstrap *b,const int32_t people[96],const int32_t events[96],unsigned days_count){
     if(days_count<1||days_count>24)return error(b,"CDiaryWnd day range (arguments preserved)");
-    for(unsigned i=0;i<96;i++)if(people[i]<0||people[i]>7||events[i]<0||events[i]>27)
-        return error(b,"CDiaryWnd atlas index invalid (arguments preserved)");
     KImage atlas={0},surface={0};uint8_t *data=NULL;size_t size=0;
     if(read_named(&b->images,"diary.akb",&data,&size)||rmt_decode(data,size,&atlas)){
         free(data);return error(b,"CDiaryWnd atlas decode failed (arguments preserved)");
@@ -22,8 +23,14 @@ static int diary_draw(KBootstrap *b,const int32_t people[96],const int32_t event
         for(unsigned y=0;y<80;y++)memcpy(surface.pixels+(16+day*80+y)*surface.stride,
             atlas.pixels+(days[day][1]+y)*atlas.stride+days[day][0]*4,120*4);
         for(unsigned row=0;row<4;row++)for(unsigned y=0;y<20;y++){
-            unsigned index=day*4+row,py=people[index]?236+(unsigned)people[index]*20:376;
-            unsigned ey=events[index]?236+(unsigned)events[index]*20:776;
+            unsigned index=day*4+row;
+            /* 7/27 are the last atlas coordinates accepted by the native
+               layout; zero and all future/unknown record ids use its blank
+               row.  Keep the original ids in the VM and save data. */
+            unsigned person=(people[index]>0&&people[index]<=7)?(unsigned)people[index]:0;
+            unsigned event=(events[index]>0&&events[index]<=27)?(unsigned)events[index]:0;
+            unsigned py=person?236+person*20:376;
+            unsigned ey=event?236+event*20:776;
             uint8_t *dst=surface.pixels+(16+index*20+y)*surface.stride;
             memcpy(dst+120*4,atlas.pixels+(py+y)*atlas.stride,152*4);
             memcpy(dst+272*4,atlas.pixels+(ey+y)*atlas.stride+152*4,336*4);
