@@ -10,24 +10,52 @@
 #   - 游戏数据位于 交付/SD卡根目录/switch/kisaku/game（有版权，不入库）
 #   - icon.png（256x256 会转成 JPEG 写进 Control NCA）
 #
-# 用法: ./make-nsp.sh [输出路径]
-#   ROMFS=<目录>      换成小数据冒烟打包（默认用完整游戏数据）
+# 用法:
+#   ./make-nsp.sh [输出路径]                     打本体（base）NSP
+#   UPDATE=1 BASE_NSP=<本体NSP> ./make-nsp.sh [输出路径]
+#                                                打只更新 ExeFS 的 update NSP
+# 环境变量:
+#   ROMFS=<目录>      换成小数据冒烟打包（默认用完整游戏数据，仅本体）
 #   TITLE_ID=...      覆盖标题 ID（默认见下，改 ID 会让已装存档找不到）
-#   SAVE_SIZE=0x...   覆盖 NACP 存档配额
+#   SAVE_SIZE=0x...   覆盖 NACP 存档配额（仅本体）
+#   UPDATE=1          打 update：需要 BASE_NSP 派生补丁历史/NACP/BKTR IVFC，
+#                     以及 HACPACK（默认 local/hacpack）。详见
+#                     reports/update-nsp-bktr.md
 set -e
 cd "$(dirname "$0")"
 
 # 用户指定：0100 = 应用前缀（与参考工程同形状）+ 用户给定的 8B538DE5 + 0000 尾缀。
 # 注意中段是用户指定的值；鬼作在 CP932 下是 8B53(鬼)+8DEC(作)，即 8B538DEC。
 # 这个 ID 决定存档所在位置，装完后改 ID 会读不到旧存档。
-TITLE_ID="${TITLE_ID:-01008B538DE50000}"
+REQUESTED_TITLE_ID="${TITLE_ID:-}"
 TITLE_NAME="${TITLE_NAME:-鬼作}"
 PUBLISHER="${PUBLISHER:-elf}"
-TITLE_VERSION="${TITLE_VERSION:-1.0.0}"
+UPDATE_MODE="${UPDATE:-0}"
+if [ "$UPDATE_MODE" = 1 ]; then
+  # Application patches use the 0x0800 title-type offset.  0x1000 is a
+  # separate title slot and is therefore treated as an independent title.
+  TITLE_ID="${REQUESTED_TITLE_ID:-01008B538DE50800}"
+  TITLE_VERSION="${TITLE_VERSION:-1.0.1}"
+else
+  TITLE_ID="${REQUESTED_TITLE_ID:-01008B538DE50000}"
+  TITLE_VERSION="${TITLE_VERSION:-1.0.0}"
+fi
 ICON="${ICON:-$PWD/icon.png}"
 SWELF="${SWELF:-$PWD/build-switch/kisaku-runtime.elf}"
+# ExeFS 的 main.npdm（也就是 Program NCA 里的 ACID/NPDM）**永远属于本体标题**：
+# update 包的 Program NCA 头 title_id 也必须是本体，只有 meta NCA 用 update ID。
+# 写成 update ID 会被 hacPack 以 "TitleID mismatch" 拒绝。
+if [ "$UPDATE_MODE" = 1 ]; then
+  EXEFS_TITLE_ID="${BASE_TITLE_ID:-01008B538DE50000}"
+else
+  EXEFS_TITLE_ID="$TITLE_ID"
+fi
 DATA="${ROMFS:-$PWD/交付/SD卡根目录/switch/kisaku/game}"
-OUT="${1:-$PWD/交付/鬼作-$TITLE_ID.nsp}"
+if [ "$UPDATE_MODE" = 1 ]; then
+  OUT="${1:-$PWD/交付/鬼作-update-$TITLE_ID.nsp}"
+else
+  OUT="${1:-$PWD/交付/鬼作-$TITLE_ID.nsp}"
+fi
 # 每槽实际占用：flag 28,072 + control 12,160 + preview 338,704 + scene 1,228,808
 # = 1,607,744 B ≈ 1.53 MiB（4 个选择器 × 100 槽 = 400 槽 ≈ 613 MiB）。
 # nacptool 的默认 62 MiB 存不到十几个槽就会写失败，所以显式抬到 640 MiB。
@@ -38,7 +66,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 [ -f "$ICON" ] || { echo "缺少图标: $ICON" >&2; exit 1; }
 [ -f "$SWELF" ] || { echo "缺少 Switch ELF: $SWELF（请先 ./build-switch.sh）" >&2; exit 1; }
-[ -d "$DATA" ] || { echo "缺少游戏数据: $DATA" >&2; exit 1; }
+[ "$UPDATE_MODE" = 1 ] || [ -d "$DATA" ] || { echo "缺少游戏数据: $DATA" >&2; exit 1; }
 [ -f "$HOME/.switch/prod.keys" ] || { echo "缺少 ~/.switch/prod.keys" >&2; exit 1; }
 [ -x "$HOME/bin/hacbrewpack" ] || { echo "缺少 ~/bin/hacbrewpack" >&2; exit 1; }
 
@@ -49,12 +77,12 @@ echo "[1/6] strip + elf2nso"
 aarch64-none-elf-strip "$SWELF" -o "$TMP/exefs-main.elf"
 elf2nso "$TMP/exefs-main.elf" "$TMP/exefs/main"
 
-echo "[2/6] npdm（titleid $TITLE_ID）"
+echo "[2/6] npdm（titleid $EXEFS_TITLE_ID）"
 cat > "$TMP/npdm.json" <<EOF
 {
   "name": "kisaku",
-  "title_id": "0x$TITLE_ID",
-  "title_id_range_min": "0x$TITLE_ID",
+  "title_id": "0x$EXEFS_TITLE_ID",
+  "title_id_range_min": "0x$EXEFS_TITLE_ID",
   "title_id_range_max": "0x01ffffffffffffff",
   "main_thread_stack_size": "0x100000",
   "main_thread_priority": 44,
@@ -209,8 +237,8 @@ cat > "$TMP/npdm.json" <<EOF
       "value": {}
     }
   ],
-  "program_id": "0x$TITLE_ID",
-  "program_id_range_min": "0x$TITLE_ID",
+  "program_id": "0x$EXEFS_TITLE_ID",
+  "program_id_range_min": "0x$EXEFS_TITLE_ID",
   "program_id_range_max": "0x01ffffffffffffff"
 }
 EOF
@@ -286,6 +314,38 @@ assert (w, h) == (256, 256), f'icon must be 256x256, got {w}x{h}'
 assert not progressive, 'progressive JPEG is not accepted by HOS'
 print(f"icon: 256x256 baseline JPEG, {len(d)} B")
 PYEOF
+
+if [ "$UPDATE_MODE" = 1 ]; then
+  # ---------------------------------------------------------------------------
+  # 真 update（只更新 ExeFS）。三条硬性要求，缺一个主机都不认：
+  #   ① CNMT 必须是 Patch(0x81) 且带 PatchMetaExtendedData（补丁历史），
+  #      否则 NCM 拒绝这个 meta，表现是「名字/图标读不出来」；
+  #   ② 内容 NCA（Program/Control）的 Title ID 必须是本体，只有 meta NCA 用
+  #      update ID；
+  #   ③ romfs 段必须是 Patch RomFS（fs_header.crypt_type = CRYPT_BKTR），
+  #      即 64 KB 的叠加表、全部区域 is_patch=0 指回本体；hacbrewpack 只会写
+  #      普通 RomFS（它连 --noromfs 之外的路子都没有），所以这一步必须由打过
+  #      BKTR 补丁的 hacPack 生成。
+  # 字段来源与逆向过程见 reports/update-nsp-bktr.md。
+  echo "[4/6] 更新包：不搬游戏数据，romfs 用 BKTR 叠加表代替"
+  [ -n "${BASE_NSP:-}" ] || { echo "更新包需要 BASE_NSP=<本体 NSP 路径>" >&2; exit 1; }
+  [ -f "$BASE_NSP" ] || { echo "找不到本体 NSP: $BASE_NSP" >&2; exit 1; }
+  HACPACK="${HACPACK:-$PWD/local/hacpack}"
+  [ -x "$HACPACK" ] || { echo "缺少 hacPack: $HACPACK（构建见 reports/update-nsp-bktr.md）" >&2; exit 1; }
+
+  echo "[5/6] 生成 Patch CNMT + BKTR Patch RomFS + 派生 NACP，并组 NSP"
+  mkdir -p "$(dirname "$OUT")"
+  python3 tools/make_update_nsp.py \
+      --base-nsp "$BASE_NSP" --exefsdir "$TMP/exefs" \
+      --base-titleid "${BASE_TITLE_ID:-01008B538DE50000}" \
+      --update-titleid "$TITLE_ID" --version "$TITLE_VERSION" \
+      --hacpack "$HACPACK" --hactool /opt/devkitpro/tools/bin/hactool \
+      --keyset "$HOME/.switch/prod.keys" \
+      --out "$OUT" --workdir "$TMP/update-build"
+  echo "[6/6] 完成"
+  ls -la "$OUT"
+  exit 0
+fi
 
 echo "[4/6] 拷贝游戏数据到 RomFS"
 cp -R "$DATA"/. "$TMP/romfs/"

@@ -8,3 +8,12 @@ build-switch/
 __pycache__/
 *.pyc
 汉化补丁/
+# 原版素材与交付包，一律不入库（含游戏本体/更新的 NSP）
+*.nsp
+*.xci
+*.nca
+# hacPack 的工作目录
+hacpack_temp/
+hacpack_backup/
+hacpack_nsp/
+hacpack_nca/
