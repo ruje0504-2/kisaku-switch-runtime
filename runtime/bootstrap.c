@@ -16,13 +16,49 @@
 #include <sys/stat.h>
 static void native_cg_free(KBootstrap *b);
 static void native_cg_frame(KBootstrap *b);
+static int mini_begin(KBootstrap *b,unsigned kind,const char *asset);
+static void mini_close(KBootstrap *b);
+static int read_named(Ai6Archive *a,const char *name,uint8_t **d,size_t *n);
 static int record_newline(void *owner,unsigned operand);
 static int record_bytes(void *owner,const uint8_t *data,size_t count);
 static int error(KBootstrap *b,const char *s){
     const char *name=b->vm->module>=0?b->vm->modules[b->vm->module].name:"<none>";
+    if(getenv("KISAKU_TRACE_ERRORS")){
+        fprintf(stderr,"KISAKU error %s @0x%zx syscall=%d sp=%u:",name,b->vm->instruction_ip,b->vm->syscall,b->vm->sp);
+        unsigned start=b->vm->sp>16?b->vm->sp-16:0;
+        for(unsigned i=start;i<b->vm->sp;i++){
+            if(b->vm->stack[i].string)fprintf(stderr," [%s]",b->vm->stack[i].string);
+            else fprintf(stderr," %d",b->vm->stack[i].number);
+        }
+        fputc('\n',stderr);
+    }
     if(b->vm->status==KVM_TEXT)snprintf(b->error,sizeof(b->error),"%s @0x%zx text: %s",name,b->vm->instruction_ip,s);
     else snprintf(b->error,sizeof(b->error),"%s @0x%zx syscall=%d: %s",name,b->vm->instruction_ip,b->vm->syscall,s);
     return -1;
+}
+static int mini_asset(KBootstrap *b,const char *name,KImage *out){
+    uint8_t *data=NULL;size_t size=0;int rc=read_named(&b->images,name,&data,&size)||rmt_decode(data,size,out);free(data);return rc;
+}
+static void mini_blit(KImage *dst,const KImage *src){
+    int ox=((int)dst->width-(int)src->width)/2-src->x,oy=((int)dst->height-(int)src->height)/2-src->y;
+    if(src->height>dst->height)oy=-src->y;
+    for(unsigned y=0;y<src->height;y++)for(unsigned x=0;x<src->width;x++){
+        int dx=(int)x+src->x+ox,dy=(int)y+src->y+oy;if(dx<0||dy<0||(unsigned)dx>=dst->width||(unsigned)dy>=dst->height)continue;
+        const uint8_t *s=src->pixels+y*src->stride+x*4;uint8_t *d=dst->pixels+dy*dst->stride+(unsigned)dx*4;unsigned a=s[3];
+        for(unsigned c=0;c<3;c++)d[c]=(uint8_t)((s[c]*a+d[c]*(255-a))/255);
+        d[3]=(uint8_t)(a+d[3]*(255-a)/255);
+    }
+}
+static int mini_begin(KBootstrap *b,unsigned kind,const char *asset){
+    KImage im={0};if(mini_asset(b,asset,&im))return error(b,"native mini-game resource missing");
+    if(!b->layers[0].pixels||!b->auxiliary.pixels){rmt_free(&im);return error(b,"native mini-game surface unavailable");}
+    memcpy(b->auxiliary.pixels,b->layers[0].pixels,640*480*4);
+    memset(b->layers[0].pixels,0,640*480*4);mini_blit(&b->layers[0],&im);rmt_free(&b->mini_surface);b->mini_surface=im;
+    b->mini_kind=kind;b->mini_active=1;return 0;
+}
+static void mini_close(KBootstrap *b){
+    if(!b||!b->mini_active)return;
+    memcpy(b->layers[0].pixels,b->auxiliary.pixels,640*480*4);rmt_free(&b->mini_surface);b->mini_active=b->mini_kind=0;
 }
 /* VM values borrow strings; intern distinct contents instead of retaining
    every decoded FLAG file or repeated settings read until shutdown. */
@@ -304,7 +340,7 @@ static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     return 0;
 }
 #include "backlog_store.h"
-void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->present_fade_to);rmt_free(&b->present_fade_from);rmt_free(&b->present_fade_text);rmt_free(&b->present_fade_base);rmt_free(&b->present_fade_reference);rmt_free(&b->present_fade_overlay);rmt_free(&b->present_mes_reference);rmt_free(&b->present_mes_source);rmt_free(&b->present_mes_shadow);rmt_free(&b->present_mes_old);rmt_free(&b->present_mes_new);rmt_free(&b->present_page_source);rmt_free(&b->present_page_text);rmt_free(&b->present_page_shadow);rmt_free(&b->present_page_base);rmt_free(&b->present_page_reference);rmt_free(&b->present_source_text);rmt_free(&b->present_message_text);rmt_free(&b->present_choice_text);rmt_free(&b->present_shadow);rmt_free(&b->present_clean);rmt_free(&b->present_reference);rmt_free(&b->present_overlay);native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);ktranslation_free(&b->translation);kui_translation_free(&b->ui_translation);kvm_destroy(b->vm);free(b);}
+void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->mini_surface);rmt_free(&b->present_fade_to);rmt_free(&b->present_fade_from);rmt_free(&b->present_fade_text);rmt_free(&b->present_fade_base);rmt_free(&b->present_fade_reference);rmt_free(&b->present_fade_overlay);rmt_free(&b->present_mes_reference);rmt_free(&b->present_mes_source);rmt_free(&b->present_mes_shadow);rmt_free(&b->present_mes_old);rmt_free(&b->present_mes_new);rmt_free(&b->present_page_source);rmt_free(&b->present_page_text);rmt_free(&b->present_page_shadow);rmt_free(&b->present_page_base);rmt_free(&b->present_page_reference);rmt_free(&b->present_source_text);rmt_free(&b->present_message_text);rmt_free(&b->present_choice_text);rmt_free(&b->present_shadow);rmt_free(&b->present_clean);rmt_free(&b->present_reference);rmt_free(&b->present_overlay);native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);ktranslation_free(&b->translation);kui_translation_free(&b->ui_translation);kvm_destroy(b->vm);free(b);}
 /* Companions use original layout coordinates at 3/2 scale; layout and VM
    surfaces stay at 640x480. Allocation failure simply leaves raw text intact. */
 static int present_surface(KImage *im,unsigned w,unsigned h){
@@ -1150,6 +1186,22 @@ static void choice_draw_into(KBootstrap *b,KImage *target,int text){
     if(text)choice_text_into(b,target);
 }
 static void choice_draw(KBootstrap *b){choice_draw_into(b,&b->layers[0],1);}
+static void choice_diff_report(const KVM *base,const KVM *eval,unsigned index){
+    const char *trace=getenv("KISAKU_TRACE_CHOICE_DIFF");
+    if(!trace||!*trace)return;
+    unsigned changes=0;
+    fprintf(stderr,"choice[%u] side effects:",index);
+    for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<base->global_count[bank];i++){
+        if(bank==0&&i==16)continue;
+        KValue a=base->globals[bank][i],b=eval->globals[bank][i];
+        int different=a.string!=b.string||(a.string?strcmp(a.string,b.string):a.number!=b.number);
+        if(different&&changes<24){fprintf(stderr," g%u[%u]=%s%d->%s%d",bank,i,a.string?"str:":"",a.string?0:a.number,b.string?"str:":"",b.string?0:b.number);changes++;}
+    }
+    for(unsigned i=0;i<base->byte_count;i++)if(base->bytes[i]!=eval->bytes[i]&&changes<24){fprintf(stderr," b[%u]=%u->%u",i,base->bytes[i],eval->bytes[i]);changes++;}
+    for(unsigned i=0;i<base->word_count;i++)if(base->words[i]!=eval->words[i]&&changes<24){fprintf(stderr," w[%u]=%u->%u",i,base->words[i],eval->words[i]);changes++;}
+    if(!changes)fputs(" none",stderr);else if(changes==24)fputs(" ...",stderr);
+    fputc('\n',stderr);
+}
 static int choice_begin(KBootstrap *b){
     KVM *v=b->vm;
     if(v->current_list<0)return error(b,"choice list missing");
@@ -1179,6 +1231,7 @@ static int choice_begin(KBootstrap *b){
         if(b->choice_values[i]<0||2000u+(unsigned)b->choice_values[i]>=v->byte_count){free(eval);return error(b,"choice value out of range");}
         /* Actual bodies assign only return slot 16 and emit one text literal. */
         eval->globals[0][16]=v->globals[0][16];
+        choice_diff_report(v,eval,i);
         if(memcmp(eval->globals,v->globals,sizeof(v->globals))||memcmp(eval->bytes,v->bytes,sizeof(v->bytes))||memcmp(eval->words,v->words,sizeof(v->words))){free(eval);return error(b,"choice body side effects unsupported");}
     }
     free(eval);
@@ -1381,6 +1434,18 @@ int bootstrap_dispatch(KBootstrap *b){
     /* Peek first: unsupported handlers preserve their arguments for diagnostics. */
     if(!v->sp||v->stack[v->sp-1].string)return error(b,"missing integer subcall");
     sub=v->stack[v->sp-1].number;
+    /* Native standalone objects.  Their constructors consume the argument
+       vector synchronously, then block the script until the object closes.
+       The portable frontend presents the original AKB artwork as the modal
+       surface; bootstrap_confirm() performs the matching close and resumes
+       the already-returned VM call. */
+    if(main==31&&(sub==210||sub==610||sub==611||sub==710||sub==711)){
+        unsigned argc=(sub==210&&strstr(v->modules[v->module].name,"staffroll_s"))?13:15;
+        const char *asset=sub==210?"endbg.akb":sub==610?"tennisbg.akb":sub==611?"bingo_bg.akb":sub==710?"kuji_bg.akb":"hummbg.akb";
+        if(v->sp<argc+1)return error(b,"native mini-game argument vector truncated (arguments preserved)");
+        if(mini_begin(b,(unsigned)sub,asset))return -1;
+        v->sp-=argc+1;b->handled++;return kvm_resume(v);
+    }
     /* Native appendix selectors: music.mes 330+10, video.mes 60+10. */
     if(main==31&&(sub==340||sub==70)){
         v->sp--;b->extra_active=1;b->extra_kind=b->extra_request=sub==340?9:23;
@@ -3050,12 +3115,12 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
     if(restore_message(b))return -1;
     history_restore_apply(b);
     if(b->scene_replay_finished)return 1;
-    if(b->native_cg||bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
+    if(b->mini_active||b->native_cg||bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
     while(budget--){b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;int old_module=b->vm->module;unsigned old_scripts=b->vm->script_depth;KStatus s=kvm_run(b->vm,1);
         /* Native 408060 notifies navigation on a script return, but library
            function calls only change the VM instruction source. */
         if(b->vm->script_depth<old_scripts&&scene_transition(b,b->vm->modules[old_module].name,b->vm->modules[b->vm->module].name))return -1;
-        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->native_cg||bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
+        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->mini_active||b->native_cg||bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
         else if(s==KVM_TEXT){if(draw_text(b))return -1;}
         else if(s==KVM_BUDGET)kvm_resume(b->vm);
         else if(s==KVM_ERROR)return error(b,b->vm->error);
@@ -3294,6 +3359,7 @@ void bootstrap_frame(KBootstrap *b){
 
 void bootstrap_confirm(KBootstrap *b){
     if(b&&b->native_wait_clock)return;
+    if(b&&b->mini_active){mini_close(b);return;}
     if(bootstrap_bowling_active(b)){bowling_confirm(b);return;}
     if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
@@ -3882,4 +3948,3 @@ const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay){
     }
     *overlay=&b->present_overlay;return &b->present_clean;
 }
-

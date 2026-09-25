@@ -186,6 +186,9 @@ typedef struct {
     KTitle title;
     unsigned message_timed,message_timed_delay;uint64_t message_timed_clock;
     unsigned extra_active,extra_request,extra_kind,input_events;uint64_t input_event_until;
+    /* 31/210, 610, 611, 710 and 711 are native modal objects.  Keep their
+       surface transactional so closing one restores the story underneath. */
+    KImage mini_surface; unsigned mini_active,mini_kind;
     /* 31/527 requests application save/load menus; action 2 queries bank1[60]. */
     uint32_t exec_status;
     struct KNativeCG *native_cg;
