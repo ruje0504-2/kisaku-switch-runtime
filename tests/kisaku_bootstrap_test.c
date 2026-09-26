@@ -2385,7 +2385,16 @@ int main(int argc,char **argv){
     b->vm->globals[1][61].number=1;b->vm->bytes[3600]=b->vm->bytes[3601]=0;
     assert(!call(b,1011,11)&&b->vm->bytes[3600]==1&&b->vm->bytes[3601]==1);
     b->vm->globals[1][61].number=0;
-    b->video=(KVideo *)(uintptr_t)1;assert(call(b,1011,11)<0&&b->vm->sp==2);b->video=NULL;
+    /* 4f9a3e: when 486130(4e2aa0()->[0xc0]) reports an active stream entry
+       (486c40 reads its +0xbc flag) the native jumps straight to the shared
+       tail: 5042d0 never runs, so the call is a silent no-op that writes no
+       FLAG byte and reports no error.  aoi_h1.mes and 69 other modules call
+       1010 then 1011/11 in exactly that state. */
+    strcpy(b->media_background_name,"EV01.AKB");b->vm->bytes[6231]=0;
+    b->video=(KVideo *)(uintptr_t)1;
+    assert(!call(b,1011,11)&&!b->vm->sp&&b->vm->bytes[6231]==0);b->video=NULL;
+    b->mov_data=(uint8_t *)(uintptr_t)1;
+    assert(!call(b,1011,11)&&!b->vm->sp&&b->vm->bytes[6231]==0);b->mov_data=NULL;
     const unsigned skin_x[]={76,532,152,76,0,152},skin_y[]={148,84,84,84,84,148};
     for(unsigned i=0;i<6;i++){
         KImage *button=&b->message_skin.buttons[i];assert(button->width==(i==5?57:76)&&button->height==16);

@@ -2047,7 +2047,17 @@ int bootstrap_dispatch(KBootstrap *b){
     if(main==13&&(sub<0||sub>12))return error(b,"AX script command unsupported (arguments preserved)");
     /* 486160 returns immediately with no selected native media stream.
        Preserve the error boundary for the still-unmapped active-stream case. */
-    if(main==31&&sub==1010&&v->sp>=2&&!v->stack[v->sp-2].string&&!b->video&&!b->mov_data){
+    if(main==31&&sub==1010&&v->sp>=2&&!v->stack[v->sp-2].string){
+        /* 4f9b50: pop one operand and forward it as 486160(4e2aa0()->[0xc0],
+           action).  With no current stream entry (list+0x0c == -1) 486160
+           returns immediately; otherwise 486cd0 -> 421310 stores the command
+           into entry->[0x24]->[0x1e8].  There is no failure path.  The port
+           drives playback through its own video/movie subsystem instead of
+           the native stream list, so the command has no counterpart here:
+           consume the operand in both states.  The former extra
+           !video && !mov_data guard raised a spurious "not yet mapped" error
+           whenever a video was active (aoi_h1/h2, momoko_h1/h2, sc_ayano09,
+           sc_hiromi20 all call 1010 in that state). */
         v->sp-=2;b->handled++;return kvm_resume(v);
     }
     /* 4b3850(0) enables auxiliary-window access without restoring any
@@ -2068,7 +2078,19 @@ int bootstrap_dispatch(KBootstrap *b){
        resource name, with native ASCII uppercase conversion (457c7d). */
     if(main==31&&sub==1011&&v->sp>=2&&!v->stack[v->sp-2].string){
         int action=v->stack[v->sp-2].number;
-        if(action==11&&!b->video&&!b->mov_data){
+        if(action==11&&(b->video||b->mov_data)){
+            /* 4f9a3e (31/1011 action 11): the native case first evaluates
+               486130(4e2aa0()->[0xc0]), which resolves the stream list's
+               current entry (index at +0x0c) and asks 486c40 for its +0xbc
+               flag.  When that is non-zero the case jumps straight to the
+               shared tail (jne 4f9a63): 5042d0 never runs, no FLAG byte is
+               written and no failure is reported.  Registering media
+               conditions while a stream entry is active is therefore a
+               silent no-op, not an error — aoi_h1.mes and 69 other modules
+               call 1010 then 1011/11 in that state. */
+            v->sp-=2;b->handled++;return kvm_resume(v);
+        }
+        if(action==11){
             /* 5042d0: membership AND exact registration count. Repeated
                starts are duplicate registrations; stopped state alone is not
                evidence that a track was removed (4ddc00 / 4057c0). */
