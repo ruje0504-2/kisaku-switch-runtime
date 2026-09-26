@@ -245,17 +245,35 @@ def header_key(keyset: str) -> str:
     raise SystemExit("prod.keys 里找不到 header_key")
 
 
+def _xts_decrypt_python(enc: bytes, key_hex: str) -> bytes:
+    """AES-128-XTS in pure python (tools/aes_xts.py)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from aes_xts import decrypt_nca_header as _impl
+    return _impl(enc, key_hex)
+
+
 def decrypt_nca_header(enc: bytes, key_hex: str) -> bytes:
     """NCA 头用 AES-128-XTS(header_key) 加密，每 0x200 字节一个扇区，
-    tweak = 扇区号（16 字节大端）。实测与 hactool 解出的明文头逐字节一致。"""
+    tweak = 扇区号（16 字节大端）。实测与 hactool 解出的明文头逐字节一致。
+
+    默认走自带的纯 Python 实现：macOS 的 /usr/bin/openssl 是 LibreSSL，
+    对 ``enc -aes-128-xts`` 只会静默输出空内容，OpenSSL >= 3.6 的 enc 更是
+    直接报 "enc XTS ciphers not supported"。openssl 路径保留给能用的主机。
+    """
+    try:
+        out = _xts_decrypt_python(enc, key_hex)
+        if len(out) == len(enc) // 0x200 * 0x200:
+            return out
+    except Exception:
+        pass
     out = b""
     for sector in range(len(enc) // 0x200):
         iv = sector.to_bytes(16, "big").hex()
         proc = subprocess.run(
             ["openssl", "enc", "-d", "-aes-128-xts", "-K", key_hex, "-iv", iv],
             input=enc[sector * 0x200:(sector + 1) * 0x200], capture_output=True)
-        if proc.returncode != 0:
-            raise SystemExit("openssl AES-XTS 失败：" + proc.stderr.decode()[:200])
+        if proc.returncode != 0 or len(proc.stdout) != 0x200:
+            raise SystemExit("AES-XTS 解密 NCA 头失败（python 与 openssl 都不可用）")
         out += proc.stdout
     return out
 

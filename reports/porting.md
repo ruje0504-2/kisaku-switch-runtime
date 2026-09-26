@@ -1038,3 +1038,30 @@ NRO SHA256（三份一致）：`c853368a80662e50fccb92ddea3b1021dcc8b6950cba7bbf
 - 运行时修正：`tools/runtime_viewer.c` 启动时无条件 `mkdir(save_root)`，NSP 下 `save_root` 是裸设备前缀 `save:`，创建必然失败并直接退出。改为裸设备根（以 `:` 结尾）不做 mkdir，SD 卡路径仍保留失败即报错。审计确认所有存档类写入本来就走 `bootstrap_save_dir(b)`（即 `save:`），数据读取走 `b->root`（即 `romfs:`），散文件覆盖层只读不写。
 - 验证：自检从成品 Control NCA 读回 16 槽 `name='鬼作' author='elf'` 与 640 MiB 配额；`hactool` 确认三个 NCA 的 Title ID 均为 `01008b538de50000`、Control 内含 `control.nacp` + 16 个语言图标、RomFS 根为七个 ARC/ini/字体；NSP 3,620,372,184 B ≈ 3.37 GiB，小于 FAT32 单文件 4 GiB 上限。`./build-host.sh`、完整 `./test-host.sh 鬼作`、`./build-switch.sh`、`package_sd.py`、`git diff --check` 通过。日志 `local/nsp-*.log`。
 - 交付：`交付/鬼作-01008B538DE50000.nsp`（SHA-256 `5953ccebce81bf3d61890c8035573590b2ae919a249352f002073b1507b16cc9`）、`交付/鬼作-NSP-安装说明.txt`；NRO 重建后主入口与兼容名 SHA-256 均为 `2d85229fba48c2252206a8814d243239a0441b7b72b1e92284ad5a24092e9d15`。**未在 Switch 实机验证安装、启动与 HOS 存档写入。**
+
+## 2026-09-26：31/528 action 43（liblary.lib+0x6a2d 停点）
+
+Codex 照片里《鬼作》移植版停在 `liblary.lib @0x6a…`，主机的完整报文是
+`liblary.lib @0x6a2d syscall=31: Kisaku game-specific interface not yet mapped (arguments preserved)`，
+即 `31/528` 的 **action 43** 未实现。静态与主机证据、反编译摘录、追踪工具、补丁和日志统一放在
+`deepseek/`（入口 `deepseek/31-528-action43.md`），本节只记结论与验证。
+
+- 脚本侧：`liblary.lib` fn47（argc=0，body `0x6a00`）依次 push `words[523..520]`，再
+  `push 43; push 10; push 518; 0x34(add); push 31; 0x18` —— sub 528 是运行时相加得到，
+  所以按 `push 528` 搜不到；syscall 指令地址正是 `0x6a2d`。调用者如 `machi02.mes+0x51e4`
+  先把 words[520..523] 写成 1000/1030/1000/1000（fn46 的 `0x69af` action 0 证明"第 0 项 =
+  第一次 pop"，即 values[i]=words[520+i]）。
+- 原生侧：`4fc080` 的 44 项跳表实际实现 `{0,9,10,20..26,43}`；case 43（`0x4fc8ee`）弹出四个
+  int16 后，窗口状态 `404020([vm+0x58]+0x18)==1` 时以第 5 参数 0 调用 `4a0930`（立即应用），
+  否则先激活窗口再以第 5 参数 1 调用（阻塞动画）。`4a0930` 以 `steps = max(1, max|code-1000|)`
+  调 `49d680` 生成计划，立即分支只做四次 `49f5a0` 写值/重绘；动画分支按 steps≥30/≥10/其它
+  取 1/5/10（单位 20ms，`4a0010` Sleep 轮询）逐步应用，末尾再等 100 单位。两分支最终状态一致。
+- 实现：`runtime/bootstrap.c` 新增 `param_window_auto_change()`（steps→`kparam_change_plan()`→
+  `param_total`→`param_window_values()` 全窗重绘）与 31/528 action 43 分发分支（四个数值实参校验，
+  失败保留全部操作数）。`tests/kisaku_bootstrap_test.c` 新增 `test_param_auto_change()`（`--param-auto`，
+  并接入默认回归），覆盖 +30 提升、第 4 项/总数的带符号调整与 80 上限、无变化、参数不足与字符串实参。
+- 验证：`KISAKU_SCENE=machi02.mes KISAKU_SCENE_IP=0x51e4` 修复前报上述错误，修复后无错误且
+  `values=800,30,0,0`（words[521]=1030 → +30），继续到 `machi02.mes@0x689d` 的正常等待点；
+  完整 `test-host.sh` PASS（98 条，含新专项）；自然全新存档探针与修复前一致
+  （3417 calls / 2441 frames / 212 texts）；Switch `build-switch.sh -Werror` 通过。
+  未做 Switch 实机验证；原生"窗口未就绪"的阻塞动画分支未复刻（最终状态相同，delay 表已记录）。

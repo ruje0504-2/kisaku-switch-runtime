@@ -1335,6 +1335,38 @@ static int param_animation_commit(KBootstrap *b){
     if(param_window_rows(b,b->param_rows,2))return -1;
     return 0;
 }
+/* 4fc080 case 43 -> 4a0930.  The script pushes the same four encoded words as
+   action 9, but the native step count is the largest |code-1000| magnitude
+   instead of the AX boundary program (4dd8e0 is never consulted here).
+   With the window already on screen (404020(wrapper+0x18)==1) 4a0930 skips
+   its own stepping loop and performs four 49f5a0 row writes, which is the
+   branch the story scripts reach through liblary.lib fn47; the
+   window-activation branch runs the identical 49d680 plan as a blocking
+   20/100/200 ms per-step animation (arg_18h==1).  Both branches end in the
+   same parameter, total-counter and row state, so the portable frontend
+   applies the plan immediately and never blocks the VM on Sleep(). */
+static int param_window_auto_change(KBootstrap *b,const int32_t encoded[4]){
+    unsigned steps=1;
+    for(unsigned i=0;i<4;i++){
+        /* 4a0930 does movzx on the stored word, subtracts 1000 as a 32-bit
+           value and takes its absolute value (435ee6). */
+        int32_t delta=(int32_t)(uint16_t)encoded[i]-1000;
+        unsigned magnitude=(unsigned)(delta<0?-delta:delta);
+        if(magnitude>steps)steps=magnitude;
+    }
+    /* Recorded so the native rule stays observable: the immediate branch
+       below never reads the plan increments, which are the only place the
+       original uses this value. */
+    b->param_auto_steps=(uint16_t)steps;
+    KParamChange plan;
+    if(kparam_change_plan(&plan,b->param_values,b->param_total,(int32_t)steps,encoded))
+        return error(b,"CKisakuParamWnd invalid auto parameters (arguments preserved)");
+    uint16_t previous_total=b->param_total;
+    b->param_total=plan.total_target;
+    int32_t values[4];for(unsigned i=0;i<4;i++)values[i]=plan.target[i];
+    if(param_window_values(b,values)){b->param_total=previous_total;return -1;}
+    return 0;
+}
 static int param_animation_apply(KBootstrap *b){
     int32_t values[4];int deltas[4]={0,0,0,0};for(unsigned i=0;i<4;i++)values[i]=b->param_values[i];
     for(unsigned i=0;i<4;i++){
@@ -1686,6 +1718,17 @@ int bootstrap_dispatch(KBootstrap *b){
             values[i]=v->stack[v->sp-3-i].number;
         }
         if(param_window_values(b,values))return -1;
+        v->sp-=6;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==528&&v->sp>=2&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==43){
+        /* 4fc080 case 43 -> 4a0930: four encoded words, step count is the
+           largest |code-1000| magnitude (liblary.lib fn47 pushes words
+           520..523, e.g. 1000/1030/1000/1000 for a +30 rise). */
+        if(v->sp<6)return error(b,"CKisakuParamWnd auto change requires four parameters (arguments preserved)");
+        for(unsigned i=3;i<=6;i++)if(v->stack[v->sp-i].string)
+            return error(b,"CKisakuParamWnd auto change requires numeric parameters (arguments preserved)");
+        int32_t encoded[4];for(unsigned i=0;i<4;i++)encoded[i]=v->stack[v->sp-3-i].number;
+        if(param_window_auto_change(b,encoded))return -1;
         v->sp-=6;b->handled++;return kvm_resume(v);
     }
     if(main==31&&sub==528&&v->sp>=5&&!v->stack[v->sp-2].string&&v->stack[v->sp-2].number==10&&

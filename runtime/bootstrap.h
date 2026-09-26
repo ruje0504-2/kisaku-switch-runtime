@@ -56,6 +56,7 @@ typedef struct {
     KMessageSkin message_skin;
     unsigned auxiliary_windows_enabled;
     KImage param_surface,param_atlas,param_backing;int param_rows;int16_t param_values[4],param_markers[2];uint16_t param_total,param_remaining;
+    uint16_t param_auto_steps; /* 4a0930 step count of the last 31/528/43 change. */
     unsigned param_animation_active,param_animation_phase,param_animation_step,param_animation_count;
     unsigned param_animation_chime,param_animation_track2,param_animation_sungeki,param_animation_temporary,param_animation_window;
     unsigned param_animation_clock,param_animation_last_event;

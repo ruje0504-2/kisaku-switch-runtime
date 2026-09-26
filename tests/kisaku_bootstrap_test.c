@@ -679,6 +679,48 @@ static void test_graphics_windows(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("Kisaku parameter client clipping and AX bank/cell/target/source/first-frame restoration: PASS");
 }
+static void test_param_auto_change(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* 4fc080 case 43 -> 4a0930.  liblary.lib fn46 (0x69af) pushes words
+       503..500 for 31/528/0 and fn47 (0x6a18) pushes words 523..520 before
+       31/528/43, so the first pop is always the first value; machi02.mes
+       +0x51e4 stores 1000/1030/1000/1000 and calls builtin 47. */
+    const KValue setup[]={{78,NULL},{50,NULL},{30,NULL},{10,NULL},{0,NULL},{528,NULL}};
+    assert(!call_anime520(b,setup,6)&&!b->vm->sp);
+    for(unsigned i=0;i<4;i++)assert(b->param_values[i]==(int16_t)(i<3?10+20*(int)i:78));
+    int rows=b->param_rows;
+    const KValue rise[]={{1000,NULL},{1000,NULL},{1030,NULL},{1000,NULL},{43,NULL},{528,NULL}};
+    assert(!call_anime520(b,rise,6)&&!b->vm->sp&&!b->error[0]);
+    assert(b->param_rows==rows); /* 49f5a0 keeps the client height. */
+    assert(b->param_auto_steps==30); /* max |1000-1000|,|1030-1000| */
+    assert(b->param_values[0]==10&&b->param_values[1]==60&&
+           b->param_values[2]==50&&b->param_values[3]==78);
+    /* The fourth item and the total counter follow the signed difference;
+       the plan clamps it to the native 80 limit. */
+    b->param_total=40;
+    const KValue fourth[]={{1005,NULL},{1000,NULL},{1000,NULL},{1000,NULL},{43,NULL},{528,NULL}};
+    assert(!call_anime520(b,fourth,6)&&b->param_values[3]==80&&b->param_total==42);
+    assert(b->param_auto_steps==5);
+    const KValue lower[]={{990,NULL},{1000,NULL},{1000,NULL},{1000,NULL},{43,NULL},{528,NULL}};
+    assert(!call_anime520(b,lower,6)&&b->param_values[3]==70&&b->param_total==32);
+    assert(b->param_auto_steps==10);
+    const KValue same[]={{1000,NULL},{1000,NULL},{1000,NULL},{1000,NULL},{43,NULL},{528,NULL}};
+    assert(!call_anime520(b,same,6)&&b->param_values[3]==70&&b->param_total==32);
+    assert(b->param_auto_steps==1); /* 4a0930 starts its maximum at one. */
+    /* 4a0930 zero-extends the stored word before subtracting 1000, so a
+       script word above 32767 yields a huge step count and a clamped target. */
+    b->param_auto_steps=0;
+    const KValue wide[]={{1000,NULL},{1000,NULL},{1000,NULL},{0xffff,NULL},{43,NULL},{528,NULL}};
+    assert(!call_anime520(b,wide,6)&&b->param_auto_steps==64535&&b->param_values[0]==999);
+    /* Unknown or incomplete argument vectors keep every operand. */
+    const KValue short_args[]={{1000,NULL},{1030,NULL},{43,NULL},{528,NULL}};
+    assert(call_anime520(b,short_args,4)<0&&b->vm->sp==4&&b->vm->stack[0].number==1000);
+    const KValue text_arg[]={{1000,NULL},{1000,NULL},{1030,NULL},{0,"text"},{43,NULL},{528,NULL}};
+    assert(call_anime520(b,text_arg,6)<0&&b->vm->sp==6);
+    assert(b->param_values[1]==60&&b->param_total==32);
+    bootstrap_destroy(b);
+    puts("Kisaku 31/528/43 auto parameter change and argument preservation: PASS");
+}
 static void test_portrait_key(const char *root,const char *saves,const char *name,unsigned key){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     uint8_t *data=NULL;size_t size=0;KImage image={0};
@@ -1939,6 +1981,7 @@ int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--audio-overlap")){test_audio_overlap(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--calendar")){test_week(argv[1],argv[2]);test_calendar_persistence(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--param-auto")){test_param_auto_change(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--backlog")){
         test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
@@ -2464,5 +2507,5 @@ int main(int argc,char **argv){
     char media_long[1025];memset(media_long,'a',sizeof(media_long)-1);media_long[1024]=0;
     assert(call_gallery_mark(b,media_long)<0&&b->vm->sp==2);
     puts("Kisaku 31/1012 native media links, case folding, absent-key no-op and atomic bounds: PASS");
-    bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
+    bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
 }
