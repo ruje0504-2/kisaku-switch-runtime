@@ -1702,6 +1702,20 @@ int bootstrap_dispatch(KBootstrap *b){
         if(message_fade_call(b,mode))return -1;
         v->sp-=count;b->handled++;return kvm_resume(v);
     }
+    if(main==31&&sub==410){
+        /* CFuncExec 4fa600 (0x4fa600..0x4fa699): the method constructs a
+           temporary wallpaper holder (4a62b0), asks it to load the 禿作
+           install assets (4a6100 -> its vtable+0xb8 = 46e790 referencing
+           "hage_wl_inst_bg." / "hage_wall.area"), copies nothing back and
+           destroys the holder.  It pops no script operand (zero 4b70e0 and
+           zero 404040 calls) and touches no FLAG, layer, message, AX or
+           audio state, so its observable effect is none; the scripts record
+           the unlock themselves (hage_omake.mes+0x543 writes byte 4012).
+           The temporary asset pre-load has no counterpart in the port's
+           my-room model, which rebuilds the wallpaper list from the FLAG. */
+        if(v->sp<1)return error(b,"31/410 missing sub operand (arguments preserved)");
+        v->sp--;b->handled++;return kvm_resume(v);
+    }
     if(main==31&&sub==110&&v->sp>=3&&!v->stack[v->sp-2].string&&!v->stack[v->sp-3].string&&
        (v->stack[v->sp-2].number==0||v->stack[v->sp-2].number==1)&&v->stack[v->sp-3].number>=0&&v->stack[v->sp-3].number<=3){
         if(v->stack[v->sp-2].number==0?title_initial(b,(unsigned)v->stack[v->sp-3].number):title_open_native(b,(unsigned)v->stack[v->sp-3].number))return -1;
@@ -1966,6 +1980,48 @@ int bootstrap_dispatch(KBootstrap *b){
             else for(int i=0;i<count;i++)if(owned_value(b,&v->globals[1][start+i],f->globals[1][start+i])){kflags_free(f);return -1;}
         }
         kflags_free(f);v->sp-=4;b->handled++;return kvm_resume(v);
+    }
+    if(main==14&&sub>=7&&sub<=10){
+        /* 4f8380 / 4f8130 / 4f7ee0 / 4f7c90 (inner 4f81b0 / 4f7fa0 / 4f7d50 /
+           4f7b00): store the same indexed range into the saved slot.  The
+           inner workers reach the shared FLAG writer that 14/2 uses
+           (4f7720 -> 5036c0), so this is the mirror of 14/3..6: read the
+           slot, patch the slice from the live storages and write it back.
+           The native cases address the four CFuncFlag members in the same
+           order as 3..6: bytes +0x1c, words +0x34, raw +0x4c, bank1 +0x7c.
+           lev01_1.mes/hage_myroom.mes call 8/9/10 with 0/600, 1000/9200 and
+           60/1, matching the 600-word / 15000-byte / 100-entry capacities. */
+        if(v->sp<4)return error(b,"FLAG store arguments required (arguments preserved)");
+        for(unsigned i=2;i<=4;i++)if(v->stack[v->sp-i].string)return error(b,"FLAG store numeric arguments required (arguments preserved)");
+        int slot=v->stack[v->sp-2].number,start=v->stack[v->sp-3].number,count=v->stack[v->sp-4].number;
+        size_t capacity=sub==7?v->byte_count:sub==8?v->word_count:sub==9?b->raw_size:v->global_count[1];
+        if(slot<0||slot>999||start<0||count<0||(uint64_t)(unsigned)start+(unsigned)count>capacity)return error(b,"FLAG store source range (arguments preserved)");
+        KFlags *f=kflags_read_slot(bootstrap_save_dir(b),0,(unsigned)slot);
+        if(!f)return error(b,"FLAG store snapshot missing or malformed (arguments preserved)");
+        size_t target=sub==7?f->byte_count:sub==8?f->word_count:sub==9?f->raw_count:f->counts[1];
+        if((uint64_t)(unsigned)start+(unsigned)count>target){kflags_free(f);return error(b,"FLAG store destination range (arguments preserved)");}
+        if(count){
+            if(sub==7)memcpy(f->bytes+start,v->bytes+start,(size_t)count);
+            else if(sub==8)memcpy(f->words+start,v->words+start,(size_t)count*sizeof(uint16_t));
+            else if(sub==9)memcpy(f->raw+start,b->raw_variables+start,(size_t)count);
+            else for(int i=0;i<count;i++){
+                /* The slot copy owns its strings (kflags_free releases them),
+                   while VM values may borrow interned pointers, so duplicate
+                   the live string instead of interning it. */
+                KValue src=v->globals[1][start+i];char *copy=NULL;
+                if(src.string){
+                    size_t n=strlen(src.string)+1;copy=malloc(n);
+                    if(!copy){kflags_free(f);return error(b,"FLAG store allocation failed (arguments preserved)");}
+                    memcpy(copy,src.string,n);
+                }
+                KValue *dst=&f->globals[1][start+i];
+                free((void *)dst->string);*dst=(KValue){src.number,copy};
+            }
+        }
+        int failed=kflags_write_slot(f,bootstrap_save_dir(b),0,(unsigned)slot);
+        kflags_free(f);
+        if(failed)return error(b,"FLAG store failed (arguments preserved)");
+        v->sp-=4;b->handled++;return kvm_resume(v);
     }
     if(main==14&&sub==11){
         /* 4f7ab0 -> CFuncFlag vtable +0c -> 5080a0. The Japanese
@@ -2334,7 +2390,7 @@ int bootstrap_dispatch(KBootstrap *b){
         bonus54_title||bonus54_menu||area_open||name_attach||bonus53_title||
         bonus_credits||bonus_meter||offset_image||bonus_title;
     if(!main31_known)return error(b,"Kisaku game-specific interface not yet mapped (arguments preserved)");
-    if(!((main==31&&(sub<0||sub>67||(sub>=2&&sub<=9)||(sub>=31&&sub<=39)||(sub>=41&&sub<=59)||sub==61))||(main==31&&(sub==20||sub==22||sub==40))||(main==31&&sub==15)||(main==31&&sub==17)||(main==31&&sub==16)||(main==31&&sub==18)||(main==31&&sub==14)||(main==1&&sub==0)||(main==16&&(sub==1||sub==3||sub==5||sub==6||sub==7))||(main==31&&(sub==0||sub==1))||(main==30&&sub==0)||(main==17&&(sub==1||sub==6||sub==7))||voice_register||scene_register||(main==31&&sub==29)||(main==31&&(sub==65||sub==66||sub==67))||bonus54_menu||area_open||name_attach||bonus_credits||bonus_meter||offset_image||title_open||(main==31&&sub==19)||scene_ui||scene_export||scene_hide||(main==31&&(sub==25||sub==26||sub==27||sub==28||sub==30))||(main==31&&sub==523)||scene_flags||scene_restore||helper_reset||helper_present||helper_hide||effects_idle||message_hidden||scene_reset||(main==31&&sub==24)||animation_reset||message_timed||message_reset||(main==21&&(sub==0||sub==1||sub==4))||(main==13)||(main==24&&sub>=0&&sub<=6)||(main==28&&sub>=0&&sub<=11)||(main==23&&(sub==0||sub==1))||(main==27&&(sub>=0&&sub<=3))||(main==26&&(sub==0||sub==1))||(main==14&&(sub==0||sub==2||sub==3||sub==6||sub==11||sub==13))||((main>=15&&main<=18)&&sub==0)||((main>=15&&main<=17)&&sub==2)||(main==15&&(sub==1||sub==3||sub==5||sub==6))||((main==10||main==11)&&sub==0)||(main==19&&(sub>=0&&sub<=9))||(main==25&&sub>=0&&sub<=3)||(main==22&&sub>=0&&sub<=2))){
+    if(!((main==31&&(sub<0||sub>67||(sub>=2&&sub<=9)||(sub>=31&&sub<=39)||(sub>=41&&sub<=59)||sub==61))||(main==31&&(sub==20||sub==22||sub==40))||(main==31&&sub==15)||(main==31&&sub==17)||(main==31&&sub==16)||(main==31&&sub==18)||(main==31&&sub==14)||(main==1&&sub==0)||(main==16&&(sub==1||sub==3||sub==5||sub==6||sub==7))||(main==31&&(sub==0||sub==1))||((main==30&&(sub==0||sub==1)))||(main==17&&(sub==1||sub==6||sub==7))||voice_register||scene_register||(main==31&&sub==29)||(main==31&&(sub==65||sub==66||sub==67))||bonus54_menu||area_open||name_attach||bonus_credits||bonus_meter||offset_image||title_open||(main==31&&sub==19)||scene_ui||scene_export||scene_hide||(main==31&&(sub==25||sub==26||sub==27||sub==28||sub==30))||(main==31&&sub==523)||scene_flags||scene_restore||helper_reset||helper_present||helper_hide||effects_idle||message_hidden||scene_reset||(main==31&&sub==24)||animation_reset||message_timed||message_reset||(main==21&&(sub==0||sub==1||sub==4))||(main==13)||(main==24&&sub>=0&&sub<=6)||(main==28&&sub>=0&&sub<=11)||(main==23&&(sub==0||sub==1))||(main==27&&(sub>=0&&sub<=3))||(main==26&&(sub==0||sub==1))||(main==14&&(sub==0||sub==2||sub==3||sub==6||sub==11||sub==13))||((main>=15&&main<=18)&&sub==0)||((main>=15&&main<=17)&&sub==2)||(main==15&&(sub==1||sub==3||sub==5||sub==6||sub==7))||((main==10||main==11)&&sub==0)||(main==19&&(sub>=0&&sub<=9))||(main==25&&sub>=0&&sub<=3)||(main==22&&sub>=0&&sub<=2))){
         char msg[128];snprintf(msg,sizeof(msg),"unsupported subcall %d (arguments preserved)",sub);return error(b,msg);
     }
     if(integer(b,&sub))return -1;
@@ -2600,6 +2656,31 @@ int bootstrap_dispatch(KBootstrap *b){
         if(!ax_load(&b->ax,name,p,n)){free(p);return error(b,"invalid AX data");}
         free(b->animation_data);b->animation_data=p;b->animation_size=n;strcpy(b->loaded_animation,name);
 
+    }else if(main==30&&sub==1){
+        /* CFuncTrans (main=30 -> class entry 0x50669a, ctor 0x4f35a0, vtable
+           0x545f74, dispatcher 0x4f39b0) sub1 -> handler 0x4f36f0: exactly
+           six operands, popped in order and forwarded to the core 0x4f35c0
+           (ret 0x18) as (a1..a6).  liblary.lib 0x164e pushes them reversed:
+           32, local[1], 480, 640, 0, 0, so the consumption order is
+           (a1=0, a2=0, a3=640, a4=480, a5=local[1], a6=32).  a3/a4 are the
+           blit width/height (0x48ea60 tests [ebp+0x10]/[ebp+0x14]), a1/a2 the
+           destination/source offsets, a5/a6 the parameter and frame count of
+           the shared fade planner 0x46bbe0; the planner only runs in software
+           render mode (0x4f40f0()==0).  The only corpus call site is inside
+           liblary.lib function #19, which no script ever calls, so the
+           rectangle/parameter space is restricted to the one used form. */
+        if(v->sp<6)return error(b,"30/1 requires six operands (arguments preserved)");
+        for(unsigned i=1;i<=6;i++)if(v->stack[v->sp-i].string)return error(b,"30/1 numeric operands required (arguments preserved)");
+        int a1=(int)v->stack[v->sp-1].number,a2=(int)v->stack[v->sp-2].number;
+        int a3=(int)v->stack[v->sp-3].number,a4=(int)v->stack[v->sp-4].number;
+        int a5=(int)v->stack[v->sp-5].number,a6=(int)v->stack[v->sp-6].number;
+        if(a1||a2||a3!=640||a4!=480)return error(b,"30/1 transition rectangle unsupported (arguments preserved)");
+        if(a5!=0)return error(b,"30/1 transition parameter unsupported (arguments preserved)");
+        if(a6<0)return error(b,"30/1 transition duration range (arguments preserved)");
+        b->transition_rect[0]=0;b->transition_rect[1]=0;
+        b->transition_rect[2]=640;b->transition_rect[3]=480;
+        b->transition_param=(unsigned)a5;b->transition_duration=(unsigned)a6;
+        v->sp-=6;b->handled++;return kvm_resume(v);
     }else if(main==30&&sub==0){
         /* 437660 -> 4376a0 -> 426b00: fade the private canvas into view,
            commit it to page 0, stop the movie, and hide the transition UI. */
@@ -2840,6 +2921,18 @@ int bootstrap_dispatch(KBootstrap *b){
     }else if(main==16&&sub==6){
         if(integer(b,&a)||a<0||(unsigned)a>=b->audio_counts[1])return error(b,"effect playback channel range");
         if(b->audio_objects[1][a].state){char name[261];strcpy(name,b->audio_objects[1][a].name);if(effect_play(b,(unsigned)a,name))return -1;}
+    }else if(main==15&&sub==7){
+        /* 4fee60 (main=15 dispatcher, object header 0x545da4) sub7 -> case
+           4fef0b -> [object+0x38] = 4fe750: a zero-argument IsMusic query
+           (vtable+0x24, sibling 4fe720 is +0x28), ending in a plain `ret`
+           with no [ebp+8] reads.  liblary.lib 0x6bca pushes a placeholder
+           before the call and consumes the pushed result with the following
+           conditional jump, so this handler must consume nothing (the native
+           leaves the placeholder on the stack) and push exactly one value.
+           Playing = registered and either looping or not played out yet
+           (the mixer consumes audio_pcm through audio_cursor). */
+        int playing=b->music_active&&(b->audio_loop_end?1:b->audio_cursor<b->audio_size);
+        if(kvm_push(v,(KValue){playing,NULL}))return error(b,"music status overflow");
     }else if(main==16&&sub==7){
         /* 433750 -> 433840 -> 4939f0: playback status, excluding registration. */
         if(integer(b,&a)||a<0||(unsigned)a>=b->audio_counts[1]||a>=64)return error(b,"effect query channel range");

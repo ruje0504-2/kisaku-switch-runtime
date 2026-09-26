@@ -1619,6 +1619,211 @@ static void title_path_until(KBootstrap *b,unsigned wanted){
         bootstrap_frame(b);
     }assert(!"menu path timed out");
 }
+static void test_transition_30_1(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* CFuncTrans 30/1 (dispatcher 4f39b0 -> handler 4f36f0 -> core 4f35c0):
+       exactly six operands in consumption order (a1,a2,a3,a4,a5,a6) =
+       (0, 0, 640, 480, parameter, duration); liblary.lib 0x164e pushes them
+       reversed (32, local[1], 480, 640, 0, 0). */
+    b->vm->syscall=30;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){32,NULL})&&!kvm_push(b->vm,(KValue){0,NULL})&&
+           !kvm_push(b->vm,(KValue){480,NULL})&&!kvm_push(b->vm,(KValue){640,NULL})&&
+           !kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){0,NULL})&&
+           !kvm_push(b->vm,(KValue){1,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->error[0]);
+    assert(b->transition_rect[0]==0&&b->transition_rect[1]==0&&
+           b->transition_rect[2]==640&&b->transition_rect[3]==480&&
+           b->transition_param==0&&b->transition_duration==32);
+    /* A non-full-screen rectangle, a parameter, a string operand and a short
+       vector all fail explicitly and leave every operand in place. */
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){32,NULL})&&!kvm_push(b->vm,(KValue){0,NULL})&&
+           !kvm_push(b->vm,(KValue){480,NULL})&&!kvm_push(b->vm,(KValue){320,NULL})&&
+           !kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){0,NULL})&&
+           !kvm_push(b->vm,(KValue){1,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==6&&b->vm->stack[3].number==320&&
+           strstr(b->error,"transition rectangle unsupported (arguments preserved)"));
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){32,NULL})&&!kvm_push(b->vm,(KValue){7,NULL})&&
+           !kvm_push(b->vm,(KValue){480,NULL})&&!kvm_push(b->vm,(KValue){640,NULL})&&
+           !kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){0,NULL})&&
+           !kvm_push(b->vm,(KValue){1,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==6&&
+           strstr(b->error,"transition parameter unsupported (arguments preserved)"));
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){32,NULL})&&!kvm_push(b->vm,(KValue){0,"text"})&&
+           !kvm_push(b->vm,(KValue){480,NULL})&&!kvm_push(b->vm,(KValue){640,NULL})&&
+           !kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){0,NULL})&&
+           !kvm_push(b->vm,(KValue){1,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==6&&b->vm->stack[1].string&&
+           strstr(b->error,"numeric operands required (arguments preserved)"));
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){32,NULL})&&!kvm_push(b->vm,(KValue){1,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==1&&b->vm->stack[0].number==32&&
+           strstr(b->error,"requires six operands (arguments preserved)"));
+    assert(b->transition_duration==32);
+    bootstrap_destroy(b);
+    puts("CFuncTrans 30/1 six-operand contract, rectangle limits and operand preservation: PASS");
+}
+static void test_music_status(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* 4fee60 (main=15 dispatcher) sub7 -> [object+0x38] = 4fe750: a
+       zero-argument IsMusic query.  liblary.lib 0x6bca pushes a placeholder
+       before the call and consumes the pushed result with the following
+       conditional jump (0x6bda), so only the sub operand may be consumed and
+       exactly one value must be pushed. */
+    b->music_active=0;b->audio_loop_start=b->audio_loop_end=0;
+    b->audio_size=100;b->audio_cursor=100;
+    b->vm->syscall=15;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){7,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->error[0]&&b->vm->sp==2);
+    assert(b->vm->stack[0].number==0&&b->vm->stack[1].number==0);
+    /* Registered and not played out yet reports true. */
+    b->music_active=1;b->audio_cursor=10;
+    b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){7,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->error[0]&&b->vm->sp==2&&b->vm->stack[1].number==1);
+    /* Played out reports false again, while a loop keeps it true. */
+    b->audio_cursor=b->audio_size;
+    b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){7,NULL}));
+    assert(!bootstrap_dispatch(b)&&b->vm->sp==2&&b->vm->stack[1].number==0);
+    b->audio_loop_start=0;b->audio_loop_end=1000;
+    b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){7,NULL}));
+    assert(!bootstrap_dispatch(b)&&b->vm->sp==2&&b->vm->stack[1].number==1);
+    bootstrap_destroy(b);
+    puts("CFuncMusic 15/7 zero-argument playback query (only the sub consumed): PASS");
+}
+static void test_exec_410(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* CFuncExec 4fa600 builds a temporary wallpaper holder, asks it to load
+       the 禿作 install assets and destroys it: no script operand is popped
+       and no FLAG/layer/message state changes.  hage_omake.mes+0x542 and
+       hage_open.mes+0xcc7 only use it as an unlock marker (the following
+       statements write byte 4012 / global word 4 themselves). */
+    uint8_t byte4012=b->vm->bytes[4012];
+    unsigned music=(unsigned)b->music_active;
+    b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){410,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->error[0]);
+    assert(b->vm->bytes[4012]==byte4012&&b->music_active==music&&!b->message_active&&
+           !b->message_request);
+    /* A missing sub operand is still an explicit failure with the operand
+       left alone. */
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(bootstrap_dispatch(b)<0&&b->error[0]);
+    bootstrap_destroy(b);
+    puts("CFuncExec 31/410 no-operand no-op and explicit missing-operand error: PASS");
+}
+static void test_flag_store(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* 14/7..10 mirror 14/3..6 (4f8380/4f8130/4f7ee0/4f7c90 -> inner workers
+       that reach the shared FLAG writer 4f7720 -> 5036c0): read the slot,
+       patch the byte/word/raw/bank1 slice from the live storages and write it
+       back.  hage_myroom.mes+0x3502 stores words 0..600 into slot words[544]-1
+       and hage_myroom.mes+0x3523/0x353d store raw 1000/9200 and bank1 60/1
+       into slot 100 before the 14/11 merge. */
+    /* FLAGINI/Startup.mes sizes the four storages through the generic 14
+       entry (a=9192 bytes, c=600 words, d=15000 raw, e=100 bank1 entries);
+       a fresh runtime starts with 8192 bytes and no raw bank, like the PC
+       original before its flag initialization script runs. */
+    b->vm->syscall=14;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){100,NULL})&&!kvm_push(b->vm,(KValue){15000,NULL})&&
+           !kvm_push(b->vm,(KValue){600,NULL})&&!kvm_push(b->vm,(KValue){9192,NULL})&&
+           !kvm_push(b->vm,(KValue){0,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->error[0]&&b->raw_variables);
+    assert(b->vm->byte_count==9192&&b->vm->word_count==600&&b->raw_size==15000&&
+           b->vm->global_count[1]==100);
+    const unsigned slot=5;
+    KFlags *fresh=kflags_read_slot(saves,0,slot);assert(fresh);
+    int32_t fresh_bank1=(int32_t)fresh->globals[1][61].number;
+    kflags_free(fresh);
+
+    /* bytes (sub 7): the whole live byte bank replaces the slot window. */
+    memset(b->vm->bytes,0x31,9192);b->vm->bytes[0]=0x11;b->vm->bytes[1]=0xa1;
+    b->vm->bytes[2]=0xb2;b->vm->bytes[9191]=0xb2;
+    b->vm->syscall=14;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){2,NULL})&&!kvm_push(b->vm,(KValue){1,NULL})&&
+           !kvm_push(b->vm,(KValue){(int32_t)slot,NULL})&&!kvm_push(b->vm,(KValue){7,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->error[0]);
+    KFlags *stored=kflags_read_slot(saves,0,slot);assert(stored);
+    assert(stored->byte_count==9192&&stored->bytes[0]==0&&stored->bytes[1]==0xa1&&
+           stored->bytes[2]==0xb2&&stored->bytes[3]==0&&stored->bytes[9191]==0&&
+           stored->bytes[4008]==1&&stored->globals[1][61].number==fresh_bank1);
+    kflags_free(stored);
+
+    /* words (sub 8): the native 600-word slice fills the whole word bank. */
+    for(unsigned i=0;i<600;i++)b->vm->words[i]=(uint16_t)(0x1200+i);
+    b->vm->words[0]=0xbeef;b->vm->words[599]=0x7ace;
+    b->vm->syscall=14;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){600,NULL})&&!kvm_push(b->vm,(KValue){0,NULL})&&
+           !kvm_push(b->vm,(KValue){(int32_t)slot,NULL})&&!kvm_push(b->vm,(KValue){8,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->error[0]);
+    stored=kflags_read_slot(saves,0,slot);assert(stored);
+    assert(stored->word_count==600&&stored->words[0]==0xbeef&&stored->words[1]==0x1201&&
+           stored->words[599]==0x7ace&&stored->bytes[1]==0xa1&&stored->bytes[2]==0xb2);
+    kflags_free(stored);
+
+    /* raw (sub 9): a partial slice only replaces that window and keeps the
+       rest of the stored buffer.  Seed the slot so the untouched bytes are
+       distinguishable from the live ones. */
+    stored=kflags_read_slot(saves,0,slot);assert(stored);
+    memset(stored->raw,0x11,stored->raw_count);
+    assert(!kflags_write_slot(stored,saves,0,slot));kflags_free(stored);
+    b->vm->syscall=14;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){9200,NULL})&&!kvm_push(b->vm,(KValue){1000,NULL})&&
+           !kvm_push(b->vm,(KValue){(int32_t)slot,NULL})&&!kvm_push(b->vm,(KValue){9,NULL}));
+    memset(b->raw_variables,0x11,15000);memset(b->raw_variables+1000,0x5a,9200);
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->error[0]);
+    stored=kflags_read_slot(saves,0,slot);assert(stored);
+    assert(stored->raw_count==15000&&stored->raw[999]==0x11&&stored->raw[1000]==0x5a&&
+           stored->raw[10199]==0x5a&&stored->raw[10200]==0x11);
+    kflags_free(stored);
+
+    /* bank1 (sub 10): the stored value owns an independent copy of the live
+       string, so later script writes cannot alias the saved slot. */
+    char *live=strdup("store-me");assert(live);b->vm->globals[1][60].string=live;
+    b->vm->syscall=14;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){1,NULL})&&!kvm_push(b->vm,(KValue){60,NULL})&&
+           !kvm_push(b->vm,(KValue){(int32_t)slot,NULL})&&!kvm_push(b->vm,(KValue){10,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&!b->error[0]);
+    stored=kflags_read_slot(saves,0,slot);assert(stored);
+    assert(stored->globals[1][60].string&&!strcmp(stored->globals[1][60].string,"store-me")&&
+           stored->globals[1][60].string!=b->vm->globals[1][60].string);
+    live[0]='S';
+    assert(stored->globals[1][60].string[0]=='s');
+    kflags_free(stored);
+
+    /* Out-of-range windows, wrong argument kinds and short vectors keep every
+       operand; the live storages stay untouched. */
+    b->error[0]=0;b->vm->syscall=14;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){1,NULL})&&!kvm_push(b->vm,(KValue){9192,NULL})&&
+           !kvm_push(b->vm,(KValue){(int32_t)slot,NULL})&&!kvm_push(b->vm,(KValue){8,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==4&&strstr(b->error,"FLAG store source range (arguments preserved)"));
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){10,NULL})&&!kvm_push(b->vm,(KValue){0,"text"})&&
+           !kvm_push(b->vm,(KValue){(int32_t)slot,NULL})&&!kvm_push(b->vm,(KValue){9,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==4&&b->vm->stack[1].string&&
+           strstr(b->error,"FLAG store numeric arguments required (arguments preserved)"));
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){1,NULL})&&!kvm_push(b->vm,(KValue){(int32_t)slot,NULL})&&
+           !kvm_push(b->vm,(KValue){10,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==3&&
+           strstr(b->error,"FLAG store arguments required (arguments preserved)"));
+    /* A slot whose word bank is smaller than the live one is rejected before
+       any byte is written. */
+    stored=kflags_read_slot(saves,0,slot);assert(stored);
+    stored->word_count=100;assert(!kflags_write_slot(stored,saves,0,slot));kflags_free(stored);
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){600,NULL})&&!kvm_push(b->vm,(KValue){0,NULL})&&
+           !kvm_push(b->vm,(KValue){(int32_t)slot,NULL})&&!kvm_push(b->vm,(KValue){8,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==4&&
+           strstr(b->error,"FLAG store destination range (arguments preserved)"));
+    assert(b->vm->words[0]==0xbeef&&b->vm->bytes[0]==0x11&&b->vm->bytes[1]==0xa1&&b->raw_size==15000);
+    bootstrap_destroy(b);
+    puts("FLAG store 14/7..10 mirror the native restore family and preserve live state: PASS");
+}
 static void test_title_paths(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b);title_test_wait(b);
     b->vm->globals[1][60].number=1;assert(!title_test_call(b,0,1));
@@ -1982,6 +2187,10 @@ int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--calendar")){test_week(argv[1],argv[2]);test_calendar_persistence(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--param-auto")){test_param_auto_change(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--flag-store")){test_flag_store(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--exec-410")){test_exec_410(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--music-status")){test_music_status(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--transition")){test_transition_30_1(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--backlog")){
         test_backlog_records(argv[1],argv[2]);test_backlog_lifecycle(argv[1],argv[2]);test_native_wait(argv[1],argv[2]);test_backlog_newline(argv[1],argv[2]);test_backlog_capture(argv[1],argv[2]);test_backlog_replay(argv[1],argv[2]);test_backlog_real_records(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);return 0;
@@ -2507,5 +2716,5 @@ int main(int argc,char **argv){
     char media_long[1025];memset(media_long,'a',sizeof(media_long)-1);media_long[1024]=0;
     assert(call_gallery_mark(b,media_long)<0&&b->vm->sp==2);
     puts("Kisaku 31/1012 native media links, case folding, absent-key no-op and atomic bounds: PASS");
-    bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
+    bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_flag_store(argv[1],argv[2]);test_exec_410(argv[1],argv[2]);test_music_status(argv[1],argv[2]);test_transition_30_1(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
 }

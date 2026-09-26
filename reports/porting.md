@@ -1065,3 +1065,116 @@ Codex 照片里《鬼作》移植版停在 `liblary.lib @0x6a…`，主机的完
   完整 `test-host.sh` PASS（98 条，含新专项）；自然全新存档探针与修复前一致
   （3417 calls / 2441 frames / 212 texts）；Switch `build-switch.sh -Werror` 通过。
   未做 Switch 实机验证；原生"窗口未就绪"的阻塞动画分支未复刻（最终状态相同，delay 表已记录）。
+
+## 2026-09-26：14/7..10“按索引区间写回存档槽”已实现（补齐 14/3..6 的镜像族）
+
+- 停点来源：全脚本缺口审计（`deepseek/audit-unimplemented.md`）。`lev01_1.mes`…`lev08_3.mes`、
+  `hage_myroom*.mes` 共 27 个模块各调用 14/8、14/9、14/10 两次，移植版此前报
+  `unsupported subcall 8/9/10`。定点复现：`KISAKU_SCENE=hage_myroom.mes KISAKU_SCENE_IP=0x3502`。
+- 原生结构：main=14 的类分发器为 `4f9080`，14 项跳表在 `4f9160`（sub 0..13 各有真实函数）。
+  已实现的 14/3..6（`4f8c40/4f8a10/4f87e0/4f85b0`，内层 `4f8ad0/4f88a0/4f8670/4f8440`）与
+  14/7..10（`4f8380/4f8130/4f7ee0/4f7c90`，内层 `4f81b0/4f7fa0/4f7d50/4f7b00`）是同一形制的
+  两族：外层弹出 `(slot,start,count)` 三个数值，内层按同一成员做逐字节拷贝。
+  两族唯一差别在内层worker调用的写/读路径：14/8 内层调用 `4f7720`（14/2 全量写档所用、最终
+  `5036c0` FLAG 文件写入器），14/3 内层不调用它 —— 因此 3..6 = 槽→内存（恢复）、7..10 = 内存→槽
+  **读-改-写**（`503920` 是 14/12 全量恢复用的读取器）。四个成员偏移与 3..6 一一对应：
+  bytes `+0x1c`、words `+0x34`、raw `+0x4c`、bank1 `+0x7c`；脚本实参
+  `(slot=words[544]-1, start=0, count=600)`、`(100, 1000, 9200)`、`(100, 60, 1)` 与
+  600 词 / 15000 字节 raw / 100 项 bank1 容量吻合。
+- 实现：`runtime/bootstrap.c` 新增 `if(main==14&&sub>=7&&sub<=10)` 早退分支（在总表校验之前，
+  与 3..6 同位置）：四个数值实参校验 → 源区间对活存储容量、目标区间对槽内容量 → 读槽、
+  覆盖对应成员窗口、`kflags_write_slot` 写回。bank1 逐项复制时**复制堆字符串而不是复用
+  驻留字符串**（`owned_string` 会把字符串登记进 `setting_values`，写回后再 `kflags_free` 会与
+  释放表双重释放；ASan 已复现并回归）。参数不足、字符串实参、越界、槽损坏一律
+  `return error(b,"FLAG store ... (arguments preserved)")` 并保留全部操作数。
+- 测试：`test_flag_store()`（`--flag-store`，并接入默认回归）覆盖四个成员的成功写回、
+  窗口外字节保持不变（槽内 0x11 与活存储 0x5a 分界）、活存储不被修改、bank1 字符串为独立副本
+  （改动活字符串后槽内不变）、参数不足/字符串/源越界/目标越界四类报错与操作数保留。
+  普通与 ASan 构建均 PASS；完整 `test-host.sh` 99 条 PASS。
+- 验证：`KISAKU_WORDS="544=1" KISAKU_SCENE=hage_myroom.mes KISAKU_SCENE_IP=0x3502` 修复前报
+  `unsupported subcall 8`，修复后 14/8、14/9、14/10、14/11 依次执行并继续到
+  `hage_myroom.mes@0x3915` 的 31/520 轨道等待点；自然全新存档探针与基线一致
+  （3417 calls / 2441 frames / 212 texts）；Switch `build-switch.sh -Werror` 通过
+  （`build-switch/kisaku.nro` SHA-256 `e8114892109de86f44c2c27c3ed4531bf989bdbf51377229ab4c05210e6619c0`）。
+  14/7（bytes 写回）脚本未调用，按同族一并实现并纳入专项。未做 Switch 实机验证。
+
+## 2026-09-26：31/410 已实现（CFuncExec 零操作数标记方法）
+
+- 审计来源：`hage_omake.mes+0x542`、`hage_open.mes+0xcc7`（各一处，零实参）。
+- 原生：main=31 分发表（`4fd950`，索引表 `4fde0c` / 指针表 `4fddd0`）sub=410 → thunk `4fdb53` →
+  handler **`4fa600`**，函数体仅 `0x4fa600..0x4fa699`。内部 6 次调用：
+  `4a62b0`（构造栈上临时壁纸对象 O）→ `4a6100`（O.load()，引用 `hage_wl_inst_bg.` / `hage_wall.area`，
+  经 O 的 vtable+0xB8 = `46e790`）→ 条件 `46e560` → `4020c0`（析构临时值）→ `4a5c80`（~O）→
+  `432d81`（`__security_check_cookie`）。**0 次 `4b70e0`（弹栈）、0 次 `404040`（取整数）、无跳表、
+  不访问 `this` 成员**，不触碰 FLAG/图层/消息/AX/音频/系统变量 18，无阻塞等待、无返回值。
+  因此可观察语义为空；脚本自身在调用后记录解锁（`hage_omake.mes+0x543` 写 byte 4012）。
+  同一 vtable（CFuncExec，`0x545e88`，槽 0 = `4fd950`）的同胞 510/511/2/9/43 各自独立，不共享实现。
+- 实现：`runtime/bootstrap.c` 新增 `main==31&&sub==410` 早退分支：校验栈上有 sub 后 `v->sp--` 并计为
+  已处理；缺少操作数仍显式报错并保留操作数。未复刻那 4 个壁纸资源向临时对象的预加载——移植版的
+  我的房间壁纸列表由 FLAG 重建，不依赖安装文件，原版该临时对象随即析构、无持久状态。
+- 测试：`test_exec_410()`（`--exec-410`，并接入默认回归）断言分派成功、栈清空、byte4012/图层/消息/
+  音频状态不变，以及缺少 sub 操作数时的显式失败。
+- 验证：两处定点复现（`KISAKU_SCENE=hage_omake.mes KISAKU_SCENE_IP=0x532`、
+  `hage_open.mes 0xcb7`）由报错变为正常跑完/继续；完整 `test-host.sh` **100 条 PASS**；
+  自然全新存档探针 3417 calls / 2441 frames / 212 texts 与基线一致；Switch `build-switch.sh` 通过。
+  交付：`build-switch/kisaku.nro` SHA-256 `09e22d4647a314a6840e2834c49d78f130f31dba405c93d4f5c4cce3a0f7acf2`；
+  update NSP（v1.0.2，自检 30/30）SHA-256 `bf5f7028e14838382866eda3b431f3ead736d3d52bb6e6ec1f563c47687406d1`。
+  未做 Switch 实机验证。
+
+## 2026-09-26：15/7 已实现（CFuncMusic 零参数播放状态查询）
+
+- 停点来源：`liblary.lib+0x6bd9`（"等 BGM 放完" 轮询），审计口径见 `deepseek/audit-unimplemented.md`。
+- 原生机制（本次新查清）：类实例表在 VA `0x545d14`、**stride 0x10**，每条 = `[+0x08]` sub 分发器、
+  `[+0x0c]` 对象头。main=15 → 分发器 `4fee60`、对象头 `0x545da4`（main=15/16 共享该家族）。
+  `4fee60` 的 sub 跳表 `0x4fef78`（13 项，项 0 = sub1）；sub7 → case `4fef0b` → `[对象+0x38]`，
+  而 `[0x545da4+0x38] = 0x4fe750`。**`0x4fe750` 参数为 0**（结尾普通 `ret`，无任何 `[ebp+8]` 读取），
+  体内 `mov ecx,0x5d3c88; call 0x411c30` → `call [edx+0x24]`，即取单例 `+0x88` 后调 Is* 虚方法，
+  返回布尔（sub8/`0x4fe720` 是同构兄弟，取 `+0x28`）。
+  注意：移植版旧记录里 `0x433710/0x433750/0x4335d0/0x4331f0` 等 main=15/16 地址**在本 EXE 中不是函数入口**
+  （来自其它版本二进制的注释），不应再引用。
+- 实现：`runtime/bootstrap.c` 链式分支新增 `main==15&&sub==7`：**不消费任何实参**（调用点
+  `liblary.lib 0x6bca` 先压的占位 0 原版保留在栈上），只 `kvm_push` 一个布尔
+  `music_active && (audio_loop_end ? 1 : audio_cursor<audio_size)`；总表接受列表加入 `sub==7`。
+- 测试：`test_music_status()`（`--music-status`，并接入默认回归）：空闲为假、已登记未播完为真、
+  播完转假、循环恒真，且断言 `v->sp` 恰为 2（占位 + 返回值），证明只消费了 sub。
+- 验证：定点复现 `KISAKU_SCENE=liblary.lib KISAKU_SCENE_IP=0x6bca` 从报错变为跑到脚本 yield，
+  结束态 `Operand stack: 1 values` 正是原版留下的占位值；完整 `test-host.sh` **101 条 PASS**；
+  自然探针 3417/2441/212 不变；Switch 构建通过。
+  交付：NRO `14741528ce82f4b0a78f486421e3e1f29496d856a9997d02cd7ea0b847e08489`；
+  update NSP（v1.0.2，30/30）`99a4175ec94e5b9dad7ddae4597a708755991ec7c4dca7e122d6c709a20d45e3`。
+- 仍未实现：`30/1`（main=30 分发器 `4fec20`，ABI 先弹 sub 再弹一个额外 KValue → `vtable+0x2c`；
+  `0x428ab0/0x428ae0` 是写 `+0x3c34/38/3c/40` 的成对几何 setter，条目容器 `+0x3c48`）。
+  调用点实参 `32 loc 480 640 0 0` 中 `32`/`local` 的确切含义仍是推测，需要运行时判别实验闭合后再实现，
+  详见 `deepseek/analysis/gap-15-7-30-1.md`（已明确区分"证实/推测"）。
+
+## 2026-09-26：30/1（CFuncTrans 六操作数过场）已实现；main=30 的原生入口纠正
+
+- 停点来源：全脚本缺口审计的最后一项（`liblary.lib 0x1677`/`0x16e6`）。**语料中共 2 处，且都在库函数 #19 内，
+  而全语料 163014 次 `push idx; 0x17` 从未使用下标 19 → 该函数当前是死代码**；本项的意义是把最后一个
+  已知接口按原版语义接通，而不是解某个卡点。
+- 原生机制（本次纠正上一轮的两个错误结论）：
+  - main→类的真正入口是 `0x5061c0` 内的跳表 **`0x506760`**（31 项，index = main−1）；
+    `main=30 → 0x50669a` → 构造 `0x4f35a0`（vtable `0x545f74`，RTTI `.?AVCFuncTrans@@`）→ 分发器 **`0x4f39b0`**。
+    上一轮说的「类实例表 `0x545d14`」在整份 EXE 中没有任何数据引用，`0x4fec20` 也不是 main=30 的分发器
+    （它是 CFuncAnime 的 vtable 第 10 槽 = main=15/sub=5）。
+  - `0x4f39b0` 只认 sub 0/1/3，只弹 sub、不弹实参；**30/1 handler `0x4f36f0` 恰好 6 次 `call 0x4b70e0` +
+    6 次 `0x404040`**，反序压栈后调核心 `0x4f35c0`（`ret 0x18`）。消费序 =
+    `(a1=0, a2=0, a3=640, a4=480, a5=local[1], a6=32)`；`0x48ea60` 用 `cmp [ebp+0x10]/[ebp+0x14],0`
+    卡宽高 → a3/a4 = 宽/高，a1/a2 = 目标/源偏移，a5/a6 = 共享淡入规划器 `0x46bbe0` 的参数与帧数
+    （仅软件渲染模式 `0x4f40f0()==0` 才启动）。`local[1]` 由注册 `push 2(argc); push 19; 0x16 0x1710` 证实
+    是函数第 2 个入口实参；`32` 与 `30/0` 的 1463 处字面量同义（默认过场帧数）。
+  - 上一轮「480/640 写 `+0x3c34/3c3c`」「`+0x3c48` 是条目容器」均不成立：该路径不访问任何 `+0x3cxx`。
+- 实现：`runtime/bootstrap.c` 总表白名单加入 `(main==30&&sub==1)`；链式分支新增 30/1：`v->sp<6` 检查、
+  6 个操作数**先校验后消费**（字符串/非全屏矩形 `(0,0,640,480)`/非 0 参数/负帧数一律
+  `return error(b,"...(arguments preserved)")` 且**不动 `v->sp`**），成功时记录
+  `transition_rect/transition_param/transition_duration` 并 `v->sp-=6`。**不克隆 30/0**
+  （原生 30/1 不调 `vt[0x60](0,255)`、不重设 alpha 斜坡）。
+- 测试：`test_transition_30_1()`（`--transition`，并接入默认回归）覆盖成功消费（sp 差 6、四个矩形字段与
+  param/duration 记录）、非全屏矩形、非 0 参数、字符串操作数、操作数不足四类显式报错与操作数保留。
+- 验证：完整 `test-host.sh` **102 条 PASS**；自然全新存档探针 3417/2441/212 不变；
+  Switch `build-switch.sh` 通过。交付：NRO `4ebb52f3ca5d29851d98f8a2b4e8c08660d8dae84669aacffecb4c7c210ff43c`；
+  update NSP（v1.0.2，自检 30/30）`660086e8b77089d5f9bdee533b6b8bcc500220f30da21fed245759cb537ae9a1`。
+- **边界（必须写清）**：本实现忠实的是**操作数契约与状态记录**；`layer0` 矩形呈现由移植版每帧呈现管线承担
+  （脚本用的就是全屏 0,0,640,480），而原版软件路径用 `0x46bbe0` 规划的**过场淡入视觉**尚未接入渲染
+  （移植版的 `present_fade_*` 是信纸/小说页的双端交叉淡化，不是这个通用过场）。由于唯一调用点是死代码，
+  本项没有可复现的脚本路径；若以后复活库函数 #19，需要补这个过场驱动器。未做 Switch 实机验证。
