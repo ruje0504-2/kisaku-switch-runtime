@@ -1665,6 +1665,53 @@ static void test_transition_30_1(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("CFuncTrans 30/1 six-operand contract, rectangle limits and operand preservation: PASS");
 }
+static void test_kuji(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    /* 31/710 (0x4fb400 -> 0x48fcf0): the four prize ids read from
+       byte[1511..1514] are consumed, the engine appends the hard-coded blank
+       id 9, shuffles {a,b,c,d,9} into the five bottom slots with the shared
+       MSVC LCG (VM opcode 0x39) and pushes the prize found at
+       perm[selected] = {2,4,0,3,1}[selected] when the modal ends.  kuji.mes
+       stores that value in byte[1515]. */
+    b->vm->random_state=1;                  /* reproducible shuffle */
+    b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){3,NULL})&&!kvm_push(b->vm,(KValue){5,NULL})&&
+           !kvm_push(b->vm,(KValue){7,NULL})&&!kvm_push(b->vm,(KValue){1,NULL})&&
+           !kvm_push(b->vm,(KValue){710,NULL}));
+    assert(!bootstrap_dispatch(b)&&!b->vm->sp&&b->kuji.active&&!b->error[0]);
+    unsigned seen[10]={0};
+    for(unsigned i=0;i<5;i++){unsigned v=b->kuji.slot[i];assert(v<=9);seen[v]++;}
+    assert(seen[1]==1&&seen[3]==1&&seen[5]==1&&seen[7]==1&&seen[9]==1);
+    /* The modal keeps the VM busy until the player confirms a column and the
+       20 ms walk plus the trailing second elapse. */
+    b->kuji.select=2;bootstrap_confirm(b);assert(b->kuji.chosen);
+    unsigned frames=0;while(b->kuji.active&&frames<200){bootstrap_frame(b);frames++;}
+    assert(!b->kuji.active&&frames<200);
+    assert(b->vm->sp==1&&b->vm->stack[0].number>=0&&b->vm->stack[0].number<=9);
+    assert(b->vm->stack[0].number==(int32_t)b->kuji.slot[kkuji_perm[b->kuji.select]]);
+    /* Pointer hover maps to the native hit rectangles; a click confirms. */
+    b->vm->random_state=7;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){0,NULL})&&!kvm_push(b->vm,(KValue){1,NULL})&&
+           !kvm_push(b->vm,(KValue){2,NULL})&&!kvm_push(b->vm,(KValue){3,NULL})&&
+           !kvm_push(b->vm,(KValue){710,NULL}));
+    assert(!bootstrap_dispatch(b)&&b->kuji.active);
+    bootstrap_pointer(b,kkuji_column_x[3],620,0);assert(b->kuji.select==3);
+    bootstrap_pointer(b,kkuji_column_x[3],620,1);assert(b->kuji.chosen);
+    frames=0;while(b->kuji.active&&frames<200){bootstrap_frame(b);frames++;}
+    assert(!b->kuji.active&&b->vm->sp==1&&b->vm->stack[0].number==(int32_t)b->kuji.slot[kkuji_perm[3]]);
+    /* A string prize id and a short vector keep every operand. */
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){0,"text"})&&!kvm_push(b->vm,(KValue){1,NULL})&&
+           !kvm_push(b->vm,(KValue){2,NULL})&&!kvm_push(b->vm,(KValue){3,NULL})&&
+           !kvm_push(b->vm,(KValue){710,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==5&&b->vm->stack[0].string&&
+           strstr(b->error,"numeric (arguments preserved)"));
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){1,NULL})&&!kvm_push(b->vm,(KValue){710,NULL}));
+    assert(bootstrap_dispatch(b)<0&&b->vm->sp==2&&strstr(b->error,"four prize ids"));
+    bootstrap_destroy(b);
+    puts("CKuji 31/710 four-prize pool, shared-LCG shuffle, perm table and result push: PASS");
+}
 static void test_music_status(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     /* 4fee60 (main=15 dispatcher) sub7 -> [object+0x38] = 4fe750: a
@@ -2190,6 +2237,7 @@ int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--flag-store")){test_flag_store(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--exec-410")){test_exec_410(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--music-status")){test_music_status(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--kuji")){test_kuji(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--transition")){test_transition_30_1(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--backlog")){
@@ -2725,5 +2773,5 @@ int main(int argc,char **argv){
     char media_long[1025];memset(media_long,'a',sizeof(media_long)-1);media_long[1024]=0;
     assert(call_gallery_mark(b,media_long)<0&&b->vm->sp==2);
     puts("Kisaku 31/1012 native media links, case folding, absent-key no-op and atomic bounds: PASS");
-    bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_flag_store(argv[1],argv[2]);test_exec_410(argv[1],argv[2]);test_music_status(argv[1],argv[2]);test_transition_30_1(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
+    bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_flag_store(argv[1],argv[2]);test_exec_410(argv[1],argv[2]);test_music_status(argv[1],argv[2]);test_kuji(argv[1],argv[2]);test_transition_30_1(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
 }

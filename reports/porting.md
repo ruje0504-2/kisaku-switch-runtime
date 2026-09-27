@@ -1202,3 +1202,92 @@ Codex 照片里《鬼作》移植版停在 `liblary.lib @0x6a…`，主机的完
   交付：NRO `751946c513e407dcb568f1e51404e3f28e0b065d363bd8185a524e1ff30c58b7`；
   update NSP v1.0.3（30/30）`23e844f1474bd8c77ce7d88600dc23e803faa40f3419450930330a83a215956c`。
 - 边界：剩余 37 项未按真实路线复核（扫描只覆盖"模块入口 + 自动推进"一种进入方式）。
+
+## 2026-09-27：小游戏接口核对（网球卡死根因）与 610/611/710/711/210 的处置
+
+- 起因：实机反馈网球小游戏卡死。核对方法：反汇编 `4fd950` 的特例/thunk 得真实 handler 与
+  native 弹栈数，再用字节级扫描确定**脚本实际压的操作数**（契约）。
+- 结论：**610/611/710/711（网球/宾果/抽签/打地鼠）在移植版里没有玩法**，原生是四套独立引擎
+  （`4fb8e0`/`4fb7f0`/`4fb400`/`4f9d00`）；脚本调用时**只压 sub**（`push off; push 600/700; add;
+  push 31; syscall`）。旧分支要求 13/15 个实参 → 先报 `argument vector truncated`；一旦栈上残留
+  足够就调 `mini_begin()`（只加载背景）并置 `b->mini_active=1`，而 `bootstrap_run()` 的等待判定
+  含 `b->mini_active` → **VM 永不推进 = 卡死**。210（staffroll 结局画面）同属未实现的原生子系统。
+- 改动：删除 `mini_begin/mini_asset/mini_blit` 这条只会卡住 VM 的死路径；该分支改为按原生真实形态
+  （脚本只压 sub）明确报错并保留全部操作数：
+  `native tennis|bingo|kuji|hummer|staff roll end not implemented (arguments preserved)`。
+- 保龄球 612 核对无误：create(action 0) = 1 个 action + 5 个值（`bowl1st.mes+0x521`，5 个值由 `0x02`
+  从 word 1504..1508 读出后压栈）→ 移植版要求 7 个操作数一致；second/release(action 1/2) = 1 个
+  action → 移植版消费 2 个操作数一致；683 处序言 release 可安全重复释放。`bowl1st.mes` 直接入口无报错。
+- 验证：`tennis.mes @0x24b` 现报 `native tennis not implemented (arguments preserved)`；完整
+  `test-host.sh` 102 条 PASS。详见 `deepseek/analysis/minigames.md`。
+- 待决策：① 保持明确报错；② 做成"可跳过"（脚本继续、按默认结果结算，需写入交付说明）；
+  ③ 照原样实现四套引擎 + 结局画面（工作量与保龄球同级或更大）。
+
+## 2026-09-27：19/1 按需分配目标图层（结局画面直接入口不再 unallocated layer）
+
+- 来源：结局画面规范 `deepseek/analysis/minigame-staffroll.md`。原生 `4f60e0` 在 `19/1`
+  （按名载入 AKB/RMT 到图层）时会**按资源头自行分配**目标表面；移植版原先要求图层已有 pixels，
+  而 `staffroll.mes` 从不调 `19/2`（`Startup.mes` 只用 `19/0` 建 14 个空槽）→ 直接入口报
+  `unallocated layer`。
+- 改动：`install_image()` 在目标表面为空时按 `(im->x+im->width) × (im->y+im->height)` 分配
+  （同步与图像线程两条路径共用此收尾）；`19/1` 分支的前置检查从 `unallocated layer` 放宽为
+  `layer index range`；图层已存在但**装不下**时仍保留 `RMT outside destination surface` 报错。
+- 验证：`KISAKU_SCENE=staffroll.mes`（以及短版 `staffroll_s.mes`）现在能执行完前导 `19/1`
+  装载并停在 `native staff roll end not implemented (arguments preserved)`（本轮小游戏批次的
+  预期临时状态）；完整 `test-host.sh` **102 条 PASS**。
+
+## 2026-09-27：31/710 抽签（CKuji）实现 —— 小游戏批次 1/5
+
+- 依据 `deepseek/analysis/minigame-kuji.md`。原生 `4fb400` → `48fcf0`：脚本 `kuji.mes` 压 4 个奖池 id
+  （取自 `byte[1511..1514]`），引擎内部补第 5 项硬编码 **9（空白/失败）**，用 `rand()%5` + 线性探测
+  把 `{a,b,c,d,9}` 洗到 5 个底部签位（`obj+0xAC`），结果 = `obj->ac[perm[selected]]`，
+  `perm = 0x546f98 = {2,4,0,3,1}`，回压 1 个整数（`kuji.mes` 存 `byte[1515]`）。
+- 新文件：`runtime/kuji.h`（`KKuji` + 规则常量 + `kkuji_rand`/`kkuji_shuffle`）、
+  `runtime/kuji_runtime.inc`（`kkuji_begin/frame/confirm/pointer/active/present`）。
+- **随机与 VM 共用同一 LCG**：`state = state*214013 + 2531011`，输出 `(state>>16)&32767`，
+  与 VM opcode `0x39`（`415710`）同构，接的是 `b->vm->random_state`，不另起随机源。
+- `bootstrap.c`：把 710 从"未实现"分支摘出，新增分发分支（先校验 5 个操作数、数值性/范围，
+  失败保留全部操作数；成功消费 5 个操作数并进入模态）；`kkuji_active()` 加入 `bootstrap_run()`
+  的两处等待判定（模态期间占住 VM，**但每帧推进且有明确结束条件**，不重演旧 `mini_active` 死锁）；
+  帧循环接 `kkuji_frame`、呈现接 `kkuji_present`、确认接 `kkuji_confirm`、指针接 `kkuji_pointer`。
+- **本片边界（下一步补）**：绘制仍是"逻辑先行"——原生 `kuji_bg/kuji_pt/kuji_c/kujip{sel+1}` 的
+  图层合成（vt+0xbc 取 5/9、逻辑画布 ≥640×736 的滚动/分页）未接；当前只绘制选择光标。
+  方向键（原生槽 20/21）也留到绘制片一起接，本片用鼠标/触摸命中矩形选择与确认。
+- 验证：新增专项 `--kuji`（4 个 id + 硬编码 9 恰好占满 5 槽、洗牌值域与唯一性、`perm` 表对应、
+  确认后推进 20ms×N + 1s 尾等待并只压 1 个结果、指针命中矩形选中第 4 列并可点击确认、
+  字符串 id 与少于 4 个 id 两种错误保留全部操作数）**PASS**；完整 `test-host.sh` **103 条 PASS**；
+  `KISAKU_SCENE=kuji.mes` 实测 **`Script yielded`，不再报 `native kuji not implemented`**。
+
+## 2026-09-27：小游戏批次（31/710、711、611、610、210）入口与结果回写全部接通 —— 交付 1.0.8
+
+依据 `deepseek/analysis/minigame-{kuji,hummer,bingo,tennis,staffroll}.md` 五份规范，五个原生小游戏/模态
+全部接入移植版，契约（实参、结果回写）均按反汇编核对：
+
+| sub | 游戏 | 脚本实参 | 回写 | 新增文件 | 验证 |
+| --- | --- | --- | --- | --- | --- |
+| 710 | 抽签 | 4 个奖池 id | 压 1 个 0..9 | `kuji.h`/`kuji_runtime.inc` | `kuji.mes` → Script yielded；`--kuji` 专项 PASS |
+| 711 | 打地鼠 | 0 | 压 1 个 1/0 | `hummer.h`/`hummer_runtime.inc` | `hummer.mes` → Script yielded |
+| 611 | 宾果 | 0 | 压 1 个 1/0（**可玩化**，见下） | `bingo.h`/`bingo_runtime.inc` | `bingo.mes` → Script yielded |
+| 610 | 网球 | 0 | 压 1 个 0/1 | `tennis.h`/`tennis_runtime.inc` | `tennis.mes` → Script yielded |
+| 210 | 结局画面 | 1 个 mode | **无回写**（只 `bytes[4012]` 1→0） | `staffroll.h`/`staffroll_runtime.inc` | `staffroll.mes` → Script yielded |
+
+- **共用机制**：五者都走保龄球同款接线（分发 → 模态占住 VM → 每帧推进 → 呈现/输入 → 结束回写/释放），
+  且**每个都有明确的结束条件**，不再有旧 `mini_active` 那种"置位后永不解除"的死锁。
+- **随机**：抽签洗牌、宾果 32 球 Fisher–Yates 都用 **VM 自己的 MSVC LCG**（`b->vm->random_state`，
+  opcode 0x39 同构），不另起随机源。
+- **与原版的差异（已写进交付说明）**：① 宾果原版可达路径没有输入循环、牌面未初始化、成功不压返回值，
+  移植版按"可玩化"实现并压 1/0；② 网球原版是自动对打（引擎内无任何输入读取），移植版保留自动对打，
+  每分用共用 LCG 按难度决定胜负而不是原生 3D 球路积分；③ 打地鼠力度衰减按毫秒量化（原版按 ~1ms 循环）；
+  ④ 结局画面按 2100/1050 tick × 20ms 的段落时长推进。
+- **本批边界（下一批）**：绘制仍是"逻辑先行"——抽签只画选择光标、打地鼠只画力度条、宾果只画命中格、
+  网球只画比分点、结局画面只画进度条；原生 AKB/AX 合成（`kuji_bg/pt/c/kujip*`、`hummbg/hummp/hummps/tuthum`
+  + 13 洞精灵、`bingo_parts` 数字图集 + `bingo_an.ax`、网球六张图集 + 8 个精灵对象、结局画面 44 页字幕
+  + 独立 CFuncAnime）**尚未接入**。
+- 验证：完整 `test-host.sh` **103 条 PASS**（新增 `--kuji`）；自然全新存档探针 **3417 calls / 2441 frames
+  / 212 texts 不变**；Switch `build-switch.sh` 通过。交付：NRO `7a043ca8e6da7ea65d5cb31abbb6f8280ee44a1f544109bfaf40f0c66562f427`；
+  update NSP **v1.0.8**（`CNMT title_version = 0x10008`，自检 30/30）`e521a4b6a02caf25379b13fa47418f62e842d05e832e4947449a297b21eda5e4`；
+  `kisaku-NRO-update.zip` `a516e8a11cd126e7361170587e51f85fd6d28130c46a37d16aaee27354b4e628`；
+  `kisaku-update-NSP.zip` `35bab1e959f85fdb491e4d060ab903ede139241a960bd9776b2f589c6de90398`。
+- **过程中修掉的一处自伤**：批量接线时误留了一个 `if(main==31&&sub==0)` 的假分支（把常用的 31/0 当成
+  小游戏报错入口），导致自然流程掉到 228 calls/543 frames；删除后恢复到基线 3417/2441/212。此教训说明
+  这类批量替换必须紧跟完整回归。

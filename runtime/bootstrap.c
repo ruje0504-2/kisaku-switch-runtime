@@ -16,7 +16,6 @@
 #include <sys/stat.h>
 static void native_cg_free(KBootstrap *b);
 static void native_cg_frame(KBootstrap *b);
-static int mini_begin(KBootstrap *b,unsigned kind,const char *asset);
 static void mini_close(KBootstrap *b);
 static int read_named(Ai6Archive *a,const char *name,uint8_t **d,size_t *n);
 static int record_newline(void *owner,unsigned operand);
@@ -35,26 +34,6 @@ static int error(KBootstrap *b,const char *s){
     if(b->vm->status==KVM_TEXT)snprintf(b->error,sizeof(b->error),"%s @0x%zx text: %s",name,b->vm->instruction_ip,s);
     else snprintf(b->error,sizeof(b->error),"%s @0x%zx syscall=%d: %s",name,b->vm->instruction_ip,b->vm->syscall,s);
     return -1;
-}
-static int mini_asset(KBootstrap *b,const char *name,KImage *out){
-    uint8_t *data=NULL;size_t size=0;int rc=read_named(&b->images,name,&data,&size)||rmt_decode(data,size,out);free(data);return rc;
-}
-static void mini_blit(KImage *dst,const KImage *src){
-    int ox=((int)dst->width-(int)src->width)/2-src->x,oy=((int)dst->height-(int)src->height)/2-src->y;
-    if(src->height>dst->height)oy=-src->y;
-    for(unsigned y=0;y<src->height;y++)for(unsigned x=0;x<src->width;x++){
-        int dx=(int)x+src->x+ox,dy=(int)y+src->y+oy;if(dx<0||dy<0||(unsigned)dx>=dst->width||(unsigned)dy>=dst->height)continue;
-        const uint8_t *s=src->pixels+y*src->stride+x*4;uint8_t *d=dst->pixels+dy*dst->stride+(unsigned)dx*4;unsigned a=s[3];
-        for(unsigned c=0;c<3;c++)d[c]=(uint8_t)((s[c]*a+d[c]*(255-a))/255);
-        d[3]=(uint8_t)(a+d[3]*(255-a)/255);
-    }
-}
-static int mini_begin(KBootstrap *b,unsigned kind,const char *asset){
-    KImage im={0};if(mini_asset(b,asset,&im))return error(b,"native mini-game resource missing");
-    if(!b->layers[0].pixels||!b->auxiliary.pixels){rmt_free(&im);return error(b,"native mini-game surface unavailable");}
-    memcpy(b->auxiliary.pixels,b->layers[0].pixels,640*480*4);
-    memset(b->layers[0].pixels,0,640*480*4);mini_blit(&b->layers[0],&im);rmt_free(&b->mini_surface);b->mini_surface=im;
-    b->mini_kind=kind;b->mini_active=1;return 0;
 }
 static void mini_close(KBootstrap *b){
     if(!b||!b->mini_active)return;
@@ -329,7 +308,19 @@ static KImage *scene_surface(KBootstrap *b){
 }
 static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     KImage *dst=layer==0?scene_surface(b):&b->layers[layer];
-    if(!dst->pixels||im->x<0||im->y<0||(uint64_t)im->x+im->width>dst->width||(uint64_t)im->y+im->height>dst->height)return error(b,"RMT outside destination surface");
+    if(!dst->pixels){
+        /* 4f60e0 allocates the destination from the resource header when a
+           script loads into a layer it never created: staffroll.mes only
+           calls 19/1 (Startup.mes allocates nothing through 19/0), so a
+           direct entry used to fail with "unallocated layer" while the
+           native just allocates. */
+        unsigned width=(unsigned)(im->x+im->width),height=(unsigned)(im->y+im->height);
+        if(!width||!height)return error(b,"RMT empty surface");
+        uint8_t *pixels=calloc((size_t)width*height,4);
+        if(!pixels)return error(b,"surface allocation failed");
+        *dst=(KImage){0,0,width,height,(size_t)width*4,pixels};
+    }
+    if(im->x<0||im->y<0||(uint64_t)im->x+im->width>dst->width||(uint64_t)im->y+im->height>dst->height)return error(b,"RMT outside destination surface");
     for(unsigned row=0;row<im->height;row++)memcpy(dst->pixels+(row+(size_t)im->y)*dst->stride+(size_t)im->x*4,im->pixels+row*im->stride,im->stride);
     KVM *v=b->vm;
     v->globals[0][38].number=im->x;v->globals[0][39].number=im->y;v->globals[0][40].number=im->x+(int32_t)im->width;v->globals[0][41].number=im->y+(int32_t)im->height;
@@ -1281,6 +1272,11 @@ static void draw_ax_extra(const uint32_t d[7],unsigned cell,void *context){
 #include "ax_runtime.inc"
 #include "mam_runtime.inc"
 #include "bowling_runtime.inc"
+#include "kuji_runtime.inc"
+#include "hummer_runtime.inc"
+#include "bingo_runtime.inc"
+#include "tennis_runtime.inc"
+#include "staffroll_runtime.inc"
 #include "credits.inc"
 #include "montage.inc"
 #include "novel.inc"
@@ -1471,12 +1467,43 @@ int bootstrap_dispatch(KBootstrap *b){
        The portable frontend presents the original AKB artwork as the modal
        surface; bootstrap_confirm() performs the matching close and resumes
        the already-returned VM call. */
-    if(main==31&&(sub==210||sub==610||sub==611||sub==710||sub==711)){
-        unsigned argc=(sub==210&&strstr(v->modules[v->module].name,"staffroll_s"))?13:15;
-        const char *asset=sub==210?"endbg.akb":sub==610?"tennisbg.akb":sub==611?"bingo_bg.akb":sub==710?"kuji_bg.akb":"hummbg.akb";
-        if(v->sp<argc+1)return error(b,"native mini-game argument vector truncated (arguments preserved)");
-        if(mini_begin(b,(unsigned)sub,asset))return -1;
-        v->sp-=argc+1;b->handled++;return kvm_resume(v);
+    if(main==31&&sub==710){
+        /* 4fb400: four prize ids from byte[1511..1514]; the engine appends the
+           hard-coded blank 9, shuffles with the shared MSVC LCG and pushes the
+           prize at perm[selected] back (kuji.mes stores it in byte[1515]). */
+        if(v->sp<5)return error(b,"31/710 requires four prize ids (arguments preserved)");
+        for(unsigned i=2;i<=5;i++)if(v->stack[v->sp-i].string)return error(b,"31/710 prize ids must be numeric (arguments preserved)");
+        unsigned pool[4];for(unsigned i=0;i<4;i++)pool[i]=(unsigned)v->stack[v->sp-2-i].number;
+        if(kkuji_begin(b,pool))return -1;
+        v->sp-=5;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==711){
+        /* 4f9d00: no operands, the engine pushes one integer (1/0) when the
+           10 s round settles.  hummer.mes copies it to global0[18]/byte[653]. */
+        if(khammer_begin(b))return -1;
+        v->sp-=1;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==611){
+        /* 4fb7f0: no operands.  The native success path pushes nothing (only
+           the 0x4d7ca0 failure path pushes 0), so the port pushes the
+           playable result instead: 1 = a line completed, 0 = none. */
+        if(kbingo_begin(b))return -1;
+        v->sp-=1;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==610){
+        /* 4fb8e0: no operands; the match runs by itself and pushes 0/1, which
+           tennis.mes stores in byte[394] for sun03_1.mes to branch on. */
+        if(ktennis_begin(b))return -1;
+        v->sp-=1;b->handled++;return kvm_resume(v);
+    }
+    if(main==31&&sub==210){
+        /* 4fb9e0: exactly one integer operand = mode (1 full / 0 short) and no
+           VM write-back; bytes[4012] is set 1 on entry and 0 on exit. */
+        if(v->sp<2)return error(b,"31/210 requires the mode operand (arguments preserved)");
+        if(v->stack[v->sp-2].string)return error(b,"31/210 mode must be numeric (arguments preserved)");
+        int mode=v->stack[v->sp-2].number;
+        if(kstaff_begin(b,mode))return -1;
+        v->sp-=2;b->handled++;return kvm_resume(v);
     }
     /* Native appendix selectors: music.mes 330+10, video.mes 60+10. */
     if(main==31&&(sub==340||sub==70)){
@@ -3137,7 +3164,7 @@ layer_fill_done:;
         if(ox < -16384||ox > 16384||oy < -16384||oy > 16384)return error(b,"RMT offset range");
         /* 4f60e0 -> 502c00 permits display layer0. install_image routes
            it through the active backing surface, including async loads. */
-        if(a<0||(unsigned)a>b->layer_count||!b->layers[a].pixels)return error(b,"unallocated layer");
+        if(a<0||(unsigned)a>b->layer_count)return error(b,"layer index range");
         if(b->image_worker){
             if(kimage_worker_submit(b->image_worker,name))return error(b,"image worker submission failed");
             b->image_layer=a;b->image_offset_x=ox;b->image_offset_y=oy;b->image_loading=1;snprintf(b->image_name,sizeof(b->image_name),"%s",name);
@@ -3273,12 +3300,12 @@ static int bootstrap_run_inner(KBootstrap *b,unsigned budget){
     if(restore_message(b))return -1;
     history_restore_apply(b);
     if(b->scene_replay_finished)return 1;
-    if(b->mini_active||b->native_cg||bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
+    if(b->mini_active||b->native_cg||bootstrap_bowling_active(b)||kkuji_active(b)||khammer_active(b)||kbingo_active(b)||ktennis_active(b)||kstaff_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;
     while(budget--){b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;int old_module=b->vm->module;unsigned old_scripts=b->vm->script_depth;KStatus s=kvm_run(b->vm,1);
         /* Native 408060 notifies navigation on a script return, but library
            function calls only change the VM instruction source. */
         if(b->vm->script_depth<old_scripts&&scene_transition(b,b->vm->modules[old_module].name,b->vm->modules[b->vm->module].name))return -1;
-        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->mini_active||b->native_cg||bootstrap_bowling_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
+        if(s==KVM_SYSCALL){if(bootstrap_dispatch(b))return -1;b->vm->raw=b->raw_variables;b->vm->raw_size=b->raw_size;if(restore_message(b))return -1;history_restore_apply(b);if(b->scene_replay_finished)return 1;if(b->mini_active||b->native_cg||bootstrap_bowling_active(b)||kkuji_active(b)||khammer_active(b)||kbingo_active(b)||ktennis_active(b)||kstaff_active(b)||b->quit_modal||b->quit_requested||b->exec523_active||b->exec522_motion||b->param_animation_active||b->mes_fade_transition||b->letter_transition||b->load_modal||b->file_modal||b->title_reset_modal||b->scene_modal||ax_modal_wait(b)||b->montage_active||b->credits_active||b->area_active||b->bonus52_active||b->extra_active||b->image_loading||b->scroll_active||b->blink_active||b->distort_count||b->novel_transition||b->choice_active||b->message_active||b->message_slide||b->flag_dialog.active||b->title.active||b->transition_steps||b->exec_wipe_active||b->helper_steps||b->fade_steps||b->logo_phase||b->native_wait_clock||b->wait_clock||b->wait_input||b->video_wait||b->video_change_wait||(b->video_active&&!b->video_background))return 1;}
         else if(s==KVM_TEXT){if(draw_text(b))return -1;}
         else if(s==KVM_BUDGET)kvm_resume(b->vm);
         else if(s==KVM_ERROR)return error(b,b->vm->error);
@@ -3290,7 +3317,7 @@ int bootstrap_run(KBootstrap *b,unsigned budget){
     if(!b)return -1;
     exec526_restore(b);param_animation_restore(b);animation522_restore(b);overlay524_restore(b);message_fade_restore(b);
     int result=bootstrap_run_inner(b,budget);
-    animation522_restore(b);message_fade_present(b);overlay524_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
+    animation522_restore(b);message_fade_present(b);overlay524_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);kkuji_present(b);khammer_present(b);kbingo_present(b);ktennis_present(b);kstaff_present(b);
     return result;
 }
 void bootstrap_frame(KBootstrap *b){
@@ -3402,7 +3429,7 @@ void bootstrap_frame(KBootstrap *b){
             if(b->error[0])return;
         }
     }
-    bowling_frame(b);
+    bowling_frame(b);kkuji_frame(b);khammer_frame(b,KHUMMER_STEP_MS);kbingo_frame(b,KHUMMER_STEP_MS);ktennis_frame(b,KHUMMER_STEP_MS);kstaff_frame(b,KHUMMER_STEP_MS);
     animation522_frame(b);
     if(animation523_frame(b))return;
     if(param_animation_frame(b))return;
@@ -3505,7 +3532,7 @@ void bootstrap_frame(KBootstrap *b){
     if(b->bonus52_active)bonus52_frame(b);
     if(b->credits_active)credits_frame(b);
     if(b->montage_active)montage_frame(b);
-    message_fade_present(b);overlay524_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);
+    message_fade_present(b);overlay524_present(b);animation522_present(b);param_animation_present(b);exec526_present(b);bowling_present(b);kkuji_present(b);khammer_present(b);kbingo_present(b);ktennis_present(b);kstaff_present(b);
     if(!b->fade_steps)return;
     b->fade_frame++;
     int delta=(int)b->fade_to-(int)b->fade_from;
@@ -3519,6 +3546,11 @@ void bootstrap_confirm(KBootstrap *b){
     if(b&&b->native_wait_clock)return;
     if(b&&b->mini_active){mini_close(b);return;}
     if(bootstrap_bowling_active(b)){bowling_confirm(b);return;}
+    if(kkuji_active(b)){kkuji_confirm(b);return;}
+    if(khammer_active(b)){khammer_confirm(b);return;}
+    if(kbingo_active(b)){kbingo_confirm(b);return;}
+    if(ktennis_active(b)){ktennis_confirm(b);return;}
+    if(kstaff_active(b)){kstaff_confirm(b);return;}
     if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_transition||b->letter_exit_pending)return;
@@ -3626,7 +3658,7 @@ void bootstrap_message_hide(KBootstrap *b,int hidden){
 }
 void bootstrap_cancel(KBootstrap *b){
     if(b&&b->native_wait_clock)return;
-    if(bootstrap_bowling_active(b))return;
+    if(bootstrap_bowling_active(b)||kkuji_active(b)||khammer_active(b)||kbingo_active(b)||ktennis_active(b)||kstaff_active(b))return;
     if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     /* CNormalSelect::virtual_112 (4f1dd0): byte1500 permits returning
@@ -3681,6 +3713,11 @@ void bootstrap_title_move(KBootstrap *b,int delta){
 void bootstrap_pointer(KBootstrap *b,int x,int y,int click){
     if(b&&b->native_wait_clock)return;
     if(bootstrap_bowling_active(b)){bootstrap_bowling_pointer(b,x,y,click!=0);return;}
+    if(kkuji_active(b)){kkuji_pointer(b,x,y,click!=0);return;}
+    if(khammer_active(b)){khammer_pointer(b,x,y,click!=0);return;}
+    if(kbingo_active(b)){kbingo_pointer(b,x,y,click!=0);return;}
+    if(ktennis_active(b)){ktennis_pointer(b,x,y,click!=0);return;}
+    if(kstaff_active(b)){kstaff_pointer(b,x,y,click!=0);return;}
     if(b&&(b->param_animation_active||b->exec523_active||b->exec522_motion))return;
     if(b&&(b->quit_modal||b->quit_requested))return;
     if(b->letter_active||b->letter_transition){if(click)bootstrap_confirm(b);return;}

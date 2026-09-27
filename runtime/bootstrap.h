@@ -24,6 +24,11 @@
 #include "overlay_state.h"
 #include "bowling.h"
 #include "bowling_runtime.h"
+#include "kuji.h"
+#include "hummer.h"
+#include "bingo.h"
+#include "tennis.h"
+#include "staffroll.h"
 #include "media_tables.h"
 #include "message_skin.h"
 #include "param_change.h"
@@ -66,6 +71,11 @@ typedef struct {
     KBowling bowling;KBowling *current_bowling;
     KBowlingRuntime *bowling_runtime;
     KEffectTrack bowling_effects[27];
+    KKuji kuji;
+    KHummer hummer;
+    KBingo bingo;
+    KTennis tennis;
+    KStaffroll staffroll;
     KImage mes_fade_surfaces[3]; /* CFadeSprite and two private CSprite bitmaps. */
     unsigned mes_fade_visible,mes_fade_shade_visible;
     KImage mes_fade_backing;
