@@ -11,21 +11,24 @@
 #ifndef KISAKU_KUJI_RUNTIME_INCLUDED
 #define KISAKU_KUJI_RUNTIME_INCLUDED
 
+static void kkuji_release_art(KKuji *k){
+    rmt_free(&k->background);rmt_free(&k->prompt);rmt_free(&k->cursor);
+    for(unsigned i=0;i<KKUJI_COLUMNS;i++)rmt_free(&k->pages[i]);
+}
+
 static int kkuji_begin(KBootstrap *b, const unsigned pool[4]) {
     if (b->kuji.active) return error(b, "31/710 already running (arguments preserved)");
     KKuji *k = &b->kuji;
-    rmt_free(&k->background);
-    rmt_free(&k->prompt);rmt_free(&k->cursor);
-    for (unsigned i = 0; i < KKUJI_COLUMNS; i++) rmt_free(&k->pages[i]);
+    kkuji_release_art(k);
     if (mini_load_akb(b,"kuji_bg.akb",&k->background)||
        mini_load_akb(b,"kuji_pt.akb",&k->prompt)||
-       mini_load_akb(b,"kuji_c.akb",&k->cursor)) return error(b,"31/710 artwork decode failed (arguments preserved)");
+       mini_load_akb(b,"kuji_c.akb",&k->cursor)){kkuji_release_art(k);return error(b,"31/710 artwork decode failed (arguments preserved)");}
     for(unsigned i=0;i<KKUJI_COLUMNS;i++){
         char name[32];snprintf(name,sizeof(name),"kujip%u.akb",i+1);
-        if(mini_load_akb(b,name,&k->pages[i]))return error(b,"31/710 prize page decode failed (arguments preserved)");
+        if(mini_load_akb(b,name,&k->pages[i])){kkuji_release_art(k);return error(b,"31/710 prize page decode failed (arguments preserved)");}
     }
     for (unsigned i = 0; i < 4; i++) {
-        if (pool[i] > 9) return error(b, "31/710 prize id range (arguments preserved)");
+        if (pool[i] > 9){kkuji_release_art(k);return error(b, "31/710 prize id range (arguments preserved)");}
         k->pool[i] = pool[i];
     }
     k->pool[4] = KKUJI_BLANK;
@@ -78,9 +81,11 @@ static int kkuji_frame(KBootstrap *b) {
     k->result = k->slot[kkuji_perm[k->select]];
     if (kvm_push(b->vm, (KValue){(int32_t)k->result, NULL})) {
         k->active = 0;
+        kkuji_release_art(k);
         return error(b, "31/710 result push failed");
     }
     k->active = 0;
+    kkuji_release_art(k);
     return 0;
 }
 

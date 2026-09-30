@@ -6,16 +6,19 @@
 #ifndef KISAKU_BINGO_RUNTIME_INCLUDED
 #define KISAKU_BINGO_RUNTIME_INCLUDED
 
+static void kbingo_release_art(KBingo *k){rmt_free(&k->background);rmt_free(&k->logo);rmt_free(&k->parts);rmt_free(&k->animation);}
+
 static int kbingo_begin(KBootstrap *b) {
     if (b->bingo.active) return error(b, "31/611 already running (arguments preserved)");
     KBingo *k = &b->bingo;
-    rmt_free(&k->background);rmt_free(&k->logo);rmt_free(&k->parts);rmt_free(&k->animation);
+    kbingo_release_art(k);
     *k = (KBingo){0};
     if (mini_load_akb(b,"bingo_bg.akb",&k->background)||
         mini_load_akb(b,"bingo_logo.akb",&k->logo)||
         mini_load_akb(b,"bingo_parts.akb",&k->parts)||
-        mini_load_akb(b,"bingo_an.akb",&k->animation))
-        return error(b,"31/611 artwork decode failed (arguments preserved)");
+        mini_load_akb(b,"bingo_an.akb",&k->animation)){
+        kbingo_release_art(k);return error(b,"31/611 artwork decode failed (arguments preserved)");
+    }
     kbingo_deal(k, &b->vm->random_state);
     k->active = 1;
     k->sound = 0;
@@ -48,9 +51,11 @@ static int kbingo_frame(KBootstrap *b, unsigned ms) {
     k->settled = 1;
     if (kvm_push(b->vm, (KValue){(int32_t)k->result, NULL})) {
         k->active = 0;
+        kbingo_release_art(k);
         return error(b, "31/611 result push failed");
     }
     k->active = 0;
+    kbingo_release_art(k);
     return 0;
 }
 

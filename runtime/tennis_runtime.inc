@@ -4,6 +4,11 @@
 #ifndef KISAKU_TENNIS_RUNTIME_INCLUDED
 #define KISAKU_TENNIS_RUNTIME_INCLUDED
 
+static void ktennis_release_art(KTennis *t){
+    rmt_free(&t->background);rmt_free(&t->player1);rmt_free(&t->court1);rmt_free(&t->court2);
+    rmt_free(&t->player2);rmt_free(&t->pieces);
+}
+
 static unsigned ktennis_difficulty(KBootstrap *b) {
     int difficulty = option(b, "Difficult", "AllMiniGame", 1);   /* 0x4647c0 */
     if (difficulty < 0) difficulty = 0;
@@ -14,14 +19,12 @@ static unsigned ktennis_difficulty(KBootstrap *b) {
 static int ktennis_begin(KBootstrap *b) {
     if (b->tennis.active) return error(b, "31/610 already running (arguments preserved)");
     KTennis *t = &b->tennis;
-    rmt_free(&t->background);
-    rmt_free(&t->player1); rmt_free(&t->court1); rmt_free(&t->court2);
-    rmt_free(&t->player2); rmt_free(&t->pieces);
+    ktennis_release_art(t);
     *t = (KTennis){0};
     t->difficulty = ktennis_difficulty(b);
     if(mini_load_akb(b,"tennisbg.akb",&t->background)||mini_load_akb(b,"tennisp1.akb",&t->player1)||mini_load_akb(b,"tennisc1.akb",&t->court1)||
        mini_load_akb(b,"tennisc2.akb",&t->court2)||mini_load_akb(b,"tennisp2.akb",&t->player2)||
-       mini_load_akb(b,"tennis_p.akb",&t->pieces))return error(b,"31/610 sprite resources decode failed (arguments preserved)");
+       mini_load_akb(b,"tennis_p.akb",&t->pieces)){ktennis_release_art(t);return error(b,"31/610 sprite resources decode failed (arguments preserved)");}
     t->active = 1;
     return 0;
 }
@@ -68,9 +71,11 @@ static int ktennis_frame(KBootstrap *b, unsigned ms) {
     t->settled = 1;
     if (kvm_push(b->vm, (KValue){(int32_t)t->result, NULL})) {
         t->active = 0;
+        ktennis_release_art(t);
         return error(b, "31/610 result push failed");
     }
     t->active = 0;
+    ktennis_release_art(t);
     return 0;
 }
 

@@ -27,6 +27,11 @@
 #define KSTAFF_SHORT_TICKS 1050
 #define KSTAFF_TICK_MS 20
 
+static void kstaff_release_art(KStaffroll *s){
+    rmt_free(&s->background);rmt_free(&s->part1);rmt_free(&s->part2);rmt_free(&s->part3);
+    rmt_free(&s->staff1);rmt_free(&s->staff2);
+}
+
 static int kstaff_load_segment(KBootstrap *b, KStaffroll *s, unsigned segment) {
     char name[32];
     if (s->mode) snprintf(name, sizeof(name), "end_p%02u.ax", segment + 1);
@@ -45,18 +50,19 @@ static int kstaff_begin(KBootstrap *b, int mode) {
     if (b->staffroll.active) return error(b, "31/210 already running (arguments preserved)");
     if (mode != 0 && mode != 1) return error(b, "31/210 mode must be 0 or 1 (arguments preserved)");
     KStaffroll *s = &b->staffroll;
-    rmt_free(&s->background); rmt_free(&s->part1); rmt_free(&s->part2);
-    rmt_free(&s->part3); rmt_free(&s->staff1); rmt_free(&s->staff2);
+    kstaff_release_art(s);
     *s = (KStaffroll){0};
     s->mode = (unsigned)mode;
     s->ticks = mode ? KSTAFF_FULL_TICKS : KSTAFF_SHORT_TICKS;
     if(mini_load_akb(b,"endbg.akb",&s->background)||mini_load_akb(b,mode?"endpart1.akb":"endpart1m.akb",&s->part1)||
        mini_load_akb(b,mode?"endpart2.akb":"endpart2m.akb",&s->part2)||
-       mini_load_akb(b,"staff1.akb",&s->staff1)||mini_load_akb(b,"staff2.akb",&s->staff2))
-        return error(b,"31/210 ending resources decode failed (arguments preserved)");
+       mini_load_akb(b,"staff1.akb",&s->staff1)||mini_load_akb(b,"staff2.akb",&s->staff2)){
+        kstaff_release_art(s);return error(b,"31/210 ending resources decode failed (arguments preserved)");
+    }
     if(mode&&!mini_load_akb(b,"endpart3.akb",&s->part3)){}
-    if (!kstaff_load_segment(b, s, 0))
-        return error(b,"31/210 ending AX start failed (arguments preserved)");
+    if (!kstaff_load_segment(b, s, 0)){
+        kstaff_release_art(s);return error(b,"31/210 ending AX start failed (arguments preserved)");
+    }
     s->active = 1;
     /* The native modal marks the screen as owned by a native subsystem. */
     if ((unsigned)4012 < b->vm->byte_count) b->vm->bytes[4012] = 1;
@@ -99,7 +105,7 @@ static int kstaff_frame(KBootstrap *b, unsigned ms) {
             s->segment++;
             s->segment_clock = 0;
             if (!kstaff_load_segment(b, s, s->segment)) {
-                s->active = 0;
+                s->active = 0;kstaff_release_art(s);
                 if ((unsigned)4012 < b->vm->byte_count) b->vm->bytes[4012] = 0;
                 return error(b, "31/210 ending AX segment decode failed");
             }
@@ -111,6 +117,7 @@ static int kstaff_frame(KBootstrap *b, unsigned ms) {
     }
     if (s->elapsed < s->ticks) return 0;
     s->active = 0;
+    kstaff_release_art(s);
     if ((unsigned)4012 < b->vm->byte_count) b->vm->bytes[4012] = 0;
     return 0;
 }

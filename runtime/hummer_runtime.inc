@@ -7,6 +7,8 @@
 #ifndef KISAKU_HUMMER_RUNTIME_INCLUDED
 #define KISAKU_HUMMER_RUNTIME_INCLUDED
 
+static void khummer_release_art(KHummer *h){rmt_free(&h->background);rmt_free(&h->holes);rmt_free(&h->effects);}
+
 /* GetConfig("AllMiniGame","Difficult") clamped to 0..2 (0x4647c0); the same
    key the tennis engine reads, with the bowling default of 1. */
 static unsigned khammer_difficulty(KBootstrap *b) {
@@ -19,11 +21,10 @@ static unsigned khammer_difficulty(KBootstrap *b) {
 static int khammer_begin(KBootstrap *b) {
     if (b->hummer.active) return error(b, "31/711 already running (arguments preserved)");
     KHummer *h = &b->hummer;
-    rmt_free(&h->background);
-    rmt_free(&h->holes);rmt_free(&h->effects);
+    khummer_release_art(h);
     if (mini_load_akb(b,"hummbg.akb",&h->background)||
        mini_load_akb(b,"hummp.akb",&h->holes)||
-       mini_load_akb(b,"hummps.akb",&h->effects)) return error(b,"31/711 artwork decode failed (arguments preserved)");
+       mini_load_akb(b,"hummps.akb",&h->effects)){khammer_release_art(h);return error(b,"31/711 artwork decode failed (arguments preserved)");}
     h->active = 1;
     h->clock = h->hole_clock = h->effect_clock = h->reveal_clock = 0;
     h->hole = h->revealed = h->settled = 0;
@@ -112,10 +113,12 @@ static int khammer_frame(KBootstrap *b, unsigned ms) {
     h->settled = 1;
     if (kvm_push(b->vm, (KValue){(int32_t)h->result, NULL})) {
         h->active = 0;
+        khammer_release_art(h);
         return error(b, "31/711 result push failed");
     }
     (void)before;
     h->active = 0;
+    khammer_release_art(h);
     return 0;
 }
 
