@@ -9,12 +9,12 @@ static const unsigned cg_starts[]={0,22,48,71,112,147,172,195,225,278};
 static const unsigned cg_counts[]={21,25,22,40,34,24,22,29,52,28};
 static const char *const cg_atlases[]={"kisaku_DL_CG00nadesiko.akb","kisaku_DL_CG01hiromi.akb","kisaku_DL_CG02momoko.akb","kisaku_DL_CG03madoka.akb","kisaku_DL_CG04yuri.akb","kisaku_DL_CG05aoi.akb","kisaku_DL_CG06ayano.akb","kisaku_DL_CG07syouko.akb","kisaku_DL_CG08sonota.akb","kisaku_DL_CG09onnanoko.akb"};
 static int cg_hage_unlocked(const KBootstrap *b){return b&&b->vm&&b->vm->byte_count>4006&&b->vm->bytes[4006]!=0;}
-static unsigned cg_count(const KNativeCG *c){return c->alternate?27:cg_counts[c->group];}
+static unsigned cg_count(const KNativeCG *c){return c&&c->alternate?27:c&&c->group<10?cg_counts[c->group]:0;}
 static unsigned cg_columns(const KNativeCG *c){return c->alternate?5:4;}
 static unsigned cg_pages(const KNativeCG *c){unsigned n=cg_columns(c)*4;return (cg_count(c)+n-1)/n;}
 static const KCGRecord *cg_record(const KNativeCG *c,unsigned item){return c->alternate?&hage_cg_records[item]:&kisaku_cg_records[cg_starts[c->group]+item];}
 static unsigned cg_variant_count(const KCGRecord *r){unsigned n=0;while(n<30&&r->variants[n]>=0)n++;return n;}
-static int cg_unlocked(const KBootstrap *b,int flag){return flag>=0&&(unsigned)flag<b->vm->byte_count&&b->vm->bytes[flag]==1;}
+static int cg_unlocked(const KBootstrap *b,int flag){return b&&b->vm&&flag>=0&&(unsigned)flag<b->vm->byte_count&&b->vm->bytes[flag]==1;}
 static int cg_item_unlocked(const KBootstrap *b,const KCGRecord *r){
     if(cg_unlocked(b,r->flag))return 1;
     for(unsigned i=0;i<cg_variant_count(r);i++)if(cg_unlocked(b,r->variants[i]))return 1;
@@ -43,6 +43,7 @@ static void cg_variant_rect(const KCGRecord *r,unsigned i,int *x,int *y){
 }
 static int cg_draw(KBootstrap *b){
     KNativeCG *c=b->native_cg;if(!c)return -1;
+    if(c->view>2||c->group>=10||c->item>=cg_count(c))return -1;
     if(!c->base.pixels||c->base.width<640||c->base.height<480||
        c->base.stride<(size_t)c->base.width*4||!c->screen.pixels||c->screen.width<640||
        c->screen.height<480||c->screen.stride<(size_t)c->screen.width*4)return -1;

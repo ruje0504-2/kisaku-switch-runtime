@@ -610,6 +610,13 @@ static void test_animation_waits(const char *root,const char *saves){
     assert(call_anime520(b,command,4)<0&&b->vm->sp==4&&!b->ax_extra_modal);
     command[1].string=NULL;command[0].number=7;
     assert(call_anime520(b,command,4)<0&&b->vm->sp==4&&!b->ax_extra_modal);
+    /* Registered extended tracks keep ticking even when the transient global
+       animation-enable bit has already been cleared by the script. */
+    assert(ax_load(&b->ax_extra,"wait.ax",data,sizeof(data)));
+    b->ax_extra_registered[index]=1;b->ax_extra.cells[index].state=0;b->ax_extra_clock=0;
+    b->vm->globals[0][50].number&=~0x10;
+    bootstrap_frame(b);bootstrap_frame(b);
+    assert(!b->error[0]&&b->ax_extra.cells[index].ip>0);
     bootstrap_destroy(b);
     puts("Kisaku AX waits: completion, cancel permission, boundary pause/resume, disabled clock, independent manager, preserved invalid operands: PASS");
 }

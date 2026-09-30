@@ -862,6 +862,7 @@ static int blit_args(KBootstrap *b,int keyed,const int32_t q[9]){
     if(h>(int64_t)dst->height-dy)h=(int64_t)dst->height-dy;
     if(h>(int64_t)src->height-sy)h=(int64_t)src->height-sy;
     if(w<=0||h<=0)return 0;
+    if((uint64_t)w*(uint64_t)h>SIZE_MAX/4)return error(b,"blit size overflow");
     /* Snapshot permits overlapping source/destination rectangles. */
     uint8_t *copy=malloc((size_t)w*h*4);if(!copy)return error(b,"blit allocation failed");
     for(int64_t y=0;y<h;y++)memcpy(copy+y*w*4,src->pixels+(sy+y)*src->stride+sx*4,(size_t)w*4);
@@ -884,7 +885,9 @@ static int blit(KBootstrap *b,int keyed){
 static int blit_color_key(KBootstrap *b){
     int32_t q[10];for(unsigned i=0;i<10;i++)if(integer(b,&q[i]))return -1;
     KImage *dst=surface(b,q[4]),*src=surface(b,q[7]);
-    if(!dst||!src||!dst->pixels||!src->pixels)return error(b,"color-key surface missing");
+    if(!dst||!src||!dst->pixels||!src->pixels||!dst->width||!dst->height||!src->width||!src->height||
+       dst->width>SIZE_MAX/4||src->width>SIZE_MAX/4||dst->stride<(size_t)dst->width*4||
+       src->stride<(size_t)src->width*4)return error(b,"color-key surface invalid");
     int64_t dx=q[0],dy=q[1],w=q[2],h=q[3],sx=q[5],sy=q[6];
     if(w<=0||h<=0)return 0;
     if(dx<0){sx-=dx;w+=dx;dx=0;}if(sx<0){dx-=sx;w+=sx;sx=0;}
@@ -894,6 +897,7 @@ static int blit_color_key(KBootstrap *b){
     if(h>(int64_t)dst->height-dy)h=(int64_t)dst->height-dy;
     if(h>(int64_t)src->height-sy)h=(int64_t)src->height-sy;
     if(w<=0||h<=0)return 0;
+    if((uint64_t)w*(uint64_t)h>SIZE_MAX/4)return error(b,"color-key size overflow");
     uint8_t *copy=malloc((size_t)w*h*4);if(!copy)return error(b,"color-key allocation failed");
     for(int64_t y=0;y<h;y++)memcpy(copy+y*w*4,src->pixels+(sy+y)*src->stride+sx*4,(size_t)w*4);
     uint32_t key=(uint32_t)q[8]&0xffffffu;
@@ -915,7 +919,9 @@ static int blit_color_key(KBootstrap *b){
 static int blit_global_alpha(KBootstrap *b){
     int32_t q[9];for(unsigned i=0;i<9;i++)if(integer(b,&q[i]))return -1;
     KImage *dst=surface(b,q[4]),*src=surface(b,q[7]);
-    if(!dst||!src||!dst->pixels||!src->pixels)return error(b,"global-alpha surface missing");
+    if(!dst||!src||!dst->pixels||!src->pixels||!dst->width||!dst->height||!src->width||!src->height||
+       dst->width>SIZE_MAX/4||src->width>SIZE_MAX/4||dst->stride<(size_t)dst->width*4||
+       src->stride<(size_t)src->width*4)return error(b,"global-alpha surface invalid");
     int alpha=q[8];
     if(q[2]<=0||q[3]<=0||alpha<=0)return 0;
     int64_t dx=q[0],dy=q[1],w=q[2],h=q[3],sx=q[5],sy=q[6];
@@ -926,6 +932,7 @@ static int blit_global_alpha(KBootstrap *b){
     if(h>(int64_t)dst->height-dy)h=(int64_t)dst->height-dy;
     if(h>(int64_t)src->height-sy)h=(int64_t)src->height-sy;
     if(w<=0||h<=0)return 0;
+    if((uint64_t)w*(uint64_t)h>SIZE_MAX/4)return error(b,"global-alpha size overflow");
     uint8_t *copy=malloc((size_t)w*h*4);if(!copy)return error(b,"global-alpha allocation failed");
     for(int64_t y=0;y<h;y++)memcpy(copy+y*w*4,src->pixels+(sy+y)*src->stride+sx*4,(size_t)w*4);
     if(alpha>=255){
