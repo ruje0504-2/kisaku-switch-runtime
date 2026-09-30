@@ -1735,6 +1735,9 @@ static void test_minigame_resource_entries(const char *root,const char *saves){
         assert(!kvm_push(b->vm,(KValue){(int32_t)mode,NULL})&&!kvm_push(b->vm,(KValue){210,NULL}));
         assert(!bootstrap_dispatch(b)&&!b->error[0]&&bootstrap_native_screen_active(b));
         bootstrap_frame(b);assert(!b->error[0]&&b->staffroll.source_part==1);
+        /* The native CStaff field is signed: it begins at -640 and moves
+           four pixels per 20 ms update, rather than wrapping as uint32_t. */
+        assert(b->staffroll.scroll==-636&&b->staffroll.subtitle_page==0);
         unsigned segment_ticks=b->staffroll.ticks/(mode?11u:9u);
         for(unsigned frame=1;frame<segment_ticks*8;frame++)bootstrap_frame(b);
         assert(!b->error[0]&&b->staffroll.segment==8&&b->staffroll.source_part==2);

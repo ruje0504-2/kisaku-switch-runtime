@@ -15,7 +15,8 @@ typedef struct KStaffroll {
     unsigned ticks;       /* 2100 full / 1050 short at 20 ms per tick */
     unsigned elapsed;
     unsigned clock;
-    unsigned scroll;      /* [this+0xdc] += 4 with a -640 wrap */
+    int scroll;            /* [this+0xdc] += 4 with a -640 wrap */
+    unsigned subtitle_page;/* 44-page schedule; 0..26 uses staff1 */
     unsigned prepared;    /* current base frame has been rebuilt before AX draws */
     unsigned segment;
     unsigned segment_clock;

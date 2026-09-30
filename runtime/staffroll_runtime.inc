@@ -59,6 +59,9 @@ static int kstaff_begin(KBootstrap *b, int mode) {
     *s = (KStaffroll){0};
     s->mode = (unsigned)mode;
     s->ticks = mode ? KSTAFF_FULL_TICKS : KSTAFF_SHORT_TICKS;
+    /* CStaff starts at -640 (0xFFFFFD80), then advances the active
+       subtitle layer by four pixels on every 20 ms update. */
+    s->scroll = -640;
     if(mini_load_akb(b,"endbg.akb",&s->background)||mini_load_akb(b,mode?"endpart1.akb":"endpart1m.akb",&s->part1)||
        mini_load_akb(b,mode?"endpart2.akb":"endpart2m.akb",&s->part2)||
        mini_load_akb(b,"staff1.akb",&s->staff1)||mini_load_akb(b,"staff2.akb",&s->staff2)){
@@ -81,8 +84,10 @@ static int kstaff_pointer(KBootstrap *b, int x, int y, unsigned held) { (void)b;
 static void kstaff_base(KBootstrap *b, KStaffroll *s) {
     mini_clear(&b->layers[0]);
     mini_blit(&b->layers[0],&s->background,0,0,0,0,640,480);
-    mini_blit_key(&b->layers[0],&s->staff1,0,0,0,0,640,480,0x00ff00);
-    mini_blit_key(&b->layers[0],&s->staff2,0,0,0,0,640,480,0x00ff00);
+    /* The native CStaff moves one of the two subtitle layers at
+       (scroll,236); the other layer is not composited over the frame. */
+    const KImage *staff=s->subtitle_page<27u?&s->staff1:&s->staff2;
+    mini_blit_key(&b->layers[0],staff,s->scroll,236,0,0,640,480,0x00ff00);
     s->prepared=1;
 }
 
@@ -119,10 +124,10 @@ static int kstaff_frame(KBootstrap *b, unsigned ms) {
                 return error(b, "31/210 ending AX segment decode failed");
             }
         }
-        if (s->elapsed % 4 == 0) {          /* [this+0xdc] += 4, -640 wrap */
-            s->scroll += 4;
-            if (s->scroll >= 640) s->scroll -= 640;
-        }
+        /* 0x468cdf: every CStaff update advances the signed position. */
+        s->scroll += 4;
+        if (s->scroll > 0) s->scroll = -640;
+        s->subtitle_page=(s->elapsed*44u)/(s->ticks?s->ticks:1u);
     }
     if (s->elapsed < s->ticks) return 0;
     s->active = 0;
