@@ -1287,7 +1287,7 @@ static void draw_ax(const uint32_t d[7],unsigned cell,void *context){
     if(d[0]==2||d[0]==3)return; /* 4dd8a0 / 4dd890 */
     if(d[0]>3){error(b,"AX descriptor kind unsupported");return;}
     int32_t y=(int32_t)d[6];if(d[0]==1&&y>479)y-=480;
-    int destination=b->ax_destination==0&&b->message_visible?-3:b->ax_destination;
+    int destination=b->ax_destination==0&&b->message_visible&&b->message_base.pixels?-3:b->ax_destination;
     int32_t q[9]={(int32_t)d[5],y,(int32_t)d[3],(int32_t)d[4],destination,
                  (int32_t)d[1],(int32_t)d[2],8,d[0]==1?0xff00:0};
     blit_args(b,d[0]==1?1:0,q);
@@ -1304,7 +1304,7 @@ static void draw_ax_extra(const uint32_t d[7],unsigned cell,void *context){
     /* 4dd7a0 passes a zero copy-alpha flag; 4dd690 passes key 0xff00 and
        the same zero alpha flag.  The portable layer helper has the same
        byte-preserving behavior for q[8]==0. */
-    int destination=b->animation_target_layer==0&&b->message_visible?-3:b->animation_target_layer;
+    int destination=b->animation_target_layer==0&&b->message_visible&&b->message_base.pixels?-3:b->animation_target_layer;
     int32_t q[9]={(int32_t)d[5],y,(int32_t)d[3],(int32_t)d[4],destination,
                  (int32_t)d[1],(int32_t)d[2],9,d[0]==1?0xff00:0};
     if(blit_args(b,d[0]==1?1:0,q))return;
