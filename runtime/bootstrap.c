@@ -28,7 +28,7 @@ static int mini_load_akb(KBootstrap *b,const char *name,KImage *out){
     free(data);rmt_free(out);*out=image;return 0;
 }
 static int mini_surface_valid(const KImage *im){
-    return im&&im->pixels&&im->width&&im->height&&(uint64_t)im->width<=SIZE_MAX/4&&
+    return im&&im->pixels&&im->width&&im->height&&
         im->stride>=(size_t)im->width*4;
 }
 static void mini_clear(KImage *dst){
@@ -857,7 +857,7 @@ static int blit_args(KBootstrap *b,int keyed,const int32_t q[9]){
     /* 431b90/431dd0: dx,dy,w,h,dst,sx,sy,src,alpha-or-key. */
     KImage *dst=surface(b,q[4]),*src=surface(b,q[7]);
     if(!dst||!src||!dst->pixels||!src->pixels||!dst->width||!dst->height||!src->width||!src->height||
-       (uint64_t)dst->width>SIZE_MAX/4||(uint64_t)src->width>SIZE_MAX/4||dst->stride<(size_t)dst->width*4||
+       dst->stride<(size_t)dst->width*4||
        src->stride<(size_t)src->width*4)return error(b,"blit surface invalid");
     int64_t dx=q[0],dy=q[1],w=q[2],h=q[3],sx=q[5],sy=q[6];
     /* CDIB copy methods return immediately for nonpositive dimensions. */
@@ -893,7 +893,7 @@ static int blit_color_key(KBootstrap *b){
     int32_t q[10];for(unsigned i=0;i<10;i++)if(integer(b,&q[i]))return -1;
     KImage *dst=surface(b,q[4]),*src=surface(b,q[7]);
     if(!dst||!src||!dst->pixels||!src->pixels||!dst->width||!dst->height||!src->width||!src->height||
-       (uint64_t)dst->width>SIZE_MAX/4||(uint64_t)src->width>SIZE_MAX/4||dst->stride<(size_t)dst->width*4||
+       dst->stride<(size_t)dst->width*4||
        src->stride<(size_t)src->width*4)return error(b,"color-key surface invalid");
     int64_t dx=q[0],dy=q[1],w=q[2],h=q[3],sx=q[5],sy=q[6];
     if(w<=0||h<=0)return 0;
@@ -927,7 +927,7 @@ static int blit_global_alpha(KBootstrap *b){
     int32_t q[9];for(unsigned i=0;i<9;i++)if(integer(b,&q[i]))return -1;
     KImage *dst=surface(b,q[4]),*src=surface(b,q[7]);
     if(!dst||!src||!dst->pixels||!src->pixels||!dst->width||!dst->height||!src->width||!src->height||
-       (uint64_t)dst->width>SIZE_MAX/4||(uint64_t)src->width>SIZE_MAX/4||dst->stride<(size_t)dst->width*4||
+       dst->stride<(size_t)dst->width*4||
        src->stride<(size_t)src->width*4)return error(b,"global-alpha surface invalid");
     int alpha=q[8];
     if(q[2]<=0||q[3]<=0||alpha<=0)return 0;
