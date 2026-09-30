@@ -15,6 +15,10 @@ static void test_video_target_guard(const uint8_t *data,size_t size){
     assert(kvideo_step(v,&bad,&pcm,&bytes)<0&&strstr(kvideo_error(v),"target surface"));
     kvideo_close(v);free(pcm);
 }
+static void test_video_header_guard(void){
+    uint8_t bad[8]={'V','S','D','1',0xff,0xff,0xff,0xff};
+    assert(!kvideo_open_mode(bad,sizeof(bad),KVIDEO_SOFTWARE));
+}
 static void test_video(const uint8_t *data,size_t size,int range){
     KVideo *v=kvideo_open_mode(data,size,KVIDEO_SOFTWARE),*auto_v=kvideo_open_mode(data,size,KVIDEO_AUTO);assert(v&&auto_v);
     uint8_t *pcm=NULL,*auto_pcm=NULL;size_t bytes=0,auto_bytes=0;
@@ -69,6 +73,7 @@ static void test_video_slots(Ai6Archive *arc){
 }
 int main(int argc,char **argv){
     assert(argc==2);char path[4096];snprintf(path,sizeof(path),"%s/movie.arc",argv[1]);
+    test_video_header_guard();
     Ai6Archive arc={0};assert(!ai6_open(&arc,path));uint8_t *data=NULL;size_t size=0;
     test_video_slots(&arc);
     assert(!ai6_read_named(&arc,"endfilm.VSD",&data,&size));test_video(data,size,0);free(data);

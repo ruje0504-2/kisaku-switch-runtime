@@ -4,6 +4,7 @@
 #include <libavutil/hwcontext.h>
 #include <libavutil/pixdesc.h>
 #include <stdarg.h>
+#include <limits.h>
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
 #include <stdlib.h>
@@ -76,7 +77,7 @@ static int video_hardware(KVideo *v,AVCodecContext *c,const AVCodec *codec){
     video_log("NVTEGRA device ready for %s; awaiting first hardware frame",codec->name);return 0;
 }
 static int fail(KVideo *v,const char *s){snprintf(v->error,sizeof(v->error),"%s",s);return -1;}
-static int read_data(void *ctx,uint8_t *out,int n){KVideo *v=ctx;if(v->pos==v->size)return AVERROR_EOF;size_t count=(size_t)n;if(count>v->size-v->pos)count=v->size-v->pos;memcpy(out,v->data+v->pos,count);v->pos+=count;return (int)count;}
+static int read_data(void *ctx,uint8_t *out,int n){KVideo *v=ctx;if(n<0)return AVERROR(EINVAL);if(v->pos==v->size)return AVERROR_EOF;size_t count=(size_t)n;if(count>v->size-v->pos)count=v->size-v->pos;memcpy(out,v->data+v->pos,count);v->pos+=count;return (int)count;}
 static int64_t seek_data(void *ctx,int64_t n,int whence){
     KVideo *v=ctx;if(whence==AVSEEK_SIZE)return (int64_t)v->size;
     int64_t base=whence==SEEK_SET?0:whence==SEEK_CUR?(int64_t)v->pos:whence==SEEK_END?(int64_t)v->size:-1;
@@ -107,7 +108,9 @@ static AVCodecContext *decoder(AVFormatContext *f,int index,KVideo *owner,KVideo
 KVideo *kvideo_open(const uint8_t *d,size_t n){return kvideo_open_mode(d,n,default_mode);}
 KVideo *kvideo_open_mode(const uint8_t *d,size_t n,KVideoMode mode){
     if(!d||n<8||memcmp(d,"VSD1",4))return NULL;
-    size_t skip=8+(size_t)((uint32_t)d[4]|((uint32_t)d[5]<<8)|((uint32_t)d[6]<<16)|((uint32_t)d[7]<<24));if(skip>=n)return NULL;
+    uint64_t header=(uint32_t)d[4]|((uint32_t)d[5]<<8)|((uint32_t)d[6]<<16)|((uint32_t)d[7]<<24);
+    if(header>n-8)return NULL;
+    size_t skip=8+(size_t)header;if(skip>=n)return NULL;
     KVideo *v=calloc(1,sizeof(*v));if(!v)return NULL;
     v->data=d+skip;v->size=n-skip;v->vi=v->ai=-1;v->origin=AV_NOPTS_VALUE;v->hw_format=AV_PIX_FMT_NONE;
     uint8_t *buffer=av_malloc(32768);if(!buffer)goto bad;
@@ -277,7 +280,7 @@ static void cache_frame(KVideo *v){
 }
 int kvideo_step(KVideo *v,KImage *screen,uint8_t **pcm,size_t *bytes){
     if(!v)return -1;
-    if(!screen||!screen->pixels||!screen->width||!screen->height||screen->width>SIZE_MAX/4||
+    if(!screen||!screen->pixels||!screen->width||!screen->height||screen->width>SIZE_MAX/4||screen->stride>INT_MAX||
        screen->stride<(size_t)screen->width*4||!pcm||!bytes)return fail(v,"video target surface invalid");
     if(v->error[0])return -1;
     if(v->finished)return 1;
