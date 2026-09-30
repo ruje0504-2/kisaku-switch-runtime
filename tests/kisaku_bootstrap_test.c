@@ -613,6 +613,7 @@ static void test_animation_waits(const char *root,const char *saves){
     /* Registered extended tracks keep ticking even when the transient global
        animation-enable bit has already been cleared by the script. */
     assert(ax_load(&b->ax_extra,"wait.ax",data,sizeof(data)));
+    b->error[0]=0;
     b->ax_extra_registered[index]=1;b->ax_extra.cells[index].state=0;b->ax_extra_clock=0;
     b->vm->globals[0][50].number&=~0x10;
     bootstrap_frame(b);bootstrap_frame(b);
