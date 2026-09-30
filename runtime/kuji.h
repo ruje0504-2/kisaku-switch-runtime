@@ -30,7 +30,7 @@ static const unsigned kkuji_perm[KKUJI_COLUMNS] = {2, 4, 0, 3, 1};
 static const int kkuji_column_x[KKUJI_COLUMNS] = {78, 215, 321, 445, 569};
 
 typedef struct KKuji {
-    KImage background;
+    KImage background, prompt, cursor;
     KImage pages[KKUJI_COLUMNS];
     unsigned pool[KKUJI_COLUMNS];   /* four script ids plus the blank 9 */
     unsigned slot[KKUJI_COLUMNS];   /* shuffled bottom slots (native obj+0xac) */
@@ -40,6 +40,7 @@ typedef struct KKuji {
     unsigned chosen;                /* confirmation accepted */
     unsigned clock;                 /* milliseconds since the walk started */
     unsigned drawn;                 /* result picture requested for this column */
+    unsigned viewport_y;            /* 640x480 window into the native 640x736 canvas */
 } KKuji;
 
 /* 415710 / 0x435775: shared MSVC LCG, identical to VM opcode 0x39. */

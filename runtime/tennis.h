@@ -36,7 +36,7 @@
 #define KTENNIS_FASTFORWARD_MS 75          /* 8x while the skip key is held */
 
 typedef struct KTennis {
-    KImage player1, court1, court2, player2, pieces;
+    KImage background, player1, court1, court2, player2, pieces;
     unsigned active, settled, result;
     unsigned games_player, games_cpu;
     unsigned points_player, points_cpu;

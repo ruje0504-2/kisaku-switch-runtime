@@ -26,6 +26,7 @@
 #define KBINGO_FASTFORWARD_MS 250          /* 4x, native [vt+0xa8] 0x102/0x103 */
 
 typedef struct KBingo {
+    KImage background, logo, parts, animation;
     unsigned active, settled, result;
     unsigned pool[KBINGO_BALLS];
     unsigned card[KBINGO_SIDE * KBINGO_SIDE];

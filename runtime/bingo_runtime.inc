@@ -9,7 +9,13 @@
 static int kbingo_begin(KBootstrap *b) {
     if (b->bingo.active) return error(b, "31/611 already running (arguments preserved)");
     KBingo *k = &b->bingo;
+    rmt_free(&k->background);rmt_free(&k->logo);rmt_free(&k->parts);rmt_free(&k->animation);
     *k = (KBingo){0};
+    if (mini_load_akb(b,"bingo_bg.akb",&k->background)||
+        mini_load_akb(b,"bingo_logo.akb",&k->logo)||
+        mini_load_akb(b,"bingo_parts.akb",&k->parts)||
+        mini_load_akb(b,"bingo_an.akb",&k->animation))
+        return error(b,"31/611 artwork decode failed (arguments preserved)");
     kbingo_deal(k, &b->vm->random_state);
     k->active = 1;
     k->sound = 0;
@@ -52,19 +58,19 @@ static void kbingo_present(KBootstrap *b) {
     KBingo *k = &b->bingo;
     if (!k->active || !b->layers[0].pixels) return;
     mini_clear(&b->layers[0]);
-    if(b->layers[2].pixels)mini_blit(&b->layers[0],&b->layers[2],0,0,0,0,640,480);
+    mini_blit(&b->layers[0],&k->background,0,0,0,0,640,480);
     /* bingo_an.akb is a 7x7 sheet of 240x268 dial frames.  The native
        animator places the selected frame over the dial in bingo_bg. */
-    if(b->layers[8].pixels){
+    if(k->animation.pixels){
         unsigned frame=(k->clock/40u)%49u;
-        mini_blit(&b->layers[0],&b->layers[8],376,16,(int)(frame%7u)*240,(int)(frame/7u)*268,240,268);
+        mini_blit(&b->layers[0],&k->animation,376,16,(int)(frame%7u)*240,(int)(frame/7u)*268,240,268);
     }
     for (unsigned cell = 0; cell < KBINGO_SIDE * KBINGO_SIDE; cell++) {
         unsigned row = cell / KBINGO_SIDE, col = cell % KBINGO_SIDE;
         if(row==2&&col==2)continue;
         int ox = 44 + (int)col * 64, oy = 52 + (int)row * 64;
         unsigned number=k->card[cell],sx=(number%20u)*32u,sy=(number/20u)*24u+(k->hit[cell]?48u:0u);
-        if(b->layers[9].pixels)mini_blit(&b->layers[0],&b->layers[9],ox,oy,(int)sx,(int)sy,32,24);
+        mini_blit(&b->layers[0],&k->parts,ox,oy,(int)sx,(int)sy,32,24);
     }
 }
 #endif

@@ -50,7 +50,7 @@ static const KHummerHole khammer_holes[KHUMMER_HOLES] = {
 };
 
 typedef struct KHummer {
-    KImage background;
+    KImage background, holes, effects;
     unsigned active;            /* modal owns the VM while set */
     unsigned clock;             /* elapsed ms since the modal started */
     unsigned hole_clock;        /* 300 ms mole alternation */

@@ -15,8 +15,11 @@ static int kkuji_begin(KBootstrap *b, const unsigned pool[4]) {
     if (b->kuji.active) return error(b, "31/710 already running (arguments preserved)");
     KKuji *k = &b->kuji;
     rmt_free(&k->background);
+    rmt_free(&k->prompt);rmt_free(&k->cursor);
     for (unsigned i = 0; i < KKUJI_COLUMNS; i++) rmt_free(&k->pages[i]);
-    if (mini_load_akb(b,"kuji_bg.akb",&k->background)) return error(b,"31/710 background decode failed (arguments preserved)");
+    if (mini_load_akb(b,"kuji_bg.akb",&k->background)||
+       mini_load_akb(b,"kuji_pt.akb",&k->prompt)||
+       mini_load_akb(b,"kuji_c.akb",&k->cursor)) return error(b,"31/710 artwork decode failed (arguments preserved)");
     for(unsigned i=0;i<KKUJI_COLUMNS;i++){
         char name[32];snprintf(name,sizeof(name),"kujip%u.akb",i+1);
         if(mini_load_akb(b,name,&k->pages[i]))return error(b,"31/710 prize page decode failed (arguments preserved)");
@@ -30,20 +33,23 @@ static int kkuji_begin(KBootstrap *b, const unsigned pool[4]) {
     k->select = 0;
     k->result = KKUJI_BLANK;
     k->chosen = k->drawn = k->clock = 0;
+    k->viewport_y = 256;
     k->active = 1;
     return 0;
 }
 
 static int kkuji_active(const KBootstrap *b) { return b->kuji.active; }
 
-/* Pointer hover: the five hit rectangles derived from the native initialiser
-   (cx-60, cy-98, cx+60, cy+48) with cy = 600. */
+/* Pointer hover uses display coordinates.  The native hit rectangles live on
+   the 640x736 artwork; translate through the active 640x480 viewport before
+   testing them so the bottom five choices are reachable on Switch. */
 static int kkuji_pointer(KBootstrap *b, int x, int y, unsigned held) {
     KKuji *k = &b->kuji;
     if (!k->active || k->chosen) return 0;
     for (unsigned i = 0; i < KKUJI_COLUMNS; i++) {
         int cx = kkuji_column_x[i];
-        if (x >= cx - 60 && x < cx + 60 && y >= 600 - 98 && y < 600 + 48) {
+        int logical_y=y+(int)k->viewport_y;
+        if (x >= cx - 60 && x < cx + 60 && logical_y >= 600 - 98 && logical_y < 600 + 48) {
             k->select = i;
             if (held) { k->chosen = 1; k->clock = 0; }
             return 1;
@@ -82,9 +88,12 @@ static void kkuji_present(KBootstrap *b) {
     KKuji *k = &b->kuji;
     if (!k->active || !b->layers[0].pixels) return;
     mini_clear(&b->layers[0]);
-    mini_blit(&b->layers[0],&k->background,0,0,0,256,640,480);
-    if(!k->chosen&&b->layers[5].pixels)mini_blit(&b->layers[0],&b->layers[5],0,0,0,0,640,480);
-    else mini_blit(&b->layers[0],&k->pages[k->select],0,0,0,256,640,480);
+    if(!k->chosen&&k->prompt.pixels){
+        mini_blit(&b->layers[0],&k->prompt,0,0,0,0,640,480);
+        return;
+    }
+    mini_blit(&b->layers[0],&k->background,0,0,0,(int)k->viewport_y,640,480);
+    if(k->select<KKUJI_COLUMNS)mini_blit(&b->layers[0],&k->pages[k->select],0,0,0,(int)k->viewport_y,640,480);
 }
 
 #endif

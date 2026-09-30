@@ -1695,8 +1695,8 @@ static void test_kuji(const char *root,const char *saves){
            !kvm_push(b->vm,(KValue){2,NULL})&&!kvm_push(b->vm,(KValue){3,NULL})&&
            !kvm_push(b->vm,(KValue){710,NULL}));
     assert(!bootstrap_dispatch(b)&&b->kuji.active);
-    bootstrap_pointer(b,kkuji_column_x[3],620,0);assert(b->kuji.select==3);
-    bootstrap_pointer(b,kkuji_column_x[3],620,1);assert(b->kuji.chosen);
+    bootstrap_pointer(b,kkuji_column_x[3],344,0);assert(b->kuji.select==3);
+    bootstrap_pointer(b,kkuji_column_x[3],344,1);assert(b->kuji.chosen);
     frames=0;while(b->kuji.active&&frames<200){bootstrap_frame(b);frames++;}
     assert(!b->kuji.active&&b->vm->sp==1&&b->vm->stack[0].number==(int32_t)b->kuji.slot[kkuji_perm[3]]);
     /* A string prize id and a short vector keep every operand. */

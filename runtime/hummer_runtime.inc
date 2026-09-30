@@ -20,7 +20,10 @@ static int khammer_begin(KBootstrap *b) {
     if (b->hummer.active) return error(b, "31/711 already running (arguments preserved)");
     KHummer *h = &b->hummer;
     rmt_free(&h->background);
-    if (mini_load_akb(b,"hummbg.akb",&h->background)) return error(b,"31/711 background decode failed (arguments preserved)");
+    rmt_free(&h->holes);rmt_free(&h->effects);
+    if (mini_load_akb(b,"hummbg.akb",&h->background)||
+       mini_load_akb(b,"hummp.akb",&h->holes)||
+       mini_load_akb(b,"hummps.akb",&h->effects)) return error(b,"31/711 artwork decode failed (arguments preserved)");
     h->active = 1;
     h->clock = h->hole_clock = h->effect_clock = h->reveal_clock = 0;
     h->hole = h->revealed = h->settled = 0;
@@ -121,13 +124,13 @@ static void khammer_present(KBootstrap *b) {
     if (!h->active || !b->layers[0].pixels) return;
     mini_clear(&b->layers[0]);
     mini_blit(&b->layers[0],&h->background,0,0,0,0,640,480);
-    if (b->layers[8].pixels) {
+    if (h->holes.pixels) {
         const KHummerHole *hole=&khammer_holes[h->hole%KHUMMER_HOLES];
-        mini_blit(&b->layers[0],&b->layers[8],132,64,hole->x,hole->y,376,368);
+        mini_blit(&b->layers[0],&h->holes,132,64,hole->x,hole->y,376,368);
     }
-    if (b->layers[9].pixels) {
+    if (h->effects.pixels) {
         unsigned frame=(h->effect_clock/KHUMMER_EFFECT_MS)%3;
-        mini_blit(&b->layers[0],&b->layers[9],218,40,(int)frame*204,0,204,248);
+        mini_blit(&b->layers[0],&h->effects,218,40,(int)frame*204,0,204,248);
     }
 }
 

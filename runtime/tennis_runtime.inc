@@ -14,11 +14,12 @@ static unsigned ktennis_difficulty(KBootstrap *b) {
 static int ktennis_begin(KBootstrap *b) {
     if (b->tennis.active) return error(b, "31/610 already running (arguments preserved)");
     KTennis *t = &b->tennis;
+    rmt_free(&t->background);
     rmt_free(&t->player1); rmt_free(&t->court1); rmt_free(&t->court2);
     rmt_free(&t->player2); rmt_free(&t->pieces);
     *t = (KTennis){0};
     t->difficulty = ktennis_difficulty(b);
-    if(mini_load_akb(b,"tennisp1.akb",&t->player1)||mini_load_akb(b,"tennisc1.akb",&t->court1)||
+    if(mini_load_akb(b,"tennisbg.akb",&t->background)||mini_load_akb(b,"tennisp1.akb",&t->player1)||mini_load_akb(b,"tennisc1.akb",&t->court1)||
        mini_load_akb(b,"tennisc2.akb",&t->court2)||mini_load_akb(b,"tennisp2.akb",&t->player2)||
        mini_load_akb(b,"tennis_p.akb",&t->pieces))return error(b,"31/610 sprite resources decode failed (arguments preserved)");
     t->active = 1;
@@ -77,12 +78,14 @@ static void ktennis_present(KBootstrap *b) {
     KTennis *t = &b->tennis;
     if (!t->active || !b->layers[0].pixels) return;
     mini_clear(&b->layers[0]);
+    mini_blit(&b->layers[0],&t->background,0,0,0,0,640,480);
     if(b->layers[0].width==640&&b->layers[0].height>=480){
         /* The native places one character on each side of the net.  The
            source sheets are 6-column strips: c1=136x128, c2=112x160. */
         unsigned f=t->points_played%6u;
-        if(t->court1.pixels)mini_blit(&b->layers[0],&t->court1,122,268,(int)f*136,0,136,128);
-        if(t->court2.pixels)mini_blit(&b->layers[0],&t->court2,406,116,(int)f*112,0,112,160);
+        unsigned r1=(t->points_played/6u)%10u,r2=(t->points_played/6u)%6u;
+        if(t->court1.pixels)mini_blit(&b->layers[0],&t->court1,122,268,(int)f*136,(int)r1*128,136,128);
+        if(t->court2.pixels)mini_blit(&b->layers[0],&t->court2,406,116,(int)f*112,(int)r2*160,112,160);
         if(t->pieces.pixels){unsigned frame=(t->points_played%3u)*22u;mini_blit(&b->layers[0],&t->pieces,309,214,0,(int)frame,22,22);}
     }
 }
