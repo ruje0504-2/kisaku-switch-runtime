@@ -67,10 +67,18 @@ static int kstaff_active(const KBootstrap *b) { return b->staffroll.active; }
 static int kstaff_confirm(KBootstrap *b) { (void)b; return 0; }
 static int kstaff_pointer(KBootstrap *b, int x, int y, unsigned held) { (void)b; (void)x; (void)y; (void)held; return 0; }
 
+static void kstaff_base(KBootstrap *b, KStaffroll *s) {
+    mini_clear(&b->layers[0]);
+    mini_blit(&b->layers[0],&s->background,0,0,0,0,640,480);
+    mini_blit(&b->layers[0],&s->staff1,0,0,0,0,640,480);
+    mini_blit(&b->layers[0],&s->staff2,0,0,0,0,640,480);
+    s->prepared=1;
+}
+
 static void kstaff_ax_draw(const uint32_t d[7],unsigned cell,void *context){
     (void)cell;KBootstrap *b=context;KStaffroll *s=&b->staffroll;
-    if(d[0]>3||d[0]==2||d[0]==3)return;
-    KImage *src=b->layers[2].pixels?&b->layers[2]:&s->part1;
+    if(d[0]>3)return;
+    KImage *src=&s->part1;
     int y=(int)d[6];if(d[0]==1&&y>479)y-=480;
     mini_blit(&b->layers[0],src,(int)d[5],y,(int)d[1],(int)d[2],d[3],d[4]);
 }
@@ -82,6 +90,7 @@ static int kstaff_frame(KBootstrap *b, unsigned ms) {
     while (s->clock >= KSTAFF_TICK_MS && s->elapsed < s->ticks) {
         s->clock -= KSTAFF_TICK_MS;
         s->elapsed++;
+        kstaff_base(b,s);
         if(!ax_tick_native(&s->ax,s->ax_events,kstaff_ax_draw,b))s->ax.wait_cell=0;
         s->segment_clock++;
         unsigned count = s->mode ? 11u : 9u;
@@ -109,23 +118,6 @@ static int kstaff_frame(KBootstrap *b, unsigned ms) {
 static void kstaff_present(KBootstrap *b) {
     KStaffroll *s = &b->staffroll;
     if (!s->active || !b->layers[0].pixels) return;
-    mini_clear(&b->layers[0]);
-    mini_blit(&b->layers[0],&s->background,0,0,0,0,640,480);
-    if(s->staff1.pixels)mini_blit(&b->layers[0],&s->staff1,0,0,0,0,640,480);
-    if(s->staff2.pixels)mini_blit(&b->layers[0],&s->staff2,0,0,0,0,640,480);
-    const KImage *page = &s->part1;
-    if (s->mode) {
-        if (s->segment >= 7 && s->part3.pixels) page = &s->part3;
-        else if (s->segment >= 3) page = &s->part2;
-    } else if (s->segment >= 5) {
-        page = &s->part2;
-    }
-    if(page->pixels){
-        unsigned sx=page->width>256?(s->scroll%(page->width-256)):0;
-        unsigned page_no = s->elapsed / (s->ticks / 44u ? s->ticks / 44u : 1u);
-        if (page_no > 43) page_no = 43;
-        unsigned sy=page->height>136?((page_no*136u)%(page->height-136)):0;
-        mini_blit(&b->layers[0],page,192,296,(int)sx,(int)sy,256,136);
-    }
+    if(!s->prepared)kstaff_base(b,s);
 }
 #endif

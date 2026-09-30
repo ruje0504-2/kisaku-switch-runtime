@@ -16,6 +16,7 @@ typedef struct KStaffroll {
     unsigned elapsed;
     unsigned clock;
     unsigned scroll;      /* [this+0xdc] += 4 with a -640 wrap */
+    unsigned prepared;    /* current base frame has been rebuilt before AX draws */
     unsigned segment;
     unsigned segment_clock;
 } KStaffroll;
