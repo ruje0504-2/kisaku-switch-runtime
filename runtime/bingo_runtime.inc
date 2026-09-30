@@ -63,14 +63,14 @@ static void kbingo_present(KBootstrap *b) {
        animator places the selected frame over the dial in bingo_bg. */
     if(k->animation.pixels){
         unsigned frame=(k->clock/40u)%49u;
-        mini_blit(&b->layers[0],&k->animation,376,16,(int)(frame%7u)*240,(int)(frame/7u)*268,240,268);
+        mini_blit_key(&b->layers[0],&k->animation,376,16,(int)(frame%7u)*240,(int)(frame/7u)*268,240,268,0x00ff00);
     }
     for (unsigned cell = 0; cell < KBINGO_SIDE * KBINGO_SIDE; cell++) {
         unsigned row = cell / KBINGO_SIDE, col = cell % KBINGO_SIDE;
         if(row==2&&col==2)continue;
         int ox = 44 + (int)col * 64, oy = 52 + (int)row * 64;
         unsigned number=k->card[cell],sx=(number%20u)*32u,sy=(number/20u)*24u+(k->hit[cell]?48u:0u);
-        mini_blit(&b->layers[0],&k->parts,ox,oy,(int)sx,(int)sy,32,24);
+        mini_blit_key(&b->layers[0],&k->parts,ox,oy,(int)sx,(int)sy,32,24,0x00ff00);
     }
 }
 #endif

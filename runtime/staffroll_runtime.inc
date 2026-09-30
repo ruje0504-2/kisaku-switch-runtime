@@ -70,8 +70,8 @@ static int kstaff_pointer(KBootstrap *b, int x, int y, unsigned held) { (void)b;
 static void kstaff_base(KBootstrap *b, KStaffroll *s) {
     mini_clear(&b->layers[0]);
     mini_blit(&b->layers[0],&s->background,0,0,0,0,640,480);
-    mini_blit(&b->layers[0],&s->staff1,0,0,0,0,640,480);
-    mini_blit(&b->layers[0],&s->staff2,0,0,0,0,640,480);
+    mini_blit_key(&b->layers[0],&s->staff1,0,0,0,0,640,480,0x00ff00);
+    mini_blit_key(&b->layers[0],&s->staff2,0,0,0,0,640,480,0x00ff00);
     s->prepared=1;
 }
 
@@ -80,7 +80,7 @@ static void kstaff_ax_draw(const uint32_t d[7],unsigned cell,void *context){
     if(d[0]>3)return;
     KImage *src=&s->part1;
     int y=(int)d[6];if(d[0]==1&&y>479)y-=480;
-    mini_blit(&b->layers[0],src,(int)d[5],y,(int)d[1],(int)d[2],d[3],d[4]);
+    mini_blit_key(&b->layers[0],src,(int)d[5],y,(int)d[1],(int)d[2],d[3],d[4],0x00ff00);
 }
 
 static int kstaff_frame(KBootstrap *b, unsigned ms) {

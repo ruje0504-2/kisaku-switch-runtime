@@ -89,7 +89,7 @@ static void kkuji_present(KBootstrap *b) {
     if (!k->active || !b->layers[0].pixels) return;
     mini_clear(&b->layers[0]);
     if(!k->chosen&&k->prompt.pixels){
-        mini_blit(&b->layers[0],&k->prompt,0,0,0,0,640,480);
+        mini_blit_key(&b->layers[0],&k->prompt,0,0,0,0,640,480,0x00ff00);
         return;
     }
     mini_blit(&b->layers[0],&k->background,0,0,0,(int)k->viewport_y,640,480);

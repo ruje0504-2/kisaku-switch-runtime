@@ -84,9 +84,9 @@ static void ktennis_present(KBootstrap *b) {
            source sheets are 6-column strips: c1=136x128, c2=112x160. */
         unsigned f=t->points_played%6u;
         unsigned r1=(t->points_played/6u)%10u,r2=(t->points_played/6u)%6u;
-        if(t->court1.pixels)mini_blit(&b->layers[0],&t->court1,122,268,(int)f*136,(int)r1*128,136,128);
-        if(t->court2.pixels)mini_blit(&b->layers[0],&t->court2,406,116,(int)f*112,(int)r2*160,112,160);
-        if(t->pieces.pixels){unsigned frame=(t->points_played%3u)*22u;mini_blit(&b->layers[0],&t->pieces,309,214,0,(int)frame,22,22);}
+        if(t->court1.pixels)mini_blit_key(&b->layers[0],&t->court1,122,268,(int)f*136,(int)r1*128,136,128,0x00ff00);
+        if(t->court2.pixels)mini_blit_key(&b->layers[0],&t->court2,406,116,(int)f*112,(int)r2*160,112,160,0x00ff00);
+        if(t->pieces.pixels){unsigned frame=(t->points_played%3u)*22u;mini_blit_key(&b->layers[0],&t->pieces,309,214,0,(int)frame,22,22,0x00ff00);}
     }
 }
 #endif

@@ -36,7 +36,7 @@ static void mini_clear(KImage *dst){
     size_t bytes=(size_t)dst->width*4;
     for(unsigned y=0;y<dst->height;y++)memset(dst->pixels+(size_t)y*dst->stride,0,bytes);
 }
-static void mini_blit(KImage *dst,const KImage *src,int dx,int dy,int sx,int sy,unsigned w,unsigned h){
+static void mini_blit_ex(KImage *dst,const KImage *src,int dx,int dy,int sx,int sy,unsigned w,unsigned h,unsigned key,int keyed){
     if(!mini_surface_valid(dst)||!mini_surface_valid(src)||!w||!h||sx<0||sy<0)return;
     int64_t left=dx<0?-(int64_t)dx:0,right=(int64_t)w;
     int64_t top=dy<0?-(int64_t)dy:0,bottom=(int64_t)h;
@@ -48,10 +48,17 @@ static void mini_blit(KImage *dst,const KImage *src,int dx,int dy,int sx,int sy,
     for(int64_t y=top;y<bottom;y++)for(int64_t x=left;x<right;x++){
         const uint8_t *s=src->pixels+(size_t)(sy+y)*src->stride+(size_t)(sx+x)*4;
         uint8_t *d=dst->pixels+(size_t)(dy+y)*dst->stride+(size_t)(dx+x)*4;
+        if(keyed&&((unsigned)s[0]|((unsigned)s[1]<<8)|((unsigned)s[2]<<16))==key)continue;
         unsigned a=s[3];if(!a)continue;if(a==255){memcpy(d,s,4);continue;}
         unsigned da=d[3],oa=a+(da*(255-a)+127)/255;
         if(oa){for(unsigned c=0;c<3;c++)d[c]=(uint8_t)((s[c]*a+d[c]*da*(255-a)/255)/oa);d[3]=(uint8_t)oa;}
     }
+}
+static void mini_blit(KImage *dst,const KImage *src,int dx,int dy,int sx,int sy,unsigned w,unsigned h){
+    mini_blit_ex(dst,src,dx,dy,sx,sy,w,h,0,0);
+}
+static void mini_blit_key(KImage *dst,const KImage *src,int dx,int dy,int sx,int sy,unsigned w,unsigned h,unsigned key){
+    mini_blit_ex(dst,src,dx,dy,sx,sy,w,h,key,1);
 }
 static int error(KBootstrap *b,const char *s){
     const char *name=b->vm->module>=0?b->vm->modules[b->vm->module].name:"<none>";

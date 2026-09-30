@@ -126,11 +126,11 @@ static void khammer_present(KBootstrap *b) {
     mini_blit(&b->layers[0],&h->background,0,0,0,0,640,480);
     if (h->holes.pixels) {
         const KHummerHole *hole=&khammer_holes[h->hole%KHUMMER_HOLES];
-        mini_blit(&b->layers[0],&h->holes,132,64,hole->x,hole->y,376,368);
+        mini_blit_key(&b->layers[0],&h->holes,132,64,hole->x,hole->y,376,368,0x00ff00);
     }
     if (h->effects.pixels) {
         unsigned frame=(h->effect_clock/KHUMMER_EFFECT_MS)%3;
-        mini_blit(&b->layers[0],&h->effects,218,40,(int)frame*204,0,204,248);
+        mini_blit_key(&b->layers[0],&h->effects,218,40,(int)frame*204,0,204,248,0x00ff00);
     }
 }
 
