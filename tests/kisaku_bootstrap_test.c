@@ -1734,7 +1734,11 @@ static void test_minigame_resource_entries(const char *root,const char *saves){
         b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
         assert(!kvm_push(b->vm,(KValue){(int32_t)mode,NULL})&&!kvm_push(b->vm,(KValue){210,NULL}));
         assert(!bootstrap_dispatch(b)&&!b->error[0]&&bootstrap_native_screen_active(b));
-        bootstrap_frame(b);assert(!b->error[0]);bootstrap_destroy(b);
+        bootstrap_frame(b);assert(!b->error[0]&&b->staffroll.source_part==1);
+        unsigned segment_ticks=b->staffroll.ticks/(mode?11u:9u);
+        for(unsigned frame=1;frame<segment_ticks*8;frame++)bootstrap_frame(b);
+        assert(!b->error[0]&&b->staffroll.segment==8&&b->staffroll.source_part==2);
+        bootstrap_destroy(b);
     }
     puts("Native mini-game resource entry/first-frame decode: 711/611/610/210 PASS");
 }

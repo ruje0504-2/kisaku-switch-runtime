@@ -43,6 +43,11 @@ static int kstaff_load_segment(KBootstrap *b, KStaffroll *s, unsigned segment) {
     }
     free(data);
     memset(s->ax_events, 0, sizeof(s->ax_events));
+    /* The ending script installs endpart1 on layer 8 and endpart2 on
+       layer 9.  The first eight tracks address the former atlas; the last
+       track(s) address the latter.  Keep this selection with the AX track,
+       rather than treating every descriptor as a part1 rectangle. */
+    s->source_part = segment >= 8 ? 2u : 1u;
     return ax_control(&s->ax, 1, 0, 0) ? 1 : 0;
 }
 
@@ -84,7 +89,7 @@ static void kstaff_base(KBootstrap *b, KStaffroll *s) {
 static void kstaff_ax_draw(const uint32_t d[7],unsigned cell,void *context){
     (void)cell;KBootstrap *b=context;KStaffroll *s=&b->staffroll;
     if(d[0]>3)return;
-    KImage *src=&s->part1;
+    KImage *src=s->source_part==2u?&s->part2:&s->part1;
     int y=(int)d[6];if(d[0]==1&&y>479)y-=480;
     mini_blit_key(&b->layers[0],src,(int)d[5],y,(int)d[1],(int)d[2],d[3],d[4],0x00ff00);
 }

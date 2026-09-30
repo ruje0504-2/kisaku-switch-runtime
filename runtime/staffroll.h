@@ -19,5 +19,6 @@ typedef struct KStaffroll {
     unsigned prepared;    /* current base frame has been rebuilt before AX draws */
     unsigned segment;
     unsigned segment_clock;
+    unsigned source_part; /* AX source: 1=endpart1(.m), 2=endpart2(.m) */
 } KStaffroll;
 #endif
