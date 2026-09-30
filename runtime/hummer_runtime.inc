@@ -7,7 +7,7 @@
 #ifndef KISAKU_HUMMER_RUNTIME_INCLUDED
 #define KISAKU_HUMMER_RUNTIME_INCLUDED
 
-static void khummer_release_art(KHummer *h){rmt_free(&h->background);rmt_free(&h->holes);rmt_free(&h->effects);}
+static void khammer_release_art(KHummer *h){rmt_free(&h->background);rmt_free(&h->holes);rmt_free(&h->effects);}
 
 /* GetConfig("AllMiniGame","Difficult") clamped to 0..2 (0x4647c0); the same
    key the tennis engine reads, with the bowling default of 1. */

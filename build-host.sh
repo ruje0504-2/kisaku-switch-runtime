@@ -1,9 +1,16 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
-python3 tools/native_media_tables.py "${KISAKU_EXE:-鬼作/AI6WIN.exe}" build/media_tables.h
-python3 tools/native_bowling_tables.py "${KISAKU_EXE:-鬼作/AI6WIN.exe}" build/bowling_tables.h
-python3 tools/extract_scene_mode_catalog.py "${KISAKU_EXE:-鬼作/AI6WIN.exe}" build/scene_mode_catalog.h
+if [ -n "${KISAKU_EXE:-}" ]; then
+    game_exe="$KISAKU_EXE"
+elif [ -f 鬼作/AI6WIN.exe ]; then
+    game_exe=鬼作/AI6WIN.exe
+else
+    game_exe=../kisaku-switch/鬼作/AI6WIN.exe
+fi
+python3 tools/native_media_tables.py "$game_exe" build/media_tables.h
+python3 tools/native_bowling_tables.py "$game_exe" build/bowling_tables.h
+python3 tools/extract_scene_mode_catalog.py "$game_exe" build/scene_mode_catalog.h
 cmp runtime/scene_mode_catalog.h build/scene_mode_catalog.h
 mkdir -p build
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c runtime/ax.c runtime/mam.c runtime/video.c runtime/flags.c runtime/gallery.c runtime/control_store.c runtime/save_slot.c runtime/scene.c runtime/scene_view.c runtime/title.c runtime/flag_dialog.c runtime/scene_history.c runtime/text_encoding.c runtime/translation.c runtime/text_layout.c runtime/font.c runtime/read_flags.c runtime/voice_worker.c runtime/image_worker.c runtime/bootstrap.c runtime/switch_hos.c tools/bootstrap_probe.c $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample libavutil freetype2) -o build/kisaku-bootstrap
