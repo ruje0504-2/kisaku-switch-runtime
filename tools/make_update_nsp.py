@@ -1,56 +1,48 @@
 #!/usr/bin/env python3
-"""把已有的 Program/Control NCA 打成一个**真正的** update（Patch）NSP。
+"""Build a real Switch Patch NSP from a base NSP and new ExeFS/RomFS.
 
-为什么需要这个脚本
-------------------
-主机把"游戏更新"识别为 ContentMetaType = Patch(0x81) 且带
-``PatchMetaExtendedHeader{ ApplicationId = base 标题 }`` 的 CNMT；
+This follows the update layout used by the reference runtime project.  The
+local hacbrewpack is used for ordinary NCA encryption, then the Program NCA is
+rewritten to carry a BKTR RomFS overlay and the metadata NCA is rewritten to a
+Patch CNMT.
 
-* hacbrewpack 只会写 Application(0x80)，连文件名都是 ``Application_<tid>.cnmt``
-  （``cnmt.c`` 里 ``cnmt_ctx.header.type = 0x80`` 写死），所以用它打出来的
-  ``...0800`` 包会被当成一个**独立应用**而不是更新。
-* hacPack 能造 meta NCA，但**不肯自己生成** patch 的 CNMT：
-  ``nca.c`` 直接 ``"Creating Patch metadata without providing cnmt is not supported yet!"``
-  然后 exit。
+Two RomFS modes are supported:
 
-所以这里按 switchbrew 的定义（CNMT 页）手工拼 ``Patch_<tid>.cnmt``，再交给
-hacPack 的 ``--ncatype meta --titletype patch --cnmt`` 封成 meta NCA，
-最后按 PFS0 组成 NSP。
+* default (no ``--romfsdir``) -- zero-change overlay: the whole virtual image is
+  mapped back to the base RomFS, so the update only ships ExeFS.
+* ``--romfsdir DIR`` -- delta overlay: the new RomFS image is built from ``DIR``
+  and every file whose bytes still match the base NSP maps straight back to the
+  base NCA; only new/changed file data and the re-hashed IVFC tables are stored
+  in the patch.  This is what lets the update ship just the new font/config
+  while the bulky original archives keep coming from the base NSP.
 
-CNMT 布局（全部小端）
----------------------
-::
+The BKTR FS header (``fs_header[1]``) must contain, after the 8-byte section
+type prefix and the IVFC header:
 
-    0x00 CnmtHeader (0x20)
-         u64 title_id              = update 标题 ID
-         u32 title_version
-         u8  meta_type             = 0x81 (Patch)
-         u8  meta_platform         = 0x00 (NX)
-         u16 extended_header_size  = 0x18
-         u16 total_content_entries
-         u16 total_content_meta_entries = 0
-         u8  attributes / storage_id / content_install_type / reserved = 0
-         u32 required_dl_system_version = 0
-         u32 reserved = 0
-    0x20 PatchMetaExtendedHeader (0x18)
-         u64 application_id        = base 标题 ID   <-- 决定它是不是"更新"
-         u32 required_system_version
-         u32 extended_data_size
-         u64 reserved
-    0x38 PackagedContent[] (每条 0x38)
-         u8[32] sha256(NCA)
-         u8[16] content_id = 该哈希前 16 字节（即 NCA 文件名）
-         u8[6]  size
-         u8     content_type (1=Program, 3=Control)
-         u8     id_offset
-    末尾  u8[32] digest —— 生产版为全零（switchbrew：只有开发版才算哈希）
+    +0x000  version/partition/fs/crypt type (``02 00 00 03 04``)
+    +0x008  IVFC header (0xE0)          -- describes the *new* virtual image
+    +0x0E8  0x18 reserved
+    +0x100  relocation header (0x20)    -- offset/size/magic/version/entries
+    +0x120  subsection header (0x20)    -- offset/size/magic/version/entries
+    +0x140  section_ctr (8)             -- keeps BKTR CTR == plain section CTR
 
-用法::
+Writing those two table headers is the difference between "hactool recognizes
+the partition type" and "hactool can actually overlay-read the base".
 
-    python3 tools/make_update_nsp.py \\
-        --program-nca prog.nca --control-nca control.nca \\
-        --hacpack /path/to/hacpack --keyset ~/.switch/prod.keys \\
-        --out 交付/kisaku-update.nsp
+Section layout produced here (``P`` = patch data length):
+
+    0x0000                        patch data (new/changed data only)
+    P                             relocation block header + buckets
+    P + 0x4000 * (1 + n_buckets)  subsection block header + bucket
+
+The patch data deliberately lives *before* both table regions: hactool and
+LibHac size the relocation/subsection regions from the headers and load them
+whole, so anything parked between the relocation block and the subsection block
+would be read back as bucket data.  For the reference zero-change patch (P = 0)
+this reduces to relocation at 0 and subsection at 0x8000, exactly the verified
+sample.  ``relocation_header.offset + relocation_header.size ==
+subsection_header.offset`` and ``subsection_header.offset +
+subsection_header.size == section_size`` are enforced by hactool and yuzu.
 """
 from __future__ import annotations
 
@@ -62,67 +54,696 @@ import struct
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
-CNMT_HEADER_FMT = "<QIBBHHHBBBBII"          # 0x20
-PATCH_EXT_FMT = "<QIIQ"                     # 0x18
-CONTENT_RECORD_SIZE = 0x38
-META_TYPE_PATCH = 0x81
-PLATFORM_NX = 0x00
+try:
+    from nca_crypto import aes_ctr, aes_xts_sector, aes_decrypt_block
+except ImportError:
+    from tools.nca_crypto import aes_ctr, aes_xts_sector, aes_decrypt_block
+
 CT_PROGRAM, CT_CONTROL = 1, 3
+META_TYPE_APPLICATION = 0x80
+META_TYPE_PATCH = 0x81
+CNMT_HEADER_FMT = "<QIBBHHHBBBBII"
+PATCH_EXT_FMT = "<QIIQ"
+
+MAGIC_BKTR = 0x52544B42
+MAGIC_IVFC = 0x43465649
+BKTR_BLOCK_SIZE = 0x4000
+BKTR_BLOCK_LOG2 = 14
+# bktr_header_t { u64 offset; u64 size; u32 magic; u32 version; u32 entries; u32 rsvd; }
+BKTR_HEADER_FMT = "<QQIIII"
+# bktr_relocation_entry_t { u64 virt_offset; u64 phys_offset; u32 is_patch; }
+RELOC_ENTRY_FMT = "<QQI"
+RELOC_ENTRY_SIZE = 0x14
+RELOC_BUCKET_ENTRIES = (0x4000 - 0x10) // RELOC_ENTRY_SIZE   # 818, one slot is the sentinel
+RELOC_BUCKET_FMT = "<IIQ"
+# bktr_subsection_entry_t { u64 offset; u32 _0x8; u32 ctr_val; }
+SUBSEC_ENTRY_FMT = "<QII"
+SUBSEC_BUCKET_FMT = "<IIQ"
+
+IMAGE_CHUNK = 1 << 22          # 4 MiB, a multiple of the 0x4000 block size
+
+
+def die(message: str) -> None:
+    raise SystemExit(message)
+
+
+def parse_keys(path: str) -> dict[str, bytes]:
+    out: dict[str, bytes] = {}
+    for line in Path(path).read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = (p.strip() for p in line.split("=", 1))
+        try:
+            out[name] = bytes.fromhex(value)
+        except ValueError:
+            continue
+    return out
 
 
 def parse_version(text: str) -> int:
-    """``1.0.1`` / ``0x10001`` -> u32。任天堂用 major<<16 | minor<<8 | micro。"""
     if text.lower().startswith("0x"):
         return int(text, 16)
     parts = [int(p) for p in text.split(".")]
-    while len(parts) < 3:
-        parts.append(0)
-    major, minor, micro = parts[:3]
-    return (major << 16) | (minor << 8) | micro
+    parts += [0] * (3 - len(parts))
+    return (parts[0] << 16) | (parts[1] << 8) | parts[2]
 
 
-def content_record(path: str, content_type: int) -> bytes:
-    data = open(path, "rb").read()
-    digest = hashlib.sha256(data).digest()
-    content_id = digest[:16]                      # NCA 文件名就是这个
-    if os.path.basename(path)[:32].lower() != content_id.hex():
-        print("警告: %s 的文件名不是 sha256 前 16 字节" % path, file=sys.stderr)
-    return digest + content_id + len(data).to_bytes(6, "little") + bytes([content_type, 0])
+def version_display(text: str, value: int) -> bytes:
+    if not text.lower().startswith("0x"):
+        return text.encode()[:0x10]
+    return (f"{(value >> 16) & 0xff}.{(value >> 8) & 0xff}.{value & 0xff}").encode()
 
+
+# --------------------------------------------------------------------------
+# PFS0 / NCA helpers
+# --------------------------------------------------------------------------
+
+def pfs0_members(path: str) -> list[tuple[str, int, int]]:
+    with open(path, "rb") as fh:
+        magic, count, strsize, _ = struct.unpack("<4sIII", fh.read(0x10))
+        if magic != b"PFS0":
+            die(f"不是 PFS0: {path}")
+        entries = [struct.unpack("<QQI4x", fh.read(0x18)) for _ in range(count)]
+        strings = fh.read(strsize)
+    return [(strings[nameoff:strings.index(b"\0", nameoff)].decode(), off, size)
+            for off, size, nameoff in entries]
+
+
+def read_member(path: str, name: str, size: int | None = None) -> bytes:
+    with open(path, "rb") as fh:
+        magic, count, strsize, _ = struct.unpack("<4sIII", fh.read(0x10))
+        if magic != b"PFS0":
+            die(f"不是 PFS0: {path}")
+        entries = [struct.unpack("<QQI4x", fh.read(0x18)) for _ in range(count)]
+        strings = fh.read(strsize)
+        data0 = 0x10 + count * 0x18 + strsize
+        for off, length, nameoff in entries:
+            current = strings[nameoff:strings.index(b"\0", nameoff)].decode()
+            if current == name:
+                fh.seek(data0 + off)
+                return fh.read(length if size is None else min(size, length))
+    die(f"NSP 中没有 {name}")
+
+
+def member_data_offset(path: str, name: str) -> int:
+    """Absolute file offset of a PFS0 member's data inside the NSP."""
+    with open(path, "rb") as fh:
+        magic, count, strsize, _ = struct.unpack("<4sIII", fh.read(0x10))
+        if magic != b"PFS0":
+            die(f"不是 PFS0: {path}")
+        entries = [struct.unpack("<QQI4x", fh.read(0x18)) for _ in range(count)]
+        strings = fh.read(strsize)
+        data0 = 0x10 + count * 0x18 + strsize
+        for off, _length, nameoff in entries:
+            if strings[nameoff:strings.index(b"\0", nameoff)].decode() == name:
+                return data0 + off
+    die(f"NSP 中没有 {name}")
+
+
+def decrypt_header(raw: bytes, header_key: bytes) -> bytes:
+    if len(raw) < 0xc00:
+        die("NCA 头不足 0xC00 字节")
+    out = bytearray(raw[:0xc00])
+    for sector in range(1, 6):
+        start = sector * 0x200
+        out[start:start + 0x200] = aes_xts_sector(
+            header_key, raw[start:start + 0x200], sector, True)
+    return bytes(out)
+
+
+def encrypt_header(header: bytes, header_key: bytes) -> bytes:
+    out = bytearray(header[:0xc00])
+    for sector in range(1, 6):
+        start = sector * 0x200
+        out[start:start + 0x200] = aes_xts_sector(
+            header_key, header[start:start + 0x200], sector, False)
+    return bytes(out)
+
+
+def section_range(header: bytes, index: int) -> tuple[int, int]:
+    return struct.unpack_from("<II", header, 0x240 + index * 0x10)
+
+
+def section_key(header: bytes, keys: dict[str, bytes]) -> bytes:
+    """Section key for hacbrewpack-generated NCAs (key-area slot 2)."""
+    keygen = header[0x207]
+    name = f"key_area_key_application_{keygen:02x}"
+    area_key = keys.get(name)
+    if area_key is None:
+        die(f"prod.keys 缺少 {name}")
+    return aes_decrypt_block(area_key, header[0x320:0x330])
+
+
+def section_ctr(section_start_units: int) -> bytes:
+    return (section_start_units * 0x200 // 0x10).to_bytes(16, "big")
+
+
+# --------------------------------------------------------------------------
+# base section plaintext access
+# --------------------------------------------------------------------------
+
+def iter_section_plaintext(path: str, key: bytes, nca_off: int, size: int,
+                           nca_base: int = 0):
+    """Yield the decrypted byte stream of one NCA section.
+
+    ``nca_off`` is the section offset *inside the NCA* and drives the AES-128-CTR
+    counter (offset >> 4, big-endian), exactly like hactool's CTR path.
+    ``nca_base`` is where the NCA itself starts in ``path``, which lets the base
+    section be streamed straight out of the NSP member without extracting a
+    multi-GB NCA first.  pycryptodome is used when importable, otherwise we
+    stream through the ``openssl`` CLI (the reference implementation's route).
+    """
+    aligned = nca_off & ~0xF
+    skip = nca_off - aligned
+    read_start = nca_base + aligned
+    counter = aligned >> 4
+    try:
+        from Crypto.Cipher import AES          # type: ignore
+        from Crypto.Util import Counter        # type: ignore
+    except Exception:
+        AES = None
+
+    if AES is not None:
+        cipher = AES.new(key, AES.MODE_CTR, counter=Counter.new(128, initial_value=counter))
+        with open(path, "rb") as fh:
+            fh.seek(read_start)
+            remaining = size + skip
+            while remaining > 0:
+                chunk = fh.read(min(IMAGE_CHUNK, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                data = cipher.decrypt(chunk)
+                if skip:
+                    data = data[skip:]
+                    skip = 0
+                if data:
+                    yield data
+        return
+
+    iv = counter.to_bytes(16, "big").hex()
+    proc = subprocess.Popen(
+        ["openssl", "enc", "-d", "-aes-128-ctr", "-K", key.hex(), "-iv", iv],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(read_start)
+            remaining = size + skip
+            while remaining > 0:
+                chunk = fh.read(min(1 << 20, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                proc.stdin.write(chunk)
+        proc.stdin.close()
+        while True:
+            chunk = proc.stdout.read(IMAGE_CHUNK)
+            if not chunk:
+                break
+            if skip:
+                chunk = chunk[skip:]
+                skip = 0
+            if chunk:
+                yield chunk
+    finally:
+        proc.stdout.close()
+        proc.wait()
+
+
+# --------------------------------------------------------------------------
+# RomFS parsing / splicing
+# --------------------------------------------------------------------------
+
+def parse_romfs_files(header: bytes, meta: bytes) -> dict[str, tuple[int, int]]:
+    """``name -> (offset relative to the image start, size)``."""
+    data_offset = struct.unpack_from("<Q", header, 0x48)[0]
+    files: dict[str, tuple[int, int]] = {}
+    off = 0
+    while off + 0x20 <= len(meta):
+        _parent, _sibling, file_off, file_size, _hash, name_size = struct.unpack_from(
+            "<IIQQII", meta, off)
+        name = meta[off + 0x20:off + 0x20 + name_size].decode("utf-8", "replace")
+        files[name] = (data_offset + file_off, file_size)
+        off += 0x20 + ((name_size + 3) // 4) * 4
+    return files
+
+
+def read_local_romfs(image_path: str) -> tuple[bytes, dict[str, tuple[int, int]]]:
+    with open(image_path, "rb") as fh:
+        header = fh.read(0x50)
+        fm_off, fm_size = struct.unpack_from("<QQ", header, 0x38)
+        fh.seek(fm_off)
+        meta = fh.read(fm_size)
+    return header, parse_romfs_files(header, meta)
+
+
+def read_local_romfs_files(image_path: str) -> dict[str, tuple[int, int]]:
+    return read_local_romfs(image_path)[1]
+
+
+def read_file_range(path: str, offset: int, size: int) -> bytes:
+    with open(path, "rb") as fh:
+        fh.seek(offset)
+        return fh.read(size)
+
+
+def hash_file_range(path: str, offset: int, size: int) -> bytes:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        fh.seek(offset)
+        remaining = size
+        while remaining > 0:
+            chunk = fh.read(min(IMAGE_CHUNK, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            digest.update(chunk)
+    return digest.digest()
+
+
+# --------------------------------------------------------------------------
+# IVFC image construction (romfs image -> levels L0..L5)
+# --------------------------------------------------------------------------
+
+def _hash_level(reader, size: int, block_log2: int = BKTR_BLOCK_LOG2) -> bytes:
+    """Build a hash table over ``size`` bytes of ``1 << block_log2`` blocks.
+
+    The final partial block is zero padded before hashing and the table itself
+    is padded to a whole 0x4000 block, matching how the base NCA was produced.
+    """
+    span = 1 << block_log2
+    out = bytearray()
+    for off in range(0, size, span):
+        block = reader(off, min(span, size - off))
+        if len(block) < span:
+            block = block + b"\0" * (span - len(block))
+        out += hashlib.sha256(block).digest()
+    padded = max(BKTR_BLOCK_SIZE,
+                 (len(out) + BKTR_BLOCK_SIZE - 1) // BKTR_BLOCK_SIZE * BKTR_BLOCK_SIZE)
+    out += b"\0" * (padded - len(out))
+    return bytes(out)
+
+
+def build_ivfc(image_path: str, l5_block_log2: int = BKTR_BLOCK_LOG2
+               ) -> tuple[list[bytes | None], list[int], list[int], bytes]:
+    """Build a RomFS IVFC container from a raw RomFS image.
+
+    Returns ``(levels, offsets, sizes, master_hash)``; ``levels[5]`` stays
+    ``None`` because the image itself remains on disk.  Verified byte-for-byte
+    against the IVFC levels of the base NCA.
+    """
+    sizes = [0] * 6
+    sizes[5] = os.path.getsize(image_path)
+    levels: list[bytes | None] = [None] * 6
+
+    with open(image_path, "rb") as fh:
+        def read_file(off: int, length: int) -> bytes:
+            fh.seek(off)
+            return fh.read(length)
+
+        blob = _hash_level(read_file, sizes[5], l5_block_log2)
+    levels[4] = blob
+    sizes[4] = len(blob)
+
+    for level in (3, 2, 1, 0):
+        source = levels[level + 1] or b""
+
+        def read_data(off: int, length: int, data: bytes = source) -> bytes:
+            return data[off:off + length]
+
+        blob = _hash_level(read_data, sizes[level + 1])
+        levels[level] = blob
+        sizes[level] = len(blob)
+
+    offsets = [0] * 6
+    for level in range(1, 6):
+        offsets[level] = offsets[level - 1] + sizes[level - 1]
+    master_hash = hashlib.sha256(levels[0] or b"").digest()
+    return levels, offsets, sizes, master_hash
+
+
+def build_ivfc_header(offsets: list[int], sizes: list[int],
+                      master_hash: bytes, num_levels: int = 7,
+                      l5_block_log2: int = BKTR_BLOCK_LOG2) -> bytes:
+    header = bytearray(0xE0)
+    struct.pack_into("<IIII", header, 0x00, MAGIC_IVFC, 0x20000, 0x20, num_levels)
+    for level in range(6):
+        # Level 5's block size is how coarsely its data is hashed into level 4,
+        # so a larger value shrinks the (re-shipped) hash table proportionally.
+        log2 = l5_block_log2 if level == 5 else BKTR_BLOCK_LOG2
+        struct.pack_into("<QQII", header, 0x10 + level * 0x18,
+                         offsets[level], sizes[level], log2, 0)
+    header[0xC0:0xE0] = master_hash
+    return bytes(header)
+
+
+# --------------------------------------------------------------------------
+# delta regions
+# --------------------------------------------------------------------------
+
+def build_regions(virtual_size: int, mapped: list[tuple[int, int, int]]) -> list[dict]:
+    """Partition ``[0, virtual_size)`` into base-mapped and patch regions.
+
+    ``mapped`` holds ``(start, end, base_source)`` intervals (sorted, disjoint);
+    everything between them has to be stored in the patch data.
+    """
+    regions: list[dict] = []
+    cursor = 0
+    for start, end, source in sorted(mapped):
+        if start > cursor:
+            regions.append({"start": cursor, "end": start, "patch": True})
+        delta = start - source
+        if (regions and regions[-1]["patch"] is False
+                and regions[-1]["end"] == start and regions[-1]["delta"] == delta):
+            regions[-1]["end"] = end
+        else:
+            regions.append({"start": start, "end": end, "patch": False,
+                            "delta": delta, "source": source})
+        cursor = max(cursor, end)
+    if cursor < virtual_size:
+        regions.append({"start": cursor, "end": virtual_size, "patch": True})
+    return regions
+
+
+def write_patch_data(regions: list[dict], head: bytes, image_path: str,
+                     l5_offset: int, patch_path: str) -> int:
+    """Materialise every patch region; returns the patch data length."""
+    head_len = len(head)
+    position = 0
+    with open(patch_path, "wb") as patch:
+        for region in regions:
+            if not region["patch"]:
+                continue
+            position = (position + 0xF) & ~0xF          # keep physical 16-byte aligned
+            padding = position - patch.tell()
+            if padding > 0:
+                patch.write(b"\0" * padding)
+            region["offset"] = position
+            start, end = region["start"], region["end"]
+            if end <= head_len:
+                patch.write(head[start:end])
+            elif start >= head_len:
+                patch.write(read_file_range(image_path, start - l5_offset, end - start))
+            else:
+                patch.write(head[start:])
+                patch.write(read_file_range(image_path, 0, end - head_len))
+            position += end - start
+    return position
+
+
+def build_bktr_section(regions: list[dict], virtual_size: int,
+                       patch_path: str | None, patch_len: int) -> tuple[bytes, int, int]:
+    """Assemble the BKTR section; returns ``(section, reloc_offset, subsec_offset)``.
+
+    Patch data goes first, then the relocation tables, then the subsection
+    tables (which end the media block).  Nothing but real buckets may sit inside
+    either table region, because readers size those regions from the headers.
+    """
+    buckets: list[list[dict]] = []
+    for region in regions:
+        if not buckets or len(buckets[-1]) >= RELOC_BUCKET_ENTRIES - 1:
+            buckets.append([])
+        buckets[-1].append(region)
+    buckets = buckets or [[]]
+
+    reloc_tables = 0x4000 * (1 + len(buckets))
+    # The NCA section table counts media units of 0x200, so the whole section
+    # (patch + tables) has to be 0x200 aligned.
+    patch_len = (patch_len + 0x1FF) & ~0x1FF
+    reloc_offset = patch_len
+    subsec_offset = reloc_offset + reloc_tables
+    section_size = subsec_offset + 0x8000
+
+    # Relocation block header: bucket count, virtual size, bucket offsets.
+    # bucket_virtual_offsets[0] is unused; readers scan indices 1..num_buckets-1.
+    reloc_header = bytearray(0x4000)
+    struct.pack_into("<IIQ", reloc_header, 0x00, 0, len(buckets), virtual_size)
+    for i, bucket in enumerate(buckets):
+        if i:
+            struct.pack_into("<Q", reloc_header, 0x10 + i * 8, bucket[0]["start"])
+
+    reloc_body = bytearray()
+    for i, bucket in enumerate(buckets):
+        blob = bytearray(0x4000)
+        end = buckets[i + 1][0]["start"] if i + 1 < len(buckets) else virtual_size
+        struct.pack_into(RELOC_BUCKET_FMT, blob, 0, 0, len(bucket), end)
+        for j, region in enumerate(bucket):
+            if region["patch"]:
+                source = region["offset"]      # patch data starts at section offset 0
+                is_patch = 1
+            else:
+                source = region["source"]
+                is_patch = 0
+            struct.pack_into(RELOC_ENTRY_FMT, blob, 0x10 + j * RELOC_ENTRY_SIZE,
+                             region["start"], source, is_patch)
+        reloc_body += blob
+
+    # Subsection header + one bucket.  ctr_val 0 everywhere plus a zero
+    # section_ctr makes the BKTR crypto degenerate to the plain section CTR.
+    subsec_header = bytearray(0x4000)
+    struct.pack_into("<IIQ", subsec_header, 0x00, 0, 1, subsec_offset)
+    subsec_bucket = bytearray(0x4000)
+    struct.pack_into(SUBSEC_BUCKET_FMT, subsec_bucket, 0, 0, 1, subsec_offset)
+    struct.pack_into(SUBSEC_ENTRY_FMT, subsec_bucket, 0x10, 0, 0, 0)
+
+    section = bytearray()
+    if patch_path is not None:
+        section += Path(patch_path).read_bytes()
+    section += b"\0" * (reloc_offset - len(section))
+    section += bytes(reloc_header) + bytes(reloc_body) + bytes(subsec_header) + bytes(subsec_bucket)
+    if len(section) != section_size:
+        die(f"BKTR 段长度不一致: 0x{len(section):X} != 0x{section_size:X}")
+    return bytes(section), reloc_offset, subsec_offset
+
+
+def bktr_fs_header(ivfc: bytes, regions: list[dict], reloc_offset: int,
+                   subsec_offset: int, section_size: int) -> bytes:
+    """FS header (0x200) carrying the IVFC and both BKTR table headers."""
+    header = bytearray(0x200)
+    header[0x00:0x08] = bytes((2, 0, 0, 3, 4, 0, 0, 0))   # version/part/fs/crypt
+    header[0x08:0x08 + 0xE0] = ivfc
+    reloc_at = 0x08 + 0xE0 + 0x18
+    struct.pack_into(BKTR_HEADER_FMT, header, reloc_at,
+                     reloc_offset, subsec_offset - reloc_offset,
+                     MAGIC_BKTR, 1, len(regions), 0)
+    struct.pack_into(BKTR_HEADER_FMT, header, reloc_at + 0x20,
+                     subsec_offset, section_size - subsec_offset, MAGIC_BKTR, 1, 1, 0)
+    return bytes(header)
+
+
+def rewrite_program_nca(path: str, header_key: bytes, keys: dict[str, bytes],
+                        section: bytes, fs_header: bytes) -> None:
+    raw = Path(path).read_bytes()
+    header = bytearray(decrypt_header(raw[:0xc00], header_key))
+    start, old_end = section_range(header, 1)
+    if old_end == 0:
+        _, start = section_range(header, 0)
+    if start == 0:
+        die("hacbrewpack 的 Program NCA 没有可用于 RomFS 的段")
+    key = section_key(header, keys)
+    encrypted = aes_ctr(key, section_ctr(start), section)
+    new_raw = bytearray(raw[:start * 0x200])
+    new_raw.extend(encrypted)
+    header[0x600:0x800] = fs_header
+    struct.pack_into("<II", header, 0x250, start, start + len(section) // 0x200)
+    struct.pack_into("<Q", header, 0x208, start * 0x200 + len(section))
+    header[0x740:0x748] = b"\0" * 8        # section_ctr -> plain CTR
+    header[0x2A0:0x2C0] = hashlib.sha256(bytes(header[0x600:0x800])).digest()
+    new_raw[:0xc00] = encrypt_header(bytes(header), header_key)
+    Path(path).write_bytes(new_raw)
+
+
+def patch_program_nca_zero(path: str, base_header: bytes,
+                           keys: dict[str, bytes], header_key: bytes) -> None:
+    """Zero-change overlay: map the whole base RomFS back to the base NCA."""
+    base_start, base_end = section_range(base_header, 1)
+    virtual_size = (base_end - base_start) * 0x200
+    region = {"start": 0, "end": virtual_size, "patch": False,
+              "delta": 0, "source": 0}
+    section, reloc_offset, subsec_offset = build_bktr_section([region], virtual_size, None, 0)
+    ivfc = base_header[0x608:0x6E8]
+    fs_header = bktr_fs_header(ivfc, [region], reloc_offset, subsec_offset, len(section))
+    rewrite_program_nca(path, header_key, keys, section, fs_header)
+    print(f"Program BKTR: base_romfs=0x{virtual_size:X} overlay=0x{len(section):X} (零改动)")
+
+
+def compare_tree(source_dir: str, extracted_dir: str) -> tuple[list[str], list[str]]:
+    """``(mismatched, extra)`` relative paths between a source tree and a dump."""
+    def collect(root_dir: str) -> dict[str, Path]:
+        out: dict[str, Path] = {}
+        for root, _dirs, files in os.walk(root_dir):
+            for name in files:
+                path = Path(root) / name
+                out[str(path.relative_to(root_dir))] = path
+        return out
+
+    want, have = collect(source_dir), collect(extracted_dir)
+    bad = []
+    for rel, path in sorted(want.items()):
+        other = have.get(rel)
+        size = path.stat().st_size
+        if (other is None or other.stat().st_size != size
+                or hash_file_range(str(path), 0, size)
+                != hash_file_range(str(other), 0, other.stat().st_size)):
+            bad.append(rel)
+    return bad, sorted(set(have) - set(want))
+
+
+def verify_romfs_image(hactool: str, image_path: str, source_dir: str, workdir: Path) -> None:
+    """Re-read the assembled RomFS with hactool and byte-compare every file."""
+    out = workdir / "verify-romfs"
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    proc = subprocess.run([hactool, "-t", "romfs", "-x", "--romfsdir=" + str(out),
+                           image_path], capture_output=True, text=True)
+    if proc.returncode:
+        sys.stderr.write(proc.stdout + proc.stderr)
+        die("hactool 读不了拼接后的 RomFS 镜像")
+    bad, extra = compare_tree(source_dir, str(out))
+    if bad or extra:
+        die(f"拼接镜像校验失败: 不一致 {bad[:4]} 多余 {extra[:4]}")
+    files = sum(len(names) for _root, _dirs, names in os.walk(source_dir))
+    print(f"  自检: hactool 从拼接镜像解出 {files} 个文件，逐字节一致", flush=True)
+
+
+def patch_program_nca_delta(path: str, base_nsp: str, base_member: str, base_header: bytes,
+                            keys: dict[str, bytes], header_key: bytes,
+                            romfsdir: str, build_romfs: str, workdir: Path,
+                            hactool: str | None = None,
+                            l5_block_log2: int = BKTR_BLOCK_LOG2) -> None:
+    """Delta overlay: only genuinely new bytes are shipped.
+
+    Every unchanged base file is mapped back to the base NCA (``is_patch=0``),
+    which is what stock updates do; only new/changed file data plus the IVFC
+    hash levels go into the patch data.  ``l5_block_log2`` sets how coarsely
+    level 5 is hashed into level 4, which is what sizes that hash table.
+    """
+    base_start, _base_end = section_range(base_header, 1)
+    section_off = base_start * 0x200
+    key = section_key(base_header, keys)
+
+    def level(field: int, size: bool = False) -> int:
+        start = 0x608 + 0x10 + field * 0x18 + (8 if size else 0)
+        return int.from_bytes(base_header[start:start + 8], "little")
+
+    l5_off, l5_size = level(5), level(5, True)
+    nca_base = member_data_offset(base_nsp, base_member)
+
+    built = str(workdir / "romfs-built.img")
+    print(f"  生成新 RomFS 镜像: {romfsdir}", flush=True)
+    subprocess.run([build_romfs, romfsdir, built], check=True)
+    if hactool:
+        verify_romfs_image(hactool, built, romfsdir, workdir)
+
+    base_image = str(workdir / "romfs-base.img")
+    print(f"  取本体 RomFS 镜像 0x{l5_size:X} ...", flush=True)
+    with open(base_image, "wb") as out:
+        for chunk in iter_section_plaintext(base_nsp, key, section_off + l5_off,
+                                            l5_size, nca_base):
+            out.write(chunk)
+
+    _base_header, base_files = read_local_romfs(base_image)
+    _built_header, built_files = read_local_romfs(built)
+    print(f"  文件: 本体 {len(base_files)} 个，更新 {len(built_files)} 个；"
+          f"校验未改动文件 ...", flush=True)
+
+    reusable: dict[str, int] = {}
+    reused = 0
+    for name, (new_off, new_size) in sorted(built_files.items()):
+        entry = base_files.get(name)
+        if entry is None or entry[1] != new_size or new_size == 0:
+            continue
+        if hash_file_range(built, new_off, new_size) != hash_file_range(
+                base_image, entry[0], new_size):
+            continue
+        reusable[name] = entry[0]
+        reused += new_size
+
+    image = built
+    levels, offsets, sizes, master = build_ivfc(image, l5_block_log2)
+    virtual_size = offsets[5] + sizes[5]
+    if l5_block_log2 != BKTR_BLOCK_LOG2:
+        print(f"  L5 哈希块 0x{1 << l5_block_log2:X}（L4 0x{sizes[4]:X}）", flush=True)
+
+    mapped: list[tuple[int, int, int]] = []
+    for name, (new_off, new_size) in sorted(built_files.items()):
+        if name not in reusable:
+            continue
+        mapped.append((offsets[5] + new_off, offsets[5] + new_off + new_size,
+                       l5_off + reusable[name]))
+
+    regions = build_regions(virtual_size, mapped)
+    reffed, patched, split_files = [], [], []
+    for name, (off, size) in sorted(built_files.items()):
+        v0, v1 = offsets[5] + off, offsets[5] + off + size
+        hit = [r for r in regions if r["start"] < v1 and r["end"] > v0]
+        if all(r["patch"] for r in hit):
+            patched.append(name)
+        elif all(not r["patch"] for r in hit):
+            reffed.append(name)
+        else:
+            split_files.append(name)
+    print(f"  文件归属: 回指本体 {len(reffed)} 个，补丁 {len(patched)} 个"
+          + (f"，跨段 {split_files}" if split_files else ""), flush=True)
+    print(f"            回指: {', '.join(reffed) or '-'}", flush=True)
+    print(f"            补丁: {', '.join(patched) or '-'}", flush=True)
+    if split_files:
+        print(f"  警告: 这些文件被切在回指段与补丁段之间: {split_files}", file=sys.stderr)
+    below = [r for r in regions if not r["patch"] and r["source"] < l5_off]
+    if below:
+        print(f"  注意: {len(below)} 段回指本体 IVFC 哈希表区（< 本体 L5 0x{l5_off:X}），"
+              f"hactool/LibHac 接受，yuzu 与部分加载器不接受", file=sys.stderr)
+
+    patch_path = str(workdir / "bktr-patch.bin")
+    patch_len = write_patch_data(regions, b"".join(level for level in levels[:5] if level),
+                                 image, offsets[5], patch_path)
+    patch_regions = sum(1 for region in regions if region["patch"])
+    print(f"  差分: {len(regions)} 段（回指本体 {len(regions) - patch_regions}，"
+          f"新增 {patch_regions}），回指 0x{reused:X}，新增数据 0x{patch_len:X}", flush=True)
+    if reused == 0:
+        print("  警告: 没有任何文件回指本体，--romfsdir 可能不是本体的完整内容", file=sys.stderr)
+    elif patch_len > virtual_size // 2:
+        print("  警告: 新增数据超过虚拟镜像一半，差分可能没有生效", file=sys.stderr)
+
+    section, reloc_offset, subsec_offset = build_bktr_section(regions, virtual_size,
+                                                              patch_path, patch_len)
+    fs_header = bktr_fs_header(build_ivfc_header(offsets, sizes, master,
+                                                  l5_block_log2=l5_block_log2), regions,
+                               reloc_offset, subsec_offset, len(section))
+    rewrite_program_nca(path, header_key, keys, section, fs_header)
+    print(f"Program BKTR: virtual=0x{virtual_size:X} overlay=0x{len(section):X} "
+          f"patch=0x{patch_len:X}")
+
+# --------------------------------------------------------------------------
+# Patch CNMT
+# --------------------------------------------------------------------------
 
 def parse_base_cnmt(data: bytes) -> dict:
-    """从本体（Application）CNMT 里取出补丁历史需要的字段。"""
-    tid, ver, mt, _mp, ehs, tce, _tcme = struct.unpack_from("<QIBBHHH", data, 0)
+    tid, ver, meta_type, _platform, ext_size, entry_count, _ = struct.unpack_from(
+        "<QIBBHHH", data, 0)
     contents = []
-    off = 0x20 + ehs
-    for _ in range(tce):
+    off = 0x20 + ext_size
+    for _ in range(entry_count):
         contents.append((data[off + 0x20:off + 0x30],
                          int.from_bytes(data[off + 0x30:off + 0x36], "little"),
                          data[off + 0x36]))
         off += 0x38
     required_system_version = 0
-    if mt == 0x80:                      # ApplicationMetaExtendedHeader
-        _patch_id, required_system_version, _req_app = struct.unpack_from("<QII", data, 0x20)
-    return {"id": tid, "version": ver, "type": mt, "attributes": data[0x14],
+    if meta_type == META_TYPE_APPLICATION:
+        _, required_system_version, _ = struct.unpack_from("<QII", data, 0x20)
+    return {"id": tid, "version": ver, "type": meta_type,
             "contents": contents, "digest": data[-0x20:],
             "required_system_version": required_system_version}
 
 
-def build_patch_extended_data(base: dict, base_meta_nca: str) -> bytes:
-    """PatchMetaExtendedData —— 记录这个补丁打的是本体的哪些内容。
-
-    主机靠这段历史判断补丁是否合法；缺了它（extended_data_size = 0）补丁会被
-    判为非法，表现为「读不到名字/图标 + 起不来」。字段语义实测自两个真实更新
-    （VII Reimagined 只更新 ExeFS、Silksong 带 Delta 增量）：
-
-      PatchHistoryHeader.ContentInfoCount == 本体内容数 + 1
-                                             （+1 是本体自己的 meta NCA，type=0）
-      PatchHistoryHeader.Digest           == 本体 CNMT 文件尾部那 0x20 字节
-      PatchHistoryHeader.ContentMetaKey   == (本体 id, 本体版本, 本体 meta 类型)
-    """
-    meta_id = bytes.fromhex(os.path.basename(base_meta_nca).split(".")[0])
-    infos = list(base["contents"]) + [(meta_id, os.path.getsize(base_meta_nca), 0)]
+def build_patch_extended_data(base: dict, base_meta_name: str,
+                              base_meta_size: int) -> bytes:
+    meta_id = bytes.fromhex(Path(base_meta_name).name.split(".")[0])
+    infos = list(base["contents"]) + [(meta_id, base_meta_size, 0)]
     out = struct.pack("<IIIIIII", 1, 0, 0, 0, len(infos), 0, 0)
     out += struct.pack("<QIB3x", base["id"], base["version"], base["type"])
     out += base["digest"]
@@ -132,409 +753,207 @@ def build_patch_extended_data(base: dict, base_meta_nca: str) -> bytes:
     return out
 
 
-def build_patch_cnmt(update_title_id: int, base_title_id: int, version: int,
-                     ncas: list[tuple[str, int]], required_system_version: int = 0,
-                     extended_data: bytes = b"") -> bytes:
-    records = b"".join(content_record(p, t) for p, t in ncas)
-    ext = struct.pack(PATCH_EXT_FMT, base_title_id, required_system_version,
+def content_record(path: str, content_type: int) -> bytes:
+    blob = Path(path).read_bytes()
+    digest = hashlib.sha256(blob).digest()
+    return digest + digest[:16] + len(blob).to_bytes(6, "little") + bytes([content_type, 0])
+
+
+def build_patch_cnmt(update_id: int, base_id: int, version: int,
+                     program: str, control: str, extended_data: bytes,
+                     required_system_version: int) -> bytes:
+    records = content_record(program, CT_PROGRAM) + content_record(control, CT_CONTROL)
+    ext = struct.pack(PATCH_EXT_FMT, base_id, required_system_version,
                       len(extended_data), 0)
-    header = struct.pack(
-        CNMT_HEADER_FMT,
-        update_title_id, version, META_TYPE_PATCH, PLATFORM_NX,
-        len(ext),                # extended_header_size 必须是扩展头真实长度
-        len(ncas),               # total_content_entries
-        0,                       # total_content_meta_entries
-        0, 0, 0, 0,              # attributes / storage_id / install type / reserved
-        0, 0)                    # required_dl_system_version / reserved
-    body = header + ext + records + extended_data
-    return body + b"\0" * 0x20   # 生产版 digest 为全零
+    header = struct.pack(CNMT_HEADER_FMT, update_id, version, META_TYPE_PATCH, 0,
+                         len(ext), 2, 0, 0, 0, 0, 0, 0, 0)
+    return header + ext + records + extended_data + b"\0" * 0x20
 
 
 def build_pfs0(entries: list[tuple[str, bytes]]) -> bytes:
-    """PFS0（NSP 就是 PFS0）。
-
-    注意：条目里的 offset 是**相对数据区起点**的，不是相对文件开头
-    （hacbrewpack 的 NSP 里第一条就是 0）。先按 0x20 对齐拼出数据区并
-    记录相对偏移，再回填表项，避免偏移与真实位置错位。
-    """
-    names = b""
-    name_off: dict[str, int] = {}
+    strings = b""
+    offsets: dict[str, int] = {}
     for name, _ in entries:
-        if name not in name_off:
-            name_off[name] = len(names)
-            names += name.encode() + b"\0"
-
+        if name not in offsets:
+            offsets[name] = len(strings)
+            strings += name.encode() + b"\0"
+    table = bytearray()
     body = bytearray()
-    offsets = []
-    for _, blob in entries:
-        offsets.append(len(body))
+    for name, blob in entries:
+        off = len(body)
         body += blob
         body += b"\0" * ((-len(body)) % 0x20)
-    assert len(offsets) == len(entries)
-
-    table = b"".join(
-        struct.pack("<QQI4x", off, len(blob), name_off[name])
-        for (name, blob), off in zip(entries, offsets))
-    return (b"PFS0" + struct.pack("<III", len(entries), len(names), 0)
-            + table + names + bytes(body))
+        table += struct.pack("<QQI4x", off, len(blob), offsets[name])
+    return b"PFS0" + struct.pack("<III", len(entries), len(strings), 0) + table + strings + body
 
 
-def read_pfs0(path: str) -> dict[str, bytes]:
-    """从 PFS0（NSP）里取出所有文件。条目 offset 相对数据区起点。"""
-    with open(path, "rb") as f:
-        magic, count, strsize, _ = struct.unpack("<4sIII", f.read(0x10))
-        if magic != b"PFS0":
-            raise ValueError("不是 PFS0: %s" % path)
-        entries = [struct.unpack("<QQI4x", f.read(0x18)) for _ in range(count)]
-        strtab = f.read(strsize)
-        data0 = 0x10 + 0x18 * count + strsize
-        out = {}
-        for off, size, nameoff in entries:
-            name = strtab[nameoff:strtab.index(b"\0", nameoff)].decode()
-            f.seek(data0 + off)
-            out[name] = f.read(size)
-    return out
+def patch_meta_nca(path: str, cnmt: bytes, update_id: int,
+                   keys: dict[str, bytes], header_key: bytes) -> None:
+    raw = Path(path).read_bytes()
+    header = bytearray(decrypt_header(raw[:0xc00], header_key))
+    start, end = section_range(header, 0)
+    section_size = (end - start) * 0x200
+    pfs = build_pfs0([(f"Patch_{update_id:016x}.cnmt", cnmt)])
+    if len(pfs) > section_size - 0x200:
+        die(f"Patch CNMT 放不进 Meta NCA: pfs0=0x{len(pfs):X}")
+    key = section_key(header, keys)
+    plain_section = bytearray(section_size)
+    plain_section[0x200:0x200 + len(pfs)] = pfs
+    plain_section[0:32] = hashlib.sha256(pfs).digest()
+    header[0x210:0x218] = update_id.to_bytes(8, "little")
+    header[0x408:0x428] = hashlib.sha256(plain_section[0:32]).digest()
+    struct.pack_into("<Q", header, 0x448, len(pfs))
+    header[0x280:0x2A0] = hashlib.sha256(header[0x400:0x600]).digest()
+    encrypted = aes_ctr(key, section_ctr(start), bytes(plain_section))
+    new_raw = bytearray(raw)
+    new_raw[start * 0x200:end * 0x200] = encrypted
+    new_raw[:0xc00] = encrypt_header(bytes(header), header_key)
+    Path(path).write_bytes(new_raw)
 
 
-def extract_base_cnmt(nca_path: str, hactool: str, keyset: str, workdir: str) -> bytes:
-    """用 hactool 把本体 meta NCA 里的 .cnmt 解出来。"""
-    out = os.path.join(workdir, "base-cnmt")
-    os.makedirs(out, exist_ok=True)
-    proc = subprocess.run(
-        [hactool, "-k", os.path.abspath(keyset), "--disablekeywarns",
-         "-t", "nca", "-x", "--section0dir=" + out, os.path.abspath(nca_path)],
-        capture_output=True, text=True)
-    names = [f for f in os.listdir(out) if f.endswith(".cnmt")]
-    if proc.returncode != 0 or not names:
+def extract_nca(hactool: str, keyset: str, nca: str, outdir: str) -> None:
+    os.makedirs(outdir, exist_ok=True)
+    proc = subprocess.run([hactool, "-k", keyset, "--disablekeywarns", "-t", "nca", "-x",
+                           "--section0dir=" + outdir, nca],
+                          capture_output=True, text=True)
+    if proc.returncode:
         sys.stderr.write(proc.stdout + proc.stderr)
-        raise SystemExit("hactool 未能解出本体 CNMT: %s" % nca_path)
-    with open(os.path.join(out, names[0]), "rb") as fh:
-        return fh.read()
+        die(f"hactool 解包失败: {nca}")
 
 
-def pfs0_members(path: str) -> list:
-    """列出 NSP/PFS0 的成员（不读数据）：[(name, offset, size)]，offset 相对数据区。"""
-    with open(path, "rb") as f:
-        magic, count, strsize, _ = struct.unpack("<4sIII", f.read(0x10))
-        if magic != b"PFS0":
-            raise ValueError("不是 PFS0: %s" % path)
-        entries = [struct.unpack("<QQI4x", f.read(0x18)) for _ in range(count)]
-        strtab = f.read(strsize)
-        return [(strtab[o:strtab.index(b"\0", o)].decode(), off, size)
-                for off, size, o in entries]
-
-
-def read_member(path: str, name: str, want: int | None = None) -> bytes:
-    """从 PFS0 里读一个成员；want 给定时只读开头（用于只取 NCA 头）。"""
-    with open(path, "rb") as f:
-        magic, count, strsize, _ = struct.unpack("<4sIII", f.read(0x10))
-        entries = [struct.unpack("<QQI4x", f.read(0x18)) for _ in range(count)]
-        strtab = f.read(strsize)
-        data0 = 0x10 + 0x18 * count + strsize
-        for off, size, nameoff in entries:
-            if strtab[nameoff:strtab.index(b"\0", nameoff)].decode() == name:
-                f.seek(data0 + off)
-                return f.read(size if want is None else min(want, size))
-    raise KeyError("NSP 里没有 %s" % name)
-
-
-def header_key(keyset: str) -> str:
-    for line in open(keyset):
-        if line.strip().startswith("header_key"):
-            return line.split("=", 1)[1].strip()
-    raise SystemExit("prod.keys 里找不到 header_key")
-
-
-def _xts_decrypt_python(enc: bytes, key_hex: str) -> bytes:
-    """AES-128-XTS in pure python (tools/aes_xts.py)."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from aes_xts import decrypt_nca_header as _impl
-    return _impl(enc, key_hex)
-
-
-def decrypt_nca_header(enc: bytes, key_hex: str) -> bytes:
-    """NCA 头用 AES-128-XTS(header_key) 加密，每 0x200 字节一个扇区，
-    tweak = 扇区号（16 字节大端）。实测与 hactool 解出的明文头逐字节一致。
-
-    默认走自带的纯 Python 实现：macOS 的 /usr/bin/openssl 是 LibreSSL，
-    对 ``enc -aes-128-xts`` 只会静默输出空内容，OpenSSL >= 3.6 的 enc 更是
-    直接报 "enc XTS ciphers not supported"。openssl 路径保留给能用的主机。
-    """
-    try:
-        out = _xts_decrypt_python(enc, key_hex)
-        if len(out) == len(enc) // 0x200 * 0x200:
-            return out
-    except Exception:
-        pass
-    out = b""
-    for sector in range(len(enc) // 0x200):
-        iv = sector.to_bytes(16, "big").hex()
-        proc = subprocess.run(
-            ["openssl", "enc", "-d", "-aes-128-xts", "-K", key_hex, "-iv", iv],
-            input=enc[sector * 0x200:(sector + 1) * 0x200], capture_output=True)
-        if proc.returncode != 0 or len(proc.stdout) != 0x200:
-            raise SystemExit("AES-XTS 解密 NCA 头失败（python 与 openssl 都不可用）")
-        out += proc.stdout
-    return out
-
-
-def base_romfs_info(hdr: bytes) -> tuple:
-    """从解密后的本体 NCA 头里取 romfs 段(1)的 IVFC 头(0xE0) 与段大小。
-
-    NCA 头布局：section_entries[4] @0x240（每项 0x10，单位 0x200）、
-    fs_headers[4] @0x400（每项 0x200），段 1 的 IVFC 头在 fs_header[1]+8。
-    """
-    start, end = struct.unpack_from("<II", hdr, 0x240 + 1 * 0x10)
-    return hdr[0x600 + 8:0x600 + 8 + 0xE0], (end - start) * 0x200
-
-
-def version_display(text: str, value: int) -> bytes:
-    if not text.lower().startswith("0x"):
-        return text.encode()[:0x10]
-    return ("%d.%d.%d" % ((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF)).encode()
-
-
-def run(cmd: list, cwd: str, env=None):
-    proc = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
-    if proc.returncode != 0:
+def run_hacbrewpack(hacbrewpack: str, keyset: str, base_id: str,
+                    exefs: str, control: str, outdir: str) -> dict[str, str]:
+    work = Path(outdir)
+    work.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(exefs, work / "exefs")
+    shutil.copytree(control, work / "control")
+    (work / "romfs").mkdir()
+    cmd = [hacbrewpack, "--keyset", keyset, "--titleid", base_id,
+           "--exefsdir", str(work / "exefs"), "--romfsdir", str(work / "romfs"),
+           "--nologo", "--keepncadir"]
+    proc = subprocess.run(cmd, cwd=work, capture_output=True, text=True)
+    if proc.returncode:
         sys.stderr.write(proc.stdout + proc.stderr)
-        raise SystemExit("命令失败: %s" % " ".join(str(c) for c in cmd[:5]))
-    return proc
-
-
-def pick_one(directory: str, tag: str) -> str:
-    names = [f for f in os.listdir(directory) if f.endswith(".nca")]
-    if len(names) != 1:
-        raise SystemExit("%s NCA 产物异常: %s" % (tag, names))
-    return os.path.join(directory, names[0])
+        die("hacbrewpack 生成 update 内容 NCA 失败")
+    nca_dir = work / "hacbrewpack_nca"
+    ncas = list(nca_dir.glob("*.nca"))
+    if not ncas:
+        die("hacbrewpack 没有生成 NCA")
+    result: dict[str, str] = {}
+    for nca in ncas:
+        info = subprocess.run(["/opt/devkitpro/tools/bin/hactool", "-k", keyset, "-i", str(nca)],
+                              capture_output=True, text=True).stdout
+        if "Content Type:                       Program" in info:
+            result["program"] = str(nca)
+        elif "Content Type:                       Control" in info:
+            result["control"] = str(nca)
+        elif "Content Type:                       Meta" in info:
+            result["meta"] = str(nca)
+    if set(result) != {"program", "control", "meta"}:
+        die(f"hacbrewpack NCA 类型不完整: {result}")
+    return result
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base-titleid", default="01008B538DE50000",
-                    help="base 应用标题 ID（16 位十六进制）")
-    ap.add_argument("--update-titleid", default=None,
-                    help="update 标题 ID，默认 = base + 0x800")
-    ap.add_argument("--version", default="1.0.1",
-                    help="标题版本，如 1.0.1 或 0x10001")
-    ap.add_argument("--program-nca", help="Program NCA（或改用 --from-nsp）")
-    ap.add_argument("--control-nca", help="Control NCA（或改用 --from-nsp）")
-    ap.add_argument("--from-nsp", default=None,
-                    help="从一个已有 NSP 里取 Program/Control NCA，"
-                         "例如 hacbrewpack 打出来的 UPDATE=1 产物")
-    ap.add_argument("--hacpack", default="hacpack", help="hacPack 可执行文件")
+    ap.add_argument("--base-nsp", required=True)
+    ap.add_argument("--exefsdir", required=True)
+    ap.add_argument("--base-titleid", required=True)
+    ap.add_argument("--update-titleid", required=True)
+    ap.add_argument("--version", default="1.0.1")
     ap.add_argument("--keyset", default=os.path.expanduser("~/.switch/prod.keys"))
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--workdir", default=None, help="临时目录，默认自动创建")
-    ap.add_argument("--base-cnmt-nca", default=None,
-                    help="本体 Program 之外的 meta NCA（*.cnmt.nca）。给了它就按真实"
-                         "更新那样生成 PatchMetaExtendedData（补丁历史）；不给就是"
-                         "extended_data_size=0，实测会被主机判为非法补丁")
     ap.add_argument("--hactool", default="/opt/devkitpro/tools/bin/hactool")
-    ap.add_argument("--base-nsp", default=None,
-                    help="本体 NSP。给了它 + --exefsdir 就跑完整流水线：只从本体里读需要"
-                         "的碎片（meta NCA / control NCA / Program 头），自己用 hacPack 造"
-                         "BKTR Patch RomFS 的 Program、派生 NACP 的 Control 和带补丁历史"
-                         "的 Patch CNMT，最后组出真正的 update NSP")
-    ap.add_argument("--exefsdir", default=None,
-                    help="新 ExeFS 目录（含 main 与 main.npdm），配合 --base-nsp")
-    ap.add_argument("--required-system-version", default=None,
-                    help="默认沿用本体的 RequiredSystemVersion")
+    ap.add_argument("--hacbrewpack", default=os.path.expanduser("~/bin/hacbrewpack"))
+    ap.add_argument("--build-romfs", default="/opt/devkitpro/tools/bin/build_romfs")
+    ap.add_argument("--romfsdir", default=None,
+                    help="新的完整 RomFS 目录；给了它才生成 RomFS 差分")
+    ap.add_argument("--verify-romfs", action="store_true",
+                    help="打包前用 hactool 重读 RomFS 镜像并逐字节比对源目录")
+    ap.add_argument("--l5-block-log2", type=int, default=BKTR_BLOCK_LOG2,
+                    help="Level 5 哈希块大小的 log2（默认 14=0x4000；越大哈希表越小）")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--workdir", default=None)
     args = ap.parse_args()
 
+    base_nsp = os.path.abspath(args.base_nsp)
+    exefs = os.path.abspath(args.exefsdir)
+    keyset = os.path.abspath(args.keyset)
+    if not os.path.isfile(base_nsp) or not os.path.isdir(exefs) or not os.path.isfile(keyset):
+        die("update NSP 输入不完整")
+    if args.romfsdir and not os.path.isdir(args.romfsdir):
+        die(f"找不到 RomFS 目录: {args.romfsdir}")
+    tmp = Path(args.workdir or tempfile.mkdtemp(prefix="kawa2-update-"))
+    tmp.mkdir(parents=True, exist_ok=True)
+    keys = parse_keys(keyset)
+    header_key = keys.get("header_key")
+    if header_key is None:
+        die("prod.keys 缺少 header_key")
     base_id = int(args.base_titleid, 16)
-    update_id = int(args.update_titleid, 16) if args.update_titleid else base_id + 0x800
+    update_id = int(args.update_titleid, 16)
     version = parse_version(args.version)
 
-    tmp = args.workdir or tempfile.mkdtemp(prefix="make-update-")
-    os.makedirs(tmp, exist_ok=True)
+    members = pfs0_members(base_nsp)
+    meta_name = next((n for n, _, _ in members if n.endswith(".cnmt.nca")), None)
+    non_meta = [(n, size) for n, _, size in members
+                if n.endswith(".nca") and not n.endswith(".cnmt.nca")]
+    if not meta_name or len(non_meta) != 2:
+        die(f"本体 NSP 成员不符合预期: {[n for n, _, _ in members]}")
+    (control_name, _control_size), (program_name, _program_size) = sorted(
+        non_meta, key=lambda x: x[1])
+    base_meta = tmp / meta_name
+    base_meta.write_bytes(read_member(base_nsp, meta_name))
+    base_meta_dir = tmp / "base-meta"
+    extract_nca(args.hactool, keyset, str(base_meta), str(base_meta_dir))
+    cnmt_files = list(base_meta_dir.glob("*.cnmt"))
+    if len(cnmt_files) != 1:
+        die("本体 Meta NCA 没有解出 CNMT")
+    base_cnmt = parse_base_cnmt(cnmt_files[0].read_bytes())
 
-    if args.base_nsp:
-        # ---------------------------------------------------------------- 完整流水线
-        # 只从本体 NSP 里读需要的碎片，不复制 3.4 GB 的游戏数据。
-        if not os.path.isfile(args.base_nsp):
-            print("缺少: %s" % args.base_nsp, file=sys.stderr)
-            return 1
-        if not args.exefsdir or not os.path.isdir(args.exefsdir):
-            print("--base-nsp 需要配合 --exefsdir（含 main 与 main.npdm）", file=sys.stderr)
-            return 1
-        members = pfs0_members(args.base_nsp)
-        meta_name = next((n for n, _, _ in members if n.endswith(".cnmt.nca")), None)
-        ctrl_prog = sorted(((n, s) for n, _, s in members
-                            if n.endswith(".nca") and not n.endswith(".cnmt.nca")),
-                           key=lambda kv: kv[1])
-        if meta_name is None or len(ctrl_prog) != 2:
-            print("本体 NSP 成员不符合预期: %s" % [n for n, _, _ in members], file=sys.stderr)
-            return 1
-        (control_name, control_size), (program_name, program_size) = ctrl_prog
-        print("本体 NSP: meta=%s  control=%s(%d)  program=%s(%d)"
-              % (meta_name, control_name, control_size, program_name, program_size))
+    base_ctrl_nca = tmp / control_name
+    base_ctrl_nca.write_bytes(read_member(base_nsp, control_name))
+    base_ctrl_dir = tmp / "base-control"
+    extract_nca(args.hactool, keyset, str(base_ctrl_nca), str(base_ctrl_dir))
+    nacp = base_ctrl_dir / "control.nacp"
+    if not nacp.is_file():
+        die("本体 Control NCA 没有 control.nacp")
+    nacp_data = bytearray(nacp.read_bytes())
+    nacp_data[0x3060:0x3070] = version_display(args.version, version).ljust(0x10, b"\0")
+    nacp.write_bytes(nacp_data)
+    if not any(base_ctrl_dir.glob("icon_*.dat")):
+        die("本体 Control NCA 没有图标")
 
-        # ① meta NCA -> 本体 CNMT（补丁历史的来源）
-        base_meta_nca = os.path.join(tmp, meta_name)
-        with open(base_meta_nca, "wb") as fh:
-            fh.write(read_member(args.base_nsp, meta_name))
-        base = parse_base_cnmt(extract_base_cnmt(base_meta_nca, args.hactool,
-                                                 args.keyset, tmp))
+    generated = run_hacbrewpack(args.hacbrewpack, keyset, args.base_titleid,
+                                exefs, str(base_ctrl_dir), str(tmp / "brew"))
+    base_header = decrypt_header(read_member(base_nsp, program_name, 0xC00), header_key)
+    if args.romfsdir:
+        patch_program_nca_delta(generated["program"], base_nsp, program_name, base_header,
+                                keys, header_key, os.path.abspath(args.romfsdir),
+                                args.build_romfs, tmp,
+                                args.hactool if args.verify_romfs else None,
+                                args.l5_block_log2)
+    else:
+        patch_program_nca_zero(generated["program"], base_header, keys, header_key)
+    extended = build_patch_extended_data(
+        base_cnmt, meta_name,
+        next(size for name, _, size in members if name == meta_name))
+    patch_cnmt = build_patch_cnmt(update_id, base_id, version,
+                                  generated["program"], generated["control"], extended,
+                                  base_cnmt["required_system_version"])
+    patch_meta_nca(generated["meta"], patch_cnmt, update_id, keys, header_key)
 
-        # ② control NCA -> 本体 NACP + 图标，只把 display_version 抬到新版本
-        #    （归属字段必须保持本体，否则主机的名字/图标会读不出来）
-        base_ctrl = os.path.join(tmp, "base-control")
-        os.makedirs(base_ctrl, exist_ok=True)
-        base_ctrl_nca = os.path.join(tmp, control_name)
-        with open(base_ctrl_nca, "wb") as fh:
-            fh.write(read_member(args.base_nsp, control_name))
-        subprocess.run([args.hactool, "-k", os.path.abspath(args.keyset),
-                        "--disablekeywarns", "-t", "nca", "-x",
-                        "--section0dir=" + base_ctrl, base_ctrl_nca], capture_output=True)
-        nacp = os.path.join(base_ctrl, "control.nacp")
-        if not os.path.isfile(nacp):
-            print("没能从本体 Control NCA 解出 control.nacp", file=sys.stderr)
-            return 1
-        data = bytearray(open(nacp, "rb").read())
-        old_display = bytes(data[0x3060:0x3070]).split(b"\0")[0]
-        data[0x3060:0x3070] = version_display(args.version, version).ljust(0x10, b"\0")
-        with open(nacp, "wb") as fh:
-            fh.write(bytes(data))
-        print("本体 NACP: display %r -> %r，save_data_owner_id 保持 0x%016X"
-              % (old_display, bytes(data[0x3060:0x3070]).split(b"\0")[0],
-                 struct.unpack_from("<Q", data, 0x3078)[0]))
-
-        # ③ 只读 Program NCA 的前 0xC00 字节 -> 解密 -> BKTR 需要的 IVFC 与虚拟大小
-        enc = read_member(args.base_nsp, program_name, want=0xC00)
-        hdr = decrypt_nca_header(enc, header_key(args.keyset))
-        ivfc, virt = base_romfs_info(hdr)
-        ivfc_path = os.path.join(tmp, "base-ivfc.bin")
-        with open(ivfc_path, "wb") as fh:
-            fh.write(ivfc)
-        print("本体 romfs 段: 虚拟大小 0x%X  IVFC master_hash=%s"
-              % (virt, ivfc[0xC0:0xE0].hex()))
-
-        # ④ hacPack 造 Control（本体 ID；NACP 原样不动）
-        ctrl_out = os.path.join(tmp, "control-out")
-        os.makedirs(ctrl_out, exist_ok=True)
-        run([args.hacpack, "--keyset", os.path.abspath(args.keyset), "--type", "nca",
-             "--ncatype", "control", "--titleid", "%016x" % base_id,
-             "--romfsdir", base_ctrl, "--outdir", ctrl_out], tmp)
-
-        # ⑤ hacPack 造 Program（本体 ID + BKTR Patch RomFS 叠加表）
-        empty_romfs = os.path.join(tmp, "empty-romfs")
-        os.makedirs(empty_romfs, exist_ok=True)
-        prog_out = os.path.join(tmp, "program-out")
-        os.makedirs(prog_out, exist_ok=True)
-        env = dict(os.environ, HACPACK_BKTR_IVFC=ivfc_path, HACPACK_BKTR_SIZE="0x%X" % virt)
-        run([args.hacpack, "--keyset", os.path.abspath(args.keyset), "--type", "nca",
-             "--ncatype", "program", "--titleid", "%016x" % base_id,
-             "--exefsdir", args.exefsdir, "--romfsdir", empty_romfs,
-             "--outdir", prog_out], tmp, env=env)
-
-        args.control_nca = pick_one(ctrl_out, "Control")
-        args.program_nca = pick_one(prog_out, "Program")
-        args.base_cnmt_nca = base_meta_nca       # 交给下面的补丁历史逻辑
-        print("内容 NCA 就绪: Program=%s  Control=%s"
-              % (os.path.basename(args.program_nca), os.path.basename(args.control_nca)))
-        print()
-
-    if args.from_nsp:
-        if not os.path.isfile(args.from_nsp):
-            print("缺少: %s" % args.from_nsp, file=sys.stderr)
-            return 1
-        blobs = read_pfs0(args.from_nsp)
-        ncas = sorted((n, b) for n, b in blobs.items()
-                      if n.endswith(".nca") and not n.endswith(".cnmt.nca"))
-        if len(ncas) != 2:
-            print("源 NSP 里期望 2 个非 meta NCA，实际 %d 个: %s"
-                  % (len(ncas), [n for n, _ in ncas]), file=sys.stderr)
-            return 1
-        (control_name, control_blob), (program_name, program_blob) = [
-            (n, b) for n, b in sorted(ncas, key=lambda kv: len(kv[1]))]  # 小的当 Control
-        args.control_nca = os.path.join(tmp, control_name)
-        args.program_nca = os.path.join(tmp, program_name)
-        open(args.control_nca, "wb").write(control_blob)
-        open(args.program_nca, "wb").write(program_blob)
-        print("从 %s 取出: Program=%s Control=%s"
-              % (os.path.basename(args.from_nsp), program_name, control_name))
-
-    for name in ("program_nca", "control_nca"):
-        if not getattr(args, name):
-            print("需要 --program-nca/--control-nca 或 --from-nsp", file=sys.stderr)
-            return 1
-    for p in (args.program_nca, args.control_nca, args.keyset):
-        if not os.path.isfile(p):
-            print("缺少: %s" % p, file=sys.stderr)
-            return 1
-    if shutil.which(args.hacpack) is None and not os.path.isfile(args.hacpack):
-        print("缺少 hacPack: %s" % args.hacpack, file=sys.stderr)
-        return 1
-
-    print("base   = 0x%016X" % base_id)
-    print("update = 0x%016X   version = 0x%X" % (update_id, version))
-
-    extended_data = b""
-    required_system_version = (int(args.required_system_version, 0)
-                               if args.required_system_version else None)
-    if args.base_cnmt_nca:
-        if not os.path.isfile(args.base_cnmt_nca):
-            print("缺少: %s" % args.base_cnmt_nca, file=sys.stderr)
-            return 1
-        base = parse_base_cnmt(extract_base_cnmt(args.base_cnmt_nca, args.hactool,
-                                                 args.keyset, tmp))
-        extended_data = build_patch_extended_data(base, args.base_cnmt_nca)
-        if required_system_version is None:
-            required_system_version = base["required_system_version"]
-        print("本体   = 0x%016X  version 0x%X  type 0x%02X  内容 %d 条"
-              % (base["id"], base["version"], base["type"], len(base["contents"])))
-        print("补丁历史: history 头 1 条 + 内容清单 %d 条  extended_data_size=0x%X"
-              % (len(base["contents"]) + 1, len(extended_data)))
-    if required_system_version is None:
-        required_system_version = 0
-
-    cnmt = build_patch_cnmt(update_id, base_id, version,
-                            [(args.program_nca, CT_PROGRAM), (args.control_nca, CT_CONTROL)],
-                            required_system_version, extended_data)
-    print("已生成 Patch CNMT: %d 字节（0x%X）" % (len(cnmt), len(cnmt)))
-
-    cnmt_name = "Patch_%016x.cnmt" % update_id
-    cnmt_path = os.path.join(tmp, cnmt_name)
-    with open(cnmt_path, "wb") as fh:
-        fh.write(cnmt)
-
-    meta_out = os.path.join(tmp, "meta")
-    os.makedirs(meta_out, exist_ok=True)
-    cmd = [args.hacpack, "--keyset", os.path.abspath(args.keyset),
-           "--type", "nca", "--ncatype", "meta", "--titletype", "patch",
-           "--titleid", "%016x" % update_id,
-           "--cnmt", cnmt_path, "--outdir", meta_out,
-           "--tempdir", os.path.join(tmp, "hacpack_temp"),
-           "--backupdir", os.path.join(tmp, "hacpack_backup")]
-    print("hacPack:", " ".join(cmd[1:]))
-    proc = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True)
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr)
-    if proc.returncode != 0:
-        print("hacPack 失败（exit %d）" % proc.returncode, file=sys.stderr)
-        return 1
-
-    metas = [f for f in os.listdir(meta_out) if f.endswith(".nca")]
-    if len(metas) != 1:
-        print("meta NCA 产物异常: %s" % metas, file=sys.stderr)
-        return 1
-    meta_path = os.path.join(meta_out, metas[0])
-    print("meta NCA: %s（%d 字节）" % (metas[0], os.path.getsize(meta_path)))
-
-    entries = [
-        (metas[0], open(meta_path, "rb").read()),
-        (os.path.basename(args.program_nca), open(args.program_nca, "rb").read()),
-        (os.path.basename(args.control_nca), open(args.control_nca, "rb").read()),
-    ]
-    nsp = build_pfs0(entries)
-    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    with open(args.out, "wb") as fh:
-        fh.write(nsp)
-    print("\n写出 NSP: %s（%d 字节）" % (args.out, len(nsp)))
-    for name, blob in entries:
-        print("   %-44s %d" % (name, len(blob)))
-    print("sha256: %s" % hashlib.sha256(nsp).hexdigest())
+    blobs = []
+    for path in (generated["meta"], generated["program"], generated["control"]):
+        digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()[:32]
+        renamed = tmp / f"{digest}.nca"
+        shutil.copyfile(path, renamed)
+        blobs.append((renamed.name, renamed.read_bytes()))
+    nsp = build_pfs0(blobs)
+    out = Path(args.out).absolute()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(nsp)
+    print(f"Patch CNMT: type=0x81 base=0x{base_id:016X} update=0x{update_id:016X}")
+    print(f"写出 NSP: {out} ({len(nsp)} bytes)")
+    print(f"sha256: {hashlib.sha256(nsp).hexdigest()}")
     return 0
 
 

@@ -8,6 +8,7 @@ typedef struct KNativeCG {
 static const unsigned cg_starts[]={0,22,48,71,112,147,172,195,225,278};
 static const unsigned cg_counts[]={21,25,22,40,34,24,22,29,52,28};
 static const char *const cg_atlases[]={"kisaku_DL_CG00nadesiko.akb","kisaku_DL_CG01hiromi.akb","kisaku_DL_CG02momoko.akb","kisaku_DL_CG03madoka.akb","kisaku_DL_CG04yuri.akb","kisaku_DL_CG05aoi.akb","kisaku_DL_CG06ayano.akb","kisaku_DL_CG07syouko.akb","kisaku_DL_CG08sonota.akb","kisaku_DL_CG09onnanoko.akb"};
+static int cg_hage_unlocked(const KBootstrap *b){return b&&b->vm&&b->vm->byte_count>4006&&b->vm->bytes[4006]!=0;}
 static unsigned cg_count(const KNativeCG *c){return c->alternate?27:cg_counts[c->group];}
 static unsigned cg_columns(const KNativeCG *c){return c->alternate?5:4;}
 static unsigned cg_pages(const KNativeCG *c){unsigned n=cg_columns(c)*4;return (cg_count(c)+n-1)/n;}
@@ -25,7 +26,10 @@ static int cg_read(KBootstrap *b,const char *name,KImage *out){
     if(bad){rmt_free(&image);return -1;}rmt_free(out);*out=image;return 0;
 }
 static int cg_copy(KImage *dst,const KImage *src,int dx,int dy,int sx,int sy,int w,int h){
-    if(!src->pixels||sx<0||sy<0||sx+w>(int)src->width||sy+h>(int)src->height)return -1;
+    if(!dst||!src||!dst->pixels||!src->pixels||dst->width<1||dst->height<1||src->width<1||src->height<1||
+       dst->stride<(size_t)dst->width*4||src->stride<(size_t)src->width*4||sx<0||sy<0||w<1||h<1||
+       (uint64_t)(unsigned)sx+(uint64_t)(unsigned)w>src->width||
+       (uint64_t)(unsigned)sy+(uint64_t)(unsigned)h>src->height)return -1;
     for(int y=0;y<h;y++)for(int x=0;x<w;x++){
         if(dx+x<0||dy+y<0||dx+x>=(int)dst->width||dy+y>=(int)dst->height)continue;
         const uint8_t *s=src->pixels+(sy+y)*src->stride+(sx+x)*4;uint8_t *d=dst->pixels+(dy+y)*dst->stride+(dx+x)*4;
@@ -39,12 +43,19 @@ static void cg_variant_rect(const KCGRecord *r,unsigned i,int *x,int *y){
 }
 static int cg_draw(KBootstrap *b){
     KNativeCG *c=b->native_cg;if(!c)return -1;
+    if(!c->base.pixels||c->base.width<640||c->base.height<480||
+       c->base.stride<(size_t)c->base.width*4||!c->screen.pixels||c->screen.width<640||
+       c->screen.height<480||c->screen.stride<(size_t)c->screen.width*4)return -1;
     for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
         const uint8_t *s=c->base.pixels+y*c->base.stride+x*4;uint8_t *d=c->screen.pixels+y*c->screen.stride+x*4;
         for(unsigned k=0;k<3;k++)d[k]=(uint8_t)(s[k]*127/255);
         d[3]=255;
     }
-    if(c->view==2&&c->player){return cg_copy(&c->screen,&c->player->layers[0],0,0,0,0,640,480);}
+    if(c->view==2&&c->player){
+        KImage *layer=&c->player->layers[0];
+        if(!layer->pixels||layer->width<640||layer->height<480)return -1;
+        return cg_copy(&c->screen,layer,0,0,0,0,640,480);
+    }
     if(c->view==1){
         const KCGRecord *r=cg_record(c,c->item);
         for(unsigned i=0;i<cg_variant_count(r);i++){
@@ -60,7 +71,7 @@ static int cg_draw(KBootstrap *b){
     for(unsigned i=0;i<pages;i++)if(cg_copy(&c->screen,&c->parts,(10-(int)pages)*38+232+(int)i*38,0,(int)i*48,i==c->page?224:c->focus==(int)(0x100+i)?204:184,48,20))return -1;
     if(!c->alternate)for(unsigned i=0;i<10;i++){
         int sx=kisaku_cg_tabs[i][0],sy=kisaku_cg_tabs[i][1];
-        if(i==9&&!b->vm->bytes[4006]){sx=620;sy=380;}else if(i==c->group)sy+=40;else if(c->focus==(int)(0x300+i))sy+=20;
+        if(i==9&&!cg_hage_unlocked(b)){sx=620;sy=380;}else if(i==c->group)sy+=40;else if(c->focus==(int)(0x300+i))sy+=20;
         if(cg_copy(&c->screen,&c->parts,0,200+(int)i*28,sx,sy,112,20))return -1;
     }
     unsigned cols=cg_columns(c),first=c->page*cols*4;
@@ -87,7 +98,8 @@ static void native_cg_free(KBootstrap *b){
     bootstrap_destroy(c->player);rmt_free(&c->base);rmt_free(&c->screen);rmt_free(&c->parts);rmt_free(&c->atlas);rmt_free(&c->variants);free(c);
 }
 static int native_cg_open(KBootstrap *b){
-    if(b->native_cg||b->message_request||b->vm->global_count[1]<=61||b->layers[0].width<640||b->layers[0].height<480)return -1;
+    if(b->native_cg||b->message_request||b->vm->global_count[1]<=61||b->layers[0].width<640||
+       b->layers[0].height<480||b->layers[0].stride<(size_t)b->layers[0].width*4)return -1;
     KNativeCG *c=calloc(1,sizeof(*c));if(!c)return -1;c->alternate=b->vm->globals[1][61].number==1;
     c->base=(KImage){0,0,640,480,2560,malloc(640*480*4)};c->screen=(KImage){0,0,640,480,2560,malloc(640*480*4)};
     b->native_cg=c;
@@ -118,7 +130,17 @@ static int cg_play(KBootstrap *b,unsigned variant){
     bootstrap_destroy(c->player);c->player=p;c->variant=variant;c->view=2;return cg_draw(b);
 bad:snprintf(c->problem,sizeof(c->problem),"CG script: %.230s",p->error[0]?p->error:"execution limit");bootstrap_destroy(p);return -1;
 }
-static void native_cg_frame(KBootstrap *b){KNativeCG *c=b->native_cg;if(c&&c->view==2&&c->player){bootstrap_frame(c->player);(void)cg_draw(b);}}
+static void native_cg_frame(KBootstrap *b){
+    KNativeCG *c=b?b->native_cg:NULL;
+    if(!c||c->view!=2||!c->player)return;
+    bootstrap_frame(c->player);
+    if(c->player->error[0]||cg_draw(b)){
+        snprintf(c->problem,sizeof(c->problem),"CG frame: %.230s",
+                 c->player->error[0]?c->player->error:"invalid CG surface");
+        bootstrap_destroy(c->player);c->player=NULL;c->view=1;c->focus=(int)c->variant;
+        (void)cg_draw(b);
+    }
+}
 int bootstrap_native_cg_action(KBootstrap *b,int action){
     KNativeCG *c=b?b->native_cg:NULL;if(!c)return -1;
     if(action==1){
@@ -131,7 +153,7 @@ int bootstrap_native_cg_action(KBootstrap *b,int action){
         if(action==4){const KCGRecord *r=cg_record(c,c->item);for(int v=(int)c->variant-1;v>=0;v--)if(cg_unlocked(b,r->variants[v]))return cg_play(b,(unsigned)v);}return 0;
     }
     if((action==6||action==7)&&!c->view&&!c->alternate){
-        unsigned groups=b->vm->bytes[4006]?10:9;
+        unsigned groups=cg_hage_unlocked(b)?10:9;
         unsigned group=(c->group+groups+(action==7?-1:1))%groups;
         KImage next={0};if(cg_read(b,cg_atlases[group],&next))return -1;
         rmt_free(&c->atlas);c->atlas=next;c->group=group;c->page=0;c->focus=0;
@@ -141,7 +163,7 @@ int bootstrap_native_cg_action(KBootstrap *b,int action){
         if(c->view)return cg_play(b,(unsigned)c->focus);
         if(c->focus==0x200)return bootstrap_native_cg_action(b,1);
         if(c->focus>=0x300&&c->focus<0x30a){
-            unsigned group=(unsigned)c->focus-0x300;if(group==9&&!b->vm->bytes[4006])return 0;
+            unsigned group=(unsigned)c->focus-0x300;if(group==9&&!cg_hage_unlocked(b))return 0;
             KImage next={0};if(cg_read(b,cg_atlases[group],&next))return -1;rmt_free(&c->atlas);c->atlas=next;c->group=group;c->page=0;
         }else if(c->focus>=0x100&&c->focus<0x100+(int)cg_pages(c))c->page=(unsigned)c->focus-0x100;
         else if(c->focus>=0&&c->focus<(int)(cg_columns(c)*4)){
@@ -190,5 +212,5 @@ int bootstrap_native_cg_focus(const KBootstrap *b,int rect[4]){
 
 unsigned bootstrap_native_cg_categories(const KBootstrap *b){
     const KNativeCG *c=b?b->native_cg:NULL;
-    return c&&!c->view&&!c->alternate?(b->vm->bytes[4006]?10:9):0;
+    return c&&!c->view&&!c->alternate?(cg_hage_unlocked(b)?10:9):0;
 }

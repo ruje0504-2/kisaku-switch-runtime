@@ -327,20 +327,25 @@ if [ "$UPDATE_MODE" = 1 ]; then
   #      普通 RomFS（它连 --noromfs 之外的路子都没有），所以这一步必须由打过
   #      BKTR 补丁的 hacPack 生成。
   # 字段来源与逆向过程见 reports/update-nsp-bktr.md。
-  echo "[4/6] 更新包：不搬游戏数据，romfs 用 BKTR 叠加表代替"
+  echo "[4/6] 更新包：按参考工程流程生成普通 NCA，再重写 BKTR Patch RomFS"
   [ -n "${BASE_NSP:-}" ] || { echo "更新包需要 BASE_NSP=<本体 NSP 路径>" >&2; exit 1; }
   [ -f "$BASE_NSP" ] || { echo "找不到本体 NSP: $BASE_NSP" >&2; exit 1; }
-  HACPACK="${HACPACK:-$PWD/local/hacpack}"
-  [ -x "$HACPACK" ] || { echo "缺少 hacPack: $HACPACK（构建见 reports/update-nsp-bktr.md）" >&2; exit 1; }
-
-  echo "[5/6] 生成 Patch CNMT + BKTR Patch RomFS + 派生 NACP，并组 NSP"
-  mkdir -p "$(dirname "$OUT")"
+  ROMFS_ARGS=()
+  if [ -d "$DATA" ]; then
+    ROMFS_ARGS=(--romfsdir "$DATA")
+    if [ "${ROMFS_VERIFY:-1}" = 1 ]; then ROMFS_ARGS+=(--verify-romfs); fi
+    ROMFS_ARGS+=(--l5-block-log2 "${L5_BLOCK_LOG2:-14}")
+    echo "[5/6] 生成 Patch CNMT + BKTR RomFS 差分 + 派生 Control NCA"
+  else
+    echo "[5/6] 生成 Patch CNMT + BKTR 零改动叠加 + 派生 Control NCA（无 $DATA）"
+  fi
   python3 tools/make_update_nsp.py \
       --base-nsp "$BASE_NSP" --exefsdir "$TMP/exefs" \
-      --base-titleid "${BASE_TITLE_ID:-01008B538DE50000}" \
-      --update-titleid "$TITLE_ID" --version "$TITLE_VERSION" \
-      --hacpack "$HACPACK" --hactool /opt/devkitpro/tools/bin/hactool \
-      --keyset "$HOME/.switch/prod.keys" \
+      "${ROMFS_ARGS[@]}" \
+      --base-titleid "${BASE_TITLE_ID:-01008B538DE50000}" --update-titleid "$TITLE_ID" \
+      --version "$TITLE_VERSION" --keyset "$HOME/.switch/prod.keys" \
+      --hactool /opt/devkitpro/tools/bin/hactool \
+      --hacbrewpack "$HOME/bin/hacbrewpack" \
       --out "$OUT" --workdir "$TMP/update-build"
   echo "[6/6] 完成"
   ls -la "$OUT"

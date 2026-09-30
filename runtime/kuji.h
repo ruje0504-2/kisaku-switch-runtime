@@ -30,6 +30,8 @@ static const unsigned kkuji_perm[KKUJI_COLUMNS] = {2, 4, 0, 3, 1};
 static const int kkuji_column_x[KKUJI_COLUMNS] = {78, 215, 321, 445, 569};
 
 typedef struct KKuji {
+    KImage background;
+    KImage pages[KKUJI_COLUMNS];
     unsigned pool[KKUJI_COLUMNS];   /* four script ids plus the blank 9 */
     unsigned slot[KKUJI_COLUMNS];   /* shuffled bottom slots (native obj+0xac) */
     unsigned select;                /* highlighted column, 0..4 */

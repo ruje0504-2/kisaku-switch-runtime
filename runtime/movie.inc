@@ -10,27 +10,29 @@ static int movie_next(KBootstrap *b){
     for(unsigned guard=0;guard<1000;guard++){
         int event=kmov_next(&b->mov);
         if(!b->mov.changing)b->video_change_wait=0;
-        if(event<0)return error(b,b->mov.error);
+        if(event<0){int rc=error(b,b->mov.error);movie_stop(b);return rc;}
         if(event==0){
-            free(b->movie_effect.pcm);memset(&b->movie_effect,0,sizeof(b->movie_effect));b->movie_effect_name[0]=0;
-            b->video_active=b->video_wait=0;b->vm->globals[0][50].number&=~0x2000;return 0;
+            /* A completed MOV no longer owns a playable decoder. Release the
+               command/video/PCM buffers here instead of retaining them until
+               the next movie or the whole bootstrap is destroyed. */
+            movie_stop(b);return 0;
         }
         if(event==1){
-            if(kvideo_range(b->video,b->mov.first,b->mov.last))return error(b,"MOV segment seek failed");
+            if(kvideo_range(b->video,b->mov.first,b->mov.last)){int rc=error(b,"MOV segment seek failed");movie_stop(b);return rc;}
             b->video_eof=0;b->video_active=1;b->vm->globals[0][50].number|=0x2000;return 0;
         }
         if(event==2&&*b->mov.audio&&option(b,"Effect","IsHEffect",1)){
             /* Version 2 embeds a sound name in each play command. Cache
                only while that resource is unchanged across loop boundaries. */
             if(!b->movie_effect.pcm||strcmp(b->movie_effect_name,b->mov.audio)){
-                if(effect_decode(b,&b->movie_effect,b->mov.audio))return -1;
+                if(effect_decode(b,&b->movie_effect,b->mov.audio)){movie_stop(b);return -1;}
                 snprintf(b->movie_effect_name,sizeof(b->movie_effect_name),"%s",b->mov.audio);
             }
             b->movie_effect.read=b->movie_effect.clock_position=0;
             if(b->movie_effect.pcm&&!b->movie_effect.loop_end)b->movie_effect.loop_end=b->movie_effect.size;
         }else{free(b->movie_effect.pcm);memset(&b->movie_effect,0,sizeof(b->movie_effect));}
     }
-    return error(b,"MOV event budget exceeded");
+    {int rc=error(b,"MOV event budget exceeded");movie_stop(b);return rc;}
 }
 static int movie_open(KBootstrap *b,const char *name,unsigned entry){
     uint8_t *commands=NULL,*video_data=NULL;size_t commands_size=0,video_size=0;KMov mov;

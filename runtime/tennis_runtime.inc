@@ -14,8 +14,13 @@ static unsigned ktennis_difficulty(KBootstrap *b) {
 static int ktennis_begin(KBootstrap *b) {
     if (b->tennis.active) return error(b, "31/610 already running (arguments preserved)");
     KTennis *t = &b->tennis;
+    rmt_free(&t->player1); rmt_free(&t->court1); rmt_free(&t->court2);
+    rmt_free(&t->player2); rmt_free(&t->pieces);
     *t = (KTennis){0};
     t->difficulty = ktennis_difficulty(b);
+    if(mini_load_akb(b,"tennisp1.akb",&t->player1)||mini_load_akb(b,"tennisc1.akb",&t->court1)||
+       mini_load_akb(b,"tennisc2.akb",&t->court2)||mini_load_akb(b,"tennisp2.akb",&t->player2)||
+       mini_load_akb(b,"tennis_p.akb",&t->pieces))return error(b,"31/610 sprite resources decode failed (arguments preserved)");
     t->active = 1;
     return 0;
 }
@@ -68,25 +73,17 @@ static int ktennis_frame(KBootstrap *b, unsigned ms) {
     return 0;
 }
 
-/* Logic-first presentation slice: the six layer.arc atlases
-   (tennisbg/tennisp1/tennisc1/tennisc2/tennisp2/tennis_p), the eight 0xd0-byte
-   sprite objects and the frame-number tables are the next slice; until then
-   draw the running score so the match is readable. */
 static void ktennis_present(KBootstrap *b) {
     KTennis *t = &b->tennis;
     if (!t->active || !b->layers[0].pixels) return;
-    unsigned cells = t->games_player + t->games_cpu + t->points_player + t->points_cpu;
-    for (unsigned i = 0; i < cells && i < 40; i++) {
-        int ox = 40 + (int)(i % 20) * 16, oy = 40 + (int)(i / 20) * 16;
-        for (int y = 0; y < 12; y++) {
-            int dy = oy + y; if (dy < 0 || dy >= 480) continue;
-            uint8_t *row = b->layers[0].pixels + (size_t)dy * b->layers[0].stride;
-            for (int x = 0; x < 12; x++) {
-                int dx = ox + x; if (dx < 0 || dx >= 640) continue;
-                uint8_t *px = row + (size_t)dx * 4;
-                px[0] = 255; px[1] = 255; px[2] = 0; px[3] = 255;
-            }
-        }
+    mini_clear(&b->layers[0]);
+    if(b->layers[0].width==640&&b->layers[0].height>=480){
+        /* The native places one character on each side of the net.  The
+           source sheets are 6-column strips: c1=136x128, c2=112x160. */
+        unsigned f=t->points_played%6u;
+        if(t->court1.pixels)mini_blit(&b->layers[0],&t->court1,122,268,(int)f*136,0,136,128);
+        if(t->court2.pixels)mini_blit(&b->layers[0],&t->court2,406,116,(int)f*112,0,112,160);
+        if(t->pieces.pixels){unsigned frame=(t->points_played%3u)*22u;mini_blit(&b->layers[0],&t->pieces,309,214,0,(int)frame,22,22);}
     }
 }
 #endif

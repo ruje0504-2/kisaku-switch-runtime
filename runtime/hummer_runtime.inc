@@ -19,6 +19,8 @@ static unsigned khammer_difficulty(KBootstrap *b) {
 static int khammer_begin(KBootstrap *b) {
     if (b->hummer.active) return error(b, "31/711 already running (arguments preserved)");
     KHummer *h = &b->hummer;
+    rmt_free(&h->background);
+    if (mini_load_akb(b,"hummbg.akb",&h->background)) return error(b,"31/711 background decode failed (arguments preserved)");
     h->active = 1;
     h->clock = h->hole_clock = h->effect_clock = h->reveal_clock = 0;
     h->hole = h->revealed = h->settled = 0;
@@ -114,26 +116,18 @@ static int khammer_frame(KBootstrap *b, unsigned ms) {
     return 0;
 }
 
-/* Logic-first presentation slice: the hummbg/hummp/hummps/tuthum layer
-   composition (layers 1/8/9/14, hole source rects, 36-segment meter bar) is
-   the next slice; until then draw the meter bar so the round is readable. */
 static void khammer_present(KBootstrap *b) {
     KHummer *h = &b->hummer;
     if (!h->active || !b->layers[0].pixels) return;
-    unsigned seg = (unsigned)(h->meter * KHUMMER_SEGMENTS / 100.0);
-    if (seg > KHUMMER_SEG_MAX) seg = KHUMMER_SEG_MAX;
-    for (unsigned i = 0; i < seg; i++) {
-        for (int y = 0; y < 20; y++) {
-            int dy = 100 + (int)i * 20 + y;
-            if (dy < 0 || dy >= 480) continue;
-            uint8_t *row = b->layers[0].pixels + (size_t)dy * b->layers[0].stride;
-            for (int x = 0; x < 40; x++) {
-                int dx = 40 + x;
-                if (dx < 0 || dx >= 640) continue;
-                uint8_t *px = row + (size_t)dx * 4;
-                px[0] = 0; px[1] = 255; px[2] = 0; px[3] = 255;
-            }
-        }
+    mini_clear(&b->layers[0]);
+    mini_blit(&b->layers[0],&h->background,0,0,0,0,640,480);
+    if (b->layers[8].pixels) {
+        const KHummerHole *hole=&khammer_holes[h->hole%KHUMMER_HOLES];
+        mini_blit(&b->layers[0],&b->layers[8],132,64,hole->x,hole->y,376,368);
+    }
+    if (b->layers[9].pixels) {
+        unsigned frame=(h->effect_clock/KHUMMER_EFFECT_MS)%3;
+        mini_blit(&b->layers[0],&b->layers[9],218,40,(int)frame*204,0,204,248);
     }
 }
 

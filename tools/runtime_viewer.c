@@ -434,7 +434,8 @@ int main(int argc,char **argv){
         if(start_story&&b->flag_dialog.active){bootstrap_pointer(b,300,350,1);start_story=0;}
         if(advance_texts&&b->text_count<advance_texts&&b->message_active&&!b->message_slide)bootstrap_confirm(b);
         b->present_hires=!raw_present;
-        if(state==1&&!menu.active&&(!panel.kind||(panel.kind>=9&&panel.kind<=15))){bootstrap_frame(b);state=bootstrap_run(b,100000);if(state<0)fprintf(stderr,"%s\n",b->error);}
+        int bootstrap_owns_frame=bootstrap_native_screen_active(b);
+        if(state==1&&!menu.active&&(bootstrap_owns_frame||!panel.kind||(panel.kind>=9&&panel.kind<=15))){bootstrap_frame(b);state=bootstrap_run(b,100000);if(state<0)fprintf(stderr,"%s\n",b->error);}
         if(b->audio_serial!=serial){
             memset(&history_audio,0,sizeof(history_audio));
             if(audio&&(audio_rate!=b->audio_rate||audio_channels!=b->audio_channels)){SDL_CloseAudioDevice(audio);audio=0;}
@@ -451,7 +452,7 @@ int main(int argc,char **argv){
             history_audio=navigation.sound;if(khistory_audio_restore(&history_audio,audio))goto done;
             audio_queued=navigation.queued;restore_navigation_audio=0;
         }
-        int prepare_present=b->layers[0].pixels&&panel.kind!=5&&panel.kind!=22&&
+        int prepare_present=b->layers[0].pixels&&!bootstrap_native_screen_active(b)&&panel.kind!=5&&panel.kind!=22&&
             b->present_hires&&(b->choice_active||b->message_visible||b->letter_mode||b->novel_mode||b->present_fade_active||b->mes_fade_drawn);
         if(prepare_present&&present_worker_submit(&present_worker,b))goto done;
         if(audio&&!menu.active&&(!panel.kind||(panel.kind>=9&&panel.kind<=15))){
@@ -516,7 +517,7 @@ int main(int argc,char **argv){
                 fprintf(stderr,"HQ text overlay draw failed: %s\n",SDL_GetError());goto done;
             }
         }
-        if(b->fade_visible&&b->fade_surface.pixels){
+        if(b->fade_visible&&b->fade_surface.pixels&&!bootstrap_native_screen_active(b)){
             if(SDL_UpdateTexture(fade,NULL,b->fade_surface.pixels,(int)b->fade_surface.stride))goto done;
             SDL_SetTextureAlphaMod(fade,(Uint8)b->fade_alpha);SDL_RenderCopy(r,fade,NULL,&dst);
         }

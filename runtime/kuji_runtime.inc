@@ -14,6 +14,13 @@
 static int kkuji_begin(KBootstrap *b, const unsigned pool[4]) {
     if (b->kuji.active) return error(b, "31/710 already running (arguments preserved)");
     KKuji *k = &b->kuji;
+    rmt_free(&k->background);
+    for (unsigned i = 0; i < KKUJI_COLUMNS; i++) rmt_free(&k->pages[i]);
+    if (mini_load_akb(b,"kuji_bg.akb",&k->background)) return error(b,"31/710 background decode failed (arguments preserved)");
+    for(unsigned i=0;i<KKUJI_COLUMNS;i++){
+        char name[32];snprintf(name,sizeof(name),"kujip%u.akb",i+1);
+        if(mini_load_akb(b,name,&k->pages[i]))return error(b,"31/710 prize page decode failed (arguments preserved)");
+    }
     for (unsigned i = 0; i < 4; i++) {
         if (pool[i] > 9) return error(b, "31/710 prize id range (arguments preserved)");
         k->pool[i] = pool[i];
@@ -24,9 +31,6 @@ static int kkuji_begin(KBootstrap *b, const unsigned pool[4]) {
     k->result = KKUJI_BLANK;
     k->chosen = k->drawn = k->clock = 0;
     k->active = 1;
-    /* kuji.mes pre-loads kuji_pt.akb into layer 5 and kuji_c.akb into layer 9
-       through 19/1; the engine's vtable+0xbc fetch (5/9) maps to those layers.
-       The background/column rendering is the next slice. */
     return 0;
 }
 
@@ -74,25 +78,13 @@ static int kkuji_frame(KBootstrap *b) {
     return 0;
 }
 
-/* Presentation for the logic-first slice: the AKB column/result rendering
-   (native vtable+0xbc fetch of layers 5/9 plus kujip{select+1}.akb) is the
-   next slice.  Until then draw only the selection cursor so the modal is
-   usable and the automated probe can drive it. */
 static void kkuji_present(KBootstrap *b) {
     KKuji *k = &b->kuji;
     if (!k->active || !b->layers[0].pixels) return;
-    int cx = kkuji_column_x[k->select] - 54, cy = 600 - 92;
-    for (int y = 0; y < 40; y++) {
-        int dy = cy + y;
-        if (dy < 0 || dy >= 480) continue;
-        uint8_t *row = b->layers[0].pixels + (size_t)dy * b->layers[0].stride;
-        for (int x = 0; x < 40; x++) {
-            int dx = cx + x;
-            if (dx < 0 || dx >= 640) continue;
-            uint8_t *px = row + (size_t)dx * 4;
-            px[0] = 255; px[1] = 255; px[2] = 0; px[3] = 255;
-        }
-    }
+    mini_clear(&b->layers[0]);
+    mini_blit(&b->layers[0],&k->background,0,0,0,256,640,480);
+    if(!k->chosen&&b->layers[5].pixels)mini_blit(&b->layers[0],&b->layers[5],0,0,0,0,640,480);
+    else mini_blit(&b->layers[0],&k->pages[k->select],0,0,0,256,640,480);
 }
 
 #endif

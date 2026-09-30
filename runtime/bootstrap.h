@@ -250,6 +250,8 @@ int bootstrap_run(KBootstrap *b,unsigned budget);
 int bootstrap_dispatch(KBootstrap *b);
 /* Advances one animation frame; run returns 1 while waiting for these ticks. */
 void bootstrap_frame(KBootstrap *b);
+/* Native full-screen modes own the authored 640x480 frame. */
+int bootstrap_native_screen_active(const KBootstrap *b);
 int bootstrap_history_reset(KBootstrap *b,int confirm);
 void bootstrap_confirm(KBootstrap *b);
 void bootstrap_menu_move(KBootstrap *b,int dx,int dy);

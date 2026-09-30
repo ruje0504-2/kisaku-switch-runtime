@@ -20,6 +20,39 @@ static void mini_close(KBootstrap *b);
 static int read_named(Ai6Archive *a,const char *name,uint8_t **d,size_t *n);
 static int record_newline(void *owner,unsigned operand);
 static int record_bytes(void *owner,const uint8_t *data,size_t count);
+static int mini_load_akb(KBootstrap *b,const char *name,KImage *out){
+    uint8_t *data=NULL;size_t size=0;KImage image={0};
+    if(!out||read_named(&b->images,name,&data,&size)||rmt_decode(data,size,&image)){
+        free(data);rmt_free(&image);return -1;
+    }
+    free(data);rmt_free(out);*out=image;return 0;
+}
+static int mini_surface_valid(const KImage *im){
+    return im&&im->pixels&&im->width&&im->height&&im->width<=SIZE_MAX/4&&
+        im->stride>=(size_t)im->width*4;
+}
+static void mini_clear(KImage *dst){
+    if(!mini_surface_valid(dst))return;
+    size_t bytes=(size_t)dst->width*4;
+    for(unsigned y=0;y<dst->height;y++)memset(dst->pixels+(size_t)y*dst->stride,0,bytes);
+}
+static void mini_blit(KImage *dst,const KImage *src,int dx,int dy,int sx,int sy,unsigned w,unsigned h){
+    if(!mini_surface_valid(dst)||!mini_surface_valid(src)||!w||!h||sx<0||sy<0)return;
+    int64_t left=dx<0?-(int64_t)dx:0,right=(int64_t)w;
+    int64_t top=dy<0?-(int64_t)dy:0,bottom=(int64_t)h;
+    if((int64_t)dst->width-dx<right)right=(int64_t)dst->width-dx;
+    if((int64_t)dst->height-dy<bottom)bottom=(int64_t)dst->height-dy;
+    if(left>=right||top>=bottom||
+       (int64_t)sx+left<0||(int64_t)sy+top<0||
+       (int64_t)sx+right>src->width||(int64_t)sy+bottom>src->height)return;
+    for(int64_t y=top;y<bottom;y++)for(int64_t x=left;x<right;x++){
+        const uint8_t *s=src->pixels+(size_t)(sy+y)*src->stride+(size_t)(sx+x)*4;
+        uint8_t *d=dst->pixels+(size_t)(dy+y)*dst->stride+(size_t)(dx+x)*4;
+        unsigned a=s[3];if(!a)continue;if(a==255){memcpy(d,s,4);continue;}
+        unsigned da=d[3],oa=a+(da*(255-a)+127)/255;
+        if(oa){for(unsigned c=0;c<3;c++)d[c]=(uint8_t)((s[c]*a+d[c]*da*(255-a)/255)/oa);d[3]=(uint8_t)oa;}
+    }
+}
 static int error(KBootstrap *b,const char *s){
     const char *name=b->vm->module>=0?b->vm->modules[b->vm->module].name:"<none>";
     if(getenv("KISAKU_TRACE_ERRORS")){
@@ -297,13 +330,11 @@ int bootstrap_enable_async_images(KBootstrap *b){
     char path[2060];snprintf(path,sizeof(path),"%s/layer.arc",b->root);
     b->image_worker=kimage_worker_create(path);return b->image_worker?0:-1;
 }
-/* Native message/choice windows are separate from the script's page 0.
-   Every scene write, including asynchronous image installs, must use its
-   backing surface while an overlay is visible. */
+/* CFuncLayer 19/1 always targets the authored scene layer.  Message and
+   choice backing surfaces belong to presentation and must never be resized
+   or overwritten by a script image install. */
 static KImage *scene_surface(KBootstrap *b){
-    if(b->choice_active&&b->choice_base.pixels)return &b->choice_base;
-    if(b->message_visible&&b->message_base.pixels)return &b->message_base;
-    if(b->mes_fade_drawn)return &b->mes_fade_backing;
+    (void)b;
     return &b->layers[0];
 }
 static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
@@ -331,7 +362,7 @@ static int install_image(KBootstrap *b,int layer,KImage *im,const char *name){
     return 0;
 }
 #include "backlog_store.h"
-void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->mini_surface);rmt_free(&b->present_fade_to);rmt_free(&b->present_fade_from);rmt_free(&b->present_fade_text);rmt_free(&b->present_fade_base);rmt_free(&b->present_fade_reference);rmt_free(&b->present_fade_overlay);rmt_free(&b->present_mes_reference);rmt_free(&b->present_mes_source);rmt_free(&b->present_mes_shadow);rmt_free(&b->present_mes_old);rmt_free(&b->present_mes_new);rmt_free(&b->present_page_source);rmt_free(&b->present_page_text);rmt_free(&b->present_page_shadow);rmt_free(&b->present_page_base);rmt_free(&b->present_page_reference);rmt_free(&b->present_source_text);rmt_free(&b->present_message_text);rmt_free(&b->present_choice_text);rmt_free(&b->present_shadow);rmt_free(&b->present_clean);rmt_free(&b->present_reference);rmt_free(&b->present_overlay);native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);ktranslation_free(&b->translation);kui_translation_free(&b->ui_translation);kvm_destroy(b->vm);free(b);}
+void bootstrap_destroy(KBootstrap *b){if(!b)return;rmt_free(&b->mini_surface);rmt_free(&b->kuji.background);for(unsigned i=0;i<KKUJI_COLUMNS;i++)rmt_free(&b->kuji.pages[i]);rmt_free(&b->hummer.background);rmt_free(&b->tennis.player1);rmt_free(&b->tennis.court1);rmt_free(&b->tennis.court2);rmt_free(&b->tennis.player2);rmt_free(&b->tennis.pieces);rmt_free(&b->staffroll.background);rmt_free(&b->staffroll.part1);rmt_free(&b->staffroll.part2);rmt_free(&b->staffroll.part3);rmt_free(&b->staffroll.staff1);rmt_free(&b->staffroll.staff2);rmt_free(&b->present_fade_to);rmt_free(&b->present_fade_from);rmt_free(&b->present_fade_text);rmt_free(&b->present_fade_base);rmt_free(&b->present_fade_reference);rmt_free(&b->present_fade_overlay);rmt_free(&b->present_mes_reference);rmt_free(&b->present_mes_source);rmt_free(&b->present_mes_shadow);rmt_free(&b->present_mes_old);rmt_free(&b->present_mes_new);rmt_free(&b->present_page_source);rmt_free(&b->present_page_text);rmt_free(&b->present_page_shadow);rmt_free(&b->present_page_base);rmt_free(&b->present_page_reference);rmt_free(&b->present_source_text);rmt_free(&b->present_message_text);rmt_free(&b->present_choice_text);rmt_free(&b->present_shadow);rmt_free(&b->present_clean);rmt_free(&b->present_reference);rmt_free(&b->present_overlay);native_cg_free(b);kbacklog_snapshot_free(b->backlog_restore);kbowling_runtime_free(b->bowling_runtime);for(unsigned i=0;i<27;i++)free(b->bowling_effects[i].pcm);rmt_free(&b->exec526_backing);rmt_free(&b->mes_fade_backing);for(unsigned i=0;i<3;i++)rmt_free(&b->mes_fade_surfaces[i]);rmt_free(&b->param_surface);rmt_free(&b->param_atlas);rmt_free(&b->param_backing);rmt_free(&b->diary_surface);kmessage_skin_free(&b->message_skin);(void)kbowling_release(&b->bowling,&b->current_bowling);for(unsigned i=0;i<3;i++)rmt_free(&b->letter_surfaces[i]);for(unsigned bank=0;bank<2;bank++)for(unsigned i=0;i<6;i++)rmt_free(&b->choice_rows[bank][i]);rmt_free(&b->gallery_movie_base);rmt_free(&b->scene_tiles);rmt_free(&b->scene_parts);free(b->novel_mask);free(b->letter_mask);free(b->mes_fade_mask);free(b->mam_data);free(b->mam_archive);rmt_free(&b->status_image);rmt_free(&b->status_parts);for(unsigned i=0;i<3;i++)rmt_free(&b->bonus52_ui[i]);kimage_worker_destroy(b->image_worker);kvoice_worker_destroy(b->voice_worker);while(b->control_files){KControlStore *s=b->control_files;b->control_files=s->next;kcontrol_free(s);}free(b->mov_data);free(b->movie_effect.pcm);rmt_free(&b->novel_original);rmt_free(&b->novel_background);rmt_free(&b->novel_from);rmt_free(&b->novel_target);kfont_close(b->novel_font);rmt_free(&b->choice_parts);rmt_free(&b->choice_text);rmt_free(&b->choice_base);for(unsigned i=0;i<64;i++)free(b->effect_tracks[i].pcm);kfont_close(b->font);kfont_close(b->ui_font);for(unsigned i=0;i<3;i++)rmt_free(&b->helper_surfaces[i]);for(unsigned i=0;i<2;i++)rmt_free(&b->exec526_surfaces[i]);for(unsigned i=0;i<4;i++){rmt_free(&b->exec522_sprites[i]);rmt_free(&b->exec522_backing[i]);}ktitle_free(&b->title);kflag_dialog_free(&b->flag_dialog);free(b->scene);for(unsigned i=0;i<b->setting_value_count;i++)free(b->setting_values[i]);free(b->setting_values);while(b->flag_files){KFlags *f=b->flag_files;b->flag_files=f->next;kflags_free(f);}for(unsigned i=0;i<b->saved_control_count;i++)free(b->saved_controls[i].values);for(unsigned i=0;i<b->control_count;i++)free(b->controls[i].values);for(unsigned i=0;i<b->message_count;i++){free(b->messages[i].data);free(b->messages[i].text);}free(b->messages);rmt_free(&b->canvas);rmt_free(&b->auxiliary);rmt_free(&b->fade_surface);rmt_free(&b->message_text);rmt_free(&b->message_base);rmt_free(&b->message_parts);rmt_free(&b->overlay524_base);rmt_free(&b->overlay524_sprite);for(unsigned i=0;i<64;i++)rmt_free(&b->layers[i]);for(unsigned i=0;i<KVM_MODULES;i++)free(b->module_data[i]);for(unsigned i=0;i<3;i++)free(b->audio_objects[i]);free(b->records);free(b->raw_variables);free(b->read_flags);kvideo_close(b->video);free(b->video_data);free(b->movie_pcm);ai6_close(&b->movies);ai6_close(&b->music);ai6_close(&b->voice);free(b->audio_pcm);free(b->voice_pcm);ai6_close(&b->effects);free(b->animation_data);ai6_close(&b->data);ai6_close(&b->scripts);ai6_close(&b->images);ktranslation_free(&b->translation);kui_translation_free(&b->ui_translation);kvm_destroy(b->vm);free(b);}
 /* Companions use original layout coordinates at 3/2 scale; layout and VM
    surfaces stay at 640x480. Allocation failure simply leaves raw text intact. */
 static int present_surface(KImage *im,unsigned w,unsigned h){
@@ -805,6 +836,11 @@ static int message_begin(KBootstrap *b,int id){
 }
 static KImage *surface(KBootstrap *b,int id){
     if(id==-1)return b->fade_visible?scene_surface(b):&b->canvas;
+    /* AX overlays that target the authored page while a message is open must
+       land on the message backing image.  Script image installation keeps
+       using scene_surface(layer 0); this private selector is only used by the
+       animation blitter, so message composition cannot erase the new frame. */
+    if(id==-3)return b->message_visible&&b->message_base.pixels?&b->message_base:NULL;
     if(id==0)return scene_surface(b);
     if(id==-2)return &b->auxiliary;
     if(id<0||(unsigned)id>b->layer_count)return NULL;
@@ -813,7 +849,9 @@ static KImage *surface(KBootstrap *b,int id){
 static int blit_args(KBootstrap *b,int keyed,const int32_t q[9]){
     /* 431b90/431dd0: dx,dy,w,h,dst,sx,sy,src,alpha-or-key. */
     KImage *dst=surface(b,q[4]),*src=surface(b,q[7]);
-    if(!dst||!src||!dst->pixels||!src->pixels)return error(b,"blit surface missing");
+    if(!dst||!src||!dst->pixels||!src->pixels||!dst->width||!dst->height||!src->width||!src->height||
+       dst->width>SIZE_MAX/4||src->width>SIZE_MAX/4||dst->stride<(size_t)dst->width*4||
+       src->stride<(size_t)src->width*4)return error(b,"blit surface invalid");
     int64_t dx=q[0],dy=q[1],w=q[2],h=q[3],sx=q[5],sy=q[6];
     /* CDIB copy methods return immediately for nonpositive dimensions. */
     if(w<=0||h<=0)return 0;
@@ -1249,7 +1287,8 @@ static void draw_ax(const uint32_t d[7],unsigned cell,void *context){
     if(d[0]==2||d[0]==3)return; /* 4dd8a0 / 4dd890 */
     if(d[0]>3){error(b,"AX descriptor kind unsupported");return;}
     int32_t y=(int32_t)d[6];if(d[0]==1&&y>479)y-=480;
-    int32_t q[9]={(int32_t)d[5],y,(int32_t)d[3],(int32_t)d[4],b->ax_destination,
+    int destination=b->ax_destination==0&&b->message_visible?-3:b->ax_destination;
+    int32_t q[9]={(int32_t)d[5],y,(int32_t)d[3],(int32_t)d[4],destination,
                  (int32_t)d[1],(int32_t)d[2],8,d[0]==1?0xff00:0};
     blit_args(b,d[0]==1?1:0,q);
 }
@@ -1265,7 +1304,8 @@ static void draw_ax_extra(const uint32_t d[7],unsigned cell,void *context){
     /* 4dd7a0 passes a zero copy-alpha flag; 4dd690 passes key 0xff00 and
        the same zero alpha flag.  The portable layer helper has the same
        byte-preserving behavior for q[8]==0. */
-    int32_t q[9]={(int32_t)d[5],y,(int32_t)d[3],(int32_t)d[4],b->animation_target_layer,
+    int destination=b->animation_target_layer==0&&b->message_visible?-3:b->animation_target_layer;
+    int32_t q[9]={(int32_t)d[5],y,(int32_t)d[3],(int32_t)d[4],destination,
                  (int32_t)d[1],(int32_t)d[2],9,d[0]==1?0xff00:0};
     if(blit_args(b,d[0]==1?1:0,q))return;
 }
@@ -1456,6 +1496,13 @@ static void title_extra(KBootstrap *b){
     t->extra_ids[t->count++]=4;t->extra_ids[t->count++]=5;
 }
 #include "location_label.inc"
+int bootstrap_native_screen_active(const KBootstrap *b){
+    if(!b)return 0;
+    return b->mini_active||b->native_cg||bootstrap_bowling_active(b)||kkuji_active(b)||
+        khammer_active(b)||kbingo_active(b)||ktennis_active(b)||
+        kstaff_active(b)||b->credits_active||b->montage_active||
+        b->area_active||b->bonus52_active||b->extra_active;
+}
 int bootstrap_dispatch(KBootstrap *b){
     KVM *v=b->vm;int32_t main=v->syscall,sub,a,c,d,e;
     if(v->status!=KVM_SYSCALL)return error(b,"VM is not at a syscall");
@@ -3388,14 +3435,14 @@ void bootstrap_frame(KBootstrap *b){
     if(b->video_active&&!b->video_paused){
         if(b->movie_clock<b->movie_pcm_size){size_t n=b->movie_pcm_size-b->movie_clock;b->movie_clock+=n>2940?2940:n;}
         KImage *target=b->choice_active?&b->choice_base:b->message_visible?&b->message_base:&b->layers[0];
-        if(!b->video_eof){int rc=kvideo_step(b->video,target,&b->movie_pcm,&b->movie_pcm_size);if(rc<0){error(b,kvideo_error(b->video));return;}b->video_eof=rc==1;}
+        if(!b->video_eof){int rc=kvideo_step(b->video,target,&b->movie_pcm,&b->movie_pcm_size);if(rc<0){error(b,kvideo_error(b->video));movie_stop(b);return;}b->video_eof=rc==1;}
         if(b->video_eof&&b->movie_clock==b->movie_pcm_size){
             if(b->video_background){
                 if(movie_next(b))return;
                 /* EOF consumes no display tick: show the next range's first
                    frame now, without holding the old last frame for 1/60 s. */
-                if(b->video_active){int rc=kvideo_step(b->video,target,&b->movie_pcm,&b->movie_pcm_size);if(rc<0){error(b,kvideo_error(b->video));return;}b->video_eof=rc==1;}
-            }else{b->video_active=0;b->vm->globals[0][50].number&=~0x2000;}
+                if(b->video_active){int rc=kvideo_step(b->video,target,&b->movie_pcm,&b->movie_pcm_size);if(rc<0){error(b,kvideo_error(b->video));movie_stop(b);return;}b->video_eof=rc==1;}
+            }else{movie_stop(b);}
         }
     }
     if(b->logo_phase==1&&b->audio_cursor==b->audio_size){
@@ -3412,7 +3459,9 @@ void bootstrap_frame(KBootstrap *b){
             else b->logo_phase=0;
         }
     }
-    if(!b->logo_phase&&b->ax.size&&(b->vm->globals[0][50].number&0x10)){
+    unsigned ax_registered_active=0;
+    for(unsigned i=0;i<AX_CELLS;i++)if(b->ax_registered[i]&&b->ax.cells[i].state!=AX_STOPPED){ax_registered_active=1;break;}
+    if(!b->logo_phase&&b->ax.size&&((b->vm->globals[0][50].number&0x10)||ax_registered_active)){
         b->ax_clock+=1000;
         while(b->ax_clock>=60*AX_TICK_MS){b->ax_clock-=60*AX_TICK_MS;if(!ax_tick_native(&b->ax,b->ax_events,draw_ax,b)){error(b,"invalid story AX instruction");return;}if(b->error[0])return;}
         for(unsigned i=0;i<AX_CELLS;i++)b->animation_status[i]=(uint8_t)b->ax.cells[i].state;
@@ -4080,6 +4129,7 @@ const KImage *bootstrap_present_layers(KBootstrap *b,const KImage **overlay){
     if(overlay)*overlay=NULL;
     if(!b)return NULL;
     const KImage *raw=&b->layers[0];
+    if(bootstrap_native_screen_active(b))return raw;
     if(!overlay||!b->present_hires||!raw->pixels||raw->width!=640||raw->height!=480||
        ((b->letter_transition||(b->novel_transition&&!b->novel_text_reveal))&&!b->present_fade_active)||b->helper_steps||b->exec_wipe_active)
         return raw;

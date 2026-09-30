@@ -8,6 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 static uint64_t hash(const uint8_t *p,size_t n){uint64_t h=1469598103934665603ULL;while(n--)h=(h^*p++)*1099511628211ULL;return h;}
+static void test_video_target_guard(const uint8_t *data,size_t size){
+    KVideo *v=kvideo_open_mode(data,size,KVIDEO_SOFTWARE);assert(v);
+    uint8_t pixel[4]={0},*pcm=NULL;size_t bytes=0;
+    KImage bad={0,0,640,480,4,pixel};
+    assert(kvideo_step(v,&bad,&pcm,&bytes)<0&&strstr(kvideo_error(v),"target surface"));
+    kvideo_close(v);free(pcm);
+}
 static void test_video(const uint8_t *data,size_t size,int range){
     KVideo *v=kvideo_open_mode(data,size,KVIDEO_SOFTWARE),*auto_v=kvideo_open_mode(data,size,KVIDEO_AUTO);assert(v&&auto_v);
     uint8_t *pcm=NULL,*auto_pcm=NULL;size_t bytes=0,auto_bytes=0;
@@ -65,6 +72,7 @@ int main(int argc,char **argv){
     Ai6Archive arc={0};assert(!ai6_open(&arc,path));uint8_t *data=NULL;size_t size=0;
     test_video_slots(&arc);
     assert(!ai6_read_named(&arc,"endfilm.VSD",&data,&size));test_video(data,size,0);free(data);
+    assert(!ai6_read_named(&arc,"endfilm.VSD",&data,&size));test_video_target_guard(data,size);free(data);
     int found=0;
     for(unsigned i=0;i<arc.count&&!found;i++){
         if(!strstr(arc.entries[i].name,".VSD")&&!strstr(arc.entries[i].name,".vsd"))continue;

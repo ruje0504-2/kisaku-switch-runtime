@@ -276,6 +276,9 @@ static void cache_frame(KVideo *v){
     v->cache[v->cache_count]=frame;v->cache_pts[v->cache_count++]=v->pts;v->cache_bytes+=bytes;
 }
 int kvideo_step(KVideo *v,KImage *screen,uint8_t **pcm,size_t *bytes){
+    if(!v)return -1;
+    if(!screen||!screen->pixels||!screen->width||!screen->height||screen->width>SIZE_MAX/4||
+       screen->stride<(size_t)screen->width*4||!pcm||!bytes)return fail(v,"video target surface invalid");
     if(v->error[0])return -1;
     if(v->finished)return 1;
     /* Match timestamp rounding rather than introducing a 2/3/1 cadence. */

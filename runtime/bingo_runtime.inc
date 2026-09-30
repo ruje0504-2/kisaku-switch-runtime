@@ -48,28 +48,23 @@ static int kbingo_frame(KBootstrap *b, unsigned ms) {
     return 0;
 }
 
-/* Logic-first presentation slice: the bingo_bg (layer 2), bingo_logo (5),
-   bingo_parts digit atlas (9) and bingo_an.ax animation composition is the
-   next slice; until then draw the marked/lined state as a small grid so the
-   round is readable. */
 static void kbingo_present(KBootstrap *b) {
     KBingo *k = &b->bingo;
     if (!k->active || !b->layers[0].pixels) return;
+    mini_clear(&b->layers[0]);
+    if(b->layers[2].pixels)mini_blit(&b->layers[0],&b->layers[2],0,0,0,0,640,480);
+    /* bingo_an.akb is a 7x7 sheet of 240x268 dial frames.  The native
+       animator places the selected frame over the dial in bingo_bg. */
+    if(b->layers[8].pixels){
+        unsigned frame=(k->clock/40u)%49u;
+        mini_blit(&b->layers[0],&b->layers[8],376,16,(int)(frame%7u)*240,(int)(frame/7u)*268,240,268);
+    }
     for (unsigned cell = 0; cell < KBINGO_SIDE * KBINGO_SIDE; cell++) {
         unsigned row = cell / KBINGO_SIDE, col = cell % KBINGO_SIDE;
+        if(row==2&&col==2)continue;
         int ox = 44 + (int)col * 64, oy = 52 + (int)row * 64;
-        uint8_t r = k->hit[cell] ? 255 : 40, g = k->hit[cell] ? 220 : 40, bl = 40;
-        for (int y = 0; y < 24; y++) {
-            int dy = oy + y;
-            if (dy < 0 || dy >= 480) continue;
-            uint8_t *rowp = b->layers[0].pixels + (size_t)dy * b->layers[0].stride;
-            for (int x = 0; x < 32; x++) {
-                int dx = ox + x;
-                if (dx < 0 || dx >= 640) continue;
-                uint8_t *px = rowp + (size_t)dx * 4;
-                px[0] = r; px[1] = g; px[2] = bl; px[3] = 255;
-            }
-        }
+        unsigned number=k->card[cell],sx=(number%20u)*32u,sy=(number/20u)*24u+(k->hit[cell]?48u:0u);
+        if(b->layers[9].pixels)mini_blit(&b->layers[0],&b->layers[9],ox,oy,(int)sx,(int)sy,32,24);
     }
 }
 #endif

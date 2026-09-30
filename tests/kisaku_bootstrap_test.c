@@ -1712,6 +1712,24 @@ static void test_kuji(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("CKuji 31/710 four-prize pool, shared-LCG shuffle, perm table and result push: PASS");
 }
+static void test_minigame_resource_entries(const char *root,const char *saves){
+    const unsigned subs[]={711,611,610};
+    for(unsigned i=0;i<sizeof(subs)/sizeof(subs[0]);i++){
+        KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+        b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+        assert(!kvm_push(b->vm,(KValue){(int32_t)subs[i],NULL}));
+        assert(!bootstrap_dispatch(b)&&!b->error[0]&&bootstrap_native_screen_active(b));
+        bootstrap_frame(b);assert(!b->error[0]);bootstrap_destroy(b);
+    }
+    for(unsigned mode=0;mode<=1;mode++){
+        KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+        b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+        assert(!kvm_push(b->vm,(KValue){(int32_t)mode,NULL})&&!kvm_push(b->vm,(KValue){210,NULL}));
+        assert(!bootstrap_dispatch(b)&&!b->error[0]&&bootstrap_native_screen_active(b));
+        bootstrap_frame(b);assert(!b->error[0]);bootstrap_destroy(b);
+    }
+    puts("Native mini-game resource entry/first-frame decode: 711/611/610/210 PASS");
+}
 static void test_music_status(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     /* 4fee60 (main=15 dispatcher) sub7 -> [object+0x38] = 4fe750: a
@@ -1914,6 +1932,9 @@ static void test_native_cg(const char *root,const char *saves){
     for(unsigned i=0;!b->native_cg;i++){assert(i<10000);int rc=bootstrap_run(b,100000);if(rc<0)fprintf(stderr,"CG entry: %s\n",b->error);assert(rc>=0);bootstrap_frame(b);}
     assert(b->message_request==22);b->message_request=0;
     const KImage *im=bootstrap_native_cg_image(b);assert(im&&im->width==640&&im->height==480);
+    unsigned native_bytes=b->vm->byte_count;b->vm->byte_count=4006;
+    assert(bootstrap_native_cg_categories(b)==9);
+    b->vm->byte_count=native_bytes;
     int focus[4];assert(bootstrap_native_cg_focus(b,focus));
     uint8_t *initial=malloc(640*480*4);assert(initial);memcpy(initial,im->pixels,640*480*4);
     assert(!bootstrap_native_cg_action(b,6));assert(memcmp(initial,im->pixels,640*480*4));
@@ -1996,6 +2017,21 @@ static void test_hires_present(const char *root,const char *saves){
     assert(!present_worker_submit(&worker,b));present_worker_clear(&worker);present_worker_clear(&worker);
     free(serial_clean);free(serial_overlay);free(raw);bootstrap_destroy(b);
     puts("960x720 text: real startup reveal, clean backing, immutable raw and modified-layer fallback: PASS");
+}
+
+static void test_native_screen_present_gate(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);b->present_hires=1;
+    b->message_visible=b->message_active=1;b->present_text_valid=1;
+    b->fade_visible=1;b->fade_alpha=255;
+    memset(b->layers[0].pixels,0x7f,640*480*4);
+    b->bingo.active=1;
+    assert(bootstrap_native_screen_active(b));
+    const KImage *overlay=NULL;
+    assert(bootstrap_present_layers(b,&overlay)==&b->layers[0]&&!overlay);
+    b->bingo.active=0;b->message_visible=b->message_active=0;b->present_text_valid=0;b->fade_visible=0;
+    assert(!bootstrap_native_screen_active(b));
+    bootstrap_destroy(b);
+    puts("Native full-screen presentation gate: raw layer ownership, stale message and fade suppression: PASS");
 }
 
 static void page_hires_text(KBootstrap *b){
@@ -2773,5 +2809,5 @@ int main(int argc,char **argv){
     char media_long[1025];memset(media_long,'a',sizeof(media_long)-1);media_long[1024]=0;
     assert(call_gallery_mark(b,media_long)<0&&b->vm->sp==2);
     puts("Kisaku 31/1012 native media links, case folding, absent-key no-op and atomic bounds: PASS");
-    bootstrap_destroy(b);assert(bowling_released==2);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_flag_store(argv[1],argv[2]);test_exec_410(argv[1],argv[2]);test_music_status(argv[1],argv[2]);test_kuji(argv[1],argv[2]);test_transition_30_1(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
+    bootstrap_destroy(b);assert(bowling_released==2);test_native_screen_present_gate(argv[1],argv[2]);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_flag_store(argv[1],argv[2]);test_exec_410(argv[1],argv[2]);test_music_status(argv[1],argv[2]);test_kuji(argv[1],argv[2]);test_minigame_resource_entries(argv[1],argv[2]);test_transition_30_1(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
 }
