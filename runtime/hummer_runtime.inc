@@ -21,7 +21,7 @@ static unsigned khammer_difficulty(KBootstrap *b) {
 static int khammer_begin(KBootstrap *b) {
     if (b->hummer.active) return error(b, "31/711 already running (arguments preserved)");
     KHummer *h = &b->hummer;
-    khummer_release_art(h);
+    khammer_release_art(h);
     if (mini_load_akb(b,"hummbg.akb",&h->background)||
        mini_load_akb(b,"hummp.akb",&h->holes)||
        mini_load_akb(b,"hummps.akb",&h->effects)){khammer_release_art(h);return error(b,"31/711 artwork decode failed (arguments preserved)");}
