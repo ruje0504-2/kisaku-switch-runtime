@@ -3470,7 +3470,9 @@ void bootstrap_frame(KBootstrap *b){
        manager on the same 20 ms cadence.  Keep it separate from the normal
        story AX clock: stopping/reloading one manager must not phase-shift the
        other. */
-    if(b->ax_extra.size&&(b->vm->globals[0][50].number&0x10)){
+    unsigned ax_extra_registered_active=0;
+    for(unsigned i=0;i<AX_CELLS;i++)if(b->ax_extra_registered[i]&&b->ax_extra.cells[i].state!=AX_STOPPED){ax_extra_registered_active=1;break;}
+    if(b->ax_extra.size&&((b->vm->globals[0][50].number&0x10)||ax_extra_registered_active)){
         b->ax_extra_clock+=1000;
         while(b->ax_extra_clock>=60*AX_TICK_MS){
             b->ax_extra_clock-=60*AX_TICK_MS;
