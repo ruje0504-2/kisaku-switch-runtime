@@ -97,7 +97,11 @@ static int kstaff_frame(KBootstrap *b, unsigned ms) {
         s->clock -= KSTAFF_TICK_MS;
         s->elapsed++;
         kstaff_base(b,s);
-        if(!ax_tick_native(&s->ax,s->ax_events,kstaff_ax_draw,b))s->ax.wait_cell=0;
+        if(!ax_tick_native(&s->ax,s->ax_events,kstaff_ax_draw,b)){
+            s->active=0;kstaff_release_art(s);
+            if ((unsigned)4012 < b->vm->byte_count) b->vm->bytes[4012] = 0;
+            return error(b,"31/210 invalid ending AX instruction");
+        }
         s->segment_clock++;
         unsigned count = s->mode ? 11u : 9u;
         unsigned segment_ticks = s->ticks / count;

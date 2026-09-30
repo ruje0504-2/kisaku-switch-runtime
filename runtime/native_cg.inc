@@ -43,7 +43,7 @@ static void cg_variant_rect(const KCGRecord *r,unsigned i,int *x,int *y){
 }
 static int cg_draw(KBootstrap *b){
     KNativeCG *c=b->native_cg;if(!c)return -1;
-    if(c->view>2||c->group>=10||c->item>=cg_count(c))return -1;
+    if(c->view>2||c->group>=10||(c->view&&c->item>=cg_count(c)))return -1;
     if(!c->base.pixels||c->base.width<640||c->base.height<480||
        c->base.stride<(size_t)c->base.width*4||!c->screen.pixels||c->screen.width<640||
        c->screen.height<480||c->screen.stride<(size_t)c->screen.width*4)return -1;
