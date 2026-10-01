@@ -2246,12 +2246,13 @@ static void test_native_cg_dynamic_stress(const char *root,const char *saves){
 }
 static void test_movie_video_lifecycle(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
-    unsigned checked=0;
+    unsigned checked=0;char first_name[261]={0};
     /* The plain movie.arc entries are the native CG/video command streams;
        lzs/ contains compressed duplicates that are not selected by scripts. */
     for(unsigned i=0;i<b->movies.count;i++){
         const char *name=b->movies.entries[i].name;size_t n=strlen(name);
         if(n<4||strcasecmp(name+n-4,".mov")||strstr(name,"/"))continue;
+        if(!first_name[0]){assert(n<sizeof(first_name));memcpy(first_name,name,n+1);}
         b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=24;b->vm->sp=0;
         assert(!kvm_push(b->vm,(KValue){0,NULL}));
         assert(!kvm_push(b->vm,(KValue){0,name}));
@@ -2271,8 +2272,20 @@ static void test_movie_video_lifecycle(const char *root,const char *saves){
         assert(!b->video&&!b->video_data&&!b->mov_data&&!b->movie_pcm&&!b->movie_effect.pcm);
         checked++;
     }
-    assert(checked==188);bootstrap_destroy(b);
-    printf("Native dynamic movie lifecycle: %u .mov streams opened, decoded and stopped with decoder/PCM cleanup: PASS\n",checked);
+    assert(checked==188&&first_name[0]);
+    /* Exercise the shutdown path while a decoder and its owned VSD bytes are
+       still live.  Normal playback already covers explicit action 2 above;
+       this catches teardown regressions when a scene exits or the app closes
+       during a dynamic movie. */
+    KBootstrap *live=bootstrap_create_split(root,saves);assert(live&&!live->error[0]);
+    live->vm->status=KVM_SYSCALL;live->vm->syscall=24;live->vm->sp=0;
+    assert(!kvm_push(live->vm,(KValue){0,NULL}));
+    assert(!kvm_push(live->vm,(KValue){0,first_name}));
+    assert(!kvm_push(live->vm,(KValue){1,NULL}));
+    assert(!bootstrap_dispatch(live)&&live->video&&live->video_data);
+    bootstrap_destroy(live);
+    bootstrap_destroy(b);
+    printf("Native dynamic movie lifecycle: %u .mov streams opened, decoded and stopped, active teardown cleanup: PASS\n",checked);
 }
 static void test_hires_present(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b);b->present_hires=1;

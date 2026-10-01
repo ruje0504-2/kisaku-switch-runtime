@@ -1,10 +1,11 @@
 static void movie_stop(KBootstrap *b){
+    if(!b)return;
     kvideo_close(b->video);b->video=NULL;free(b->video_data);b->video_data=NULL;
     free(b->mov_data);b->mov_data=NULL;memset(&b->mov,0,sizeof(b->mov));
     free(b->movie_pcm);b->movie_pcm=NULL;b->movie_pcm_size=b->movie_read=b->movie_clock=0;
     free(b->movie_effect.pcm);memset(&b->movie_effect,0,sizeof(b->movie_effect));b->movie_effect_name[0]=0;
     b->video_active=b->video_eof=b->video_background=b->video_wait=b->video_paused=b->video_change_wait=0;
-    b->vm->globals[0][50].number&=~0x2000;
+    if(b->vm)b->vm->globals[0][50].number&=~0x2000;
 }
 static int movie_next(KBootstrap *b){
     for(unsigned guard=0;guard<1000;guard++){
