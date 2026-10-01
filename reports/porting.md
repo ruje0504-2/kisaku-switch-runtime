@@ -1392,3 +1392,12 @@ Codex 照片里《鬼作》移植版停在 `liblary.lib @0x6a…`，主机的完
 - 验证：上述画面专项与 188 个 MOV 首段/停止/播放中销毁通过 ASan/UBSan；macOS `leaks --atExit` 对实际画面专项及所有权测试均报告 0 leaked bytes。带异步语音、异步图片和高清呈现线程的真实剧情探针：`aoi_h1.mes` 1800 个视频帧、`momoko_h1.mes` 111 个视频帧自然结束，均无运行时或 sanitizer 错误。
 - 回归：完整 `test-host.sh` 通过；106 套立绘 AX 全部可见动画；鉴赏普通 673/另一模式 43 变体通过，可见变化仍为 356/20，与之前基线相同。修改的 Bootstrap 通过 Switch 编译器 `-fsyntax-only` 检查；本轮未执行 Switch 链接、NSP 打包或实机验证。
 - 边界：尚未在可访问的 Switch 上复现用户原始闪退，因此不能宣布所有闪退已消失。此前交付的 update NSP 1.1.20 不含本轮源码修改。Mac 防休眠继续保留，完整移植尚未完成。
+
+
+## 2026-10-01：交付含剧情 MOV 修复的 update NSP 1.1.21
+
+- 按用户打包请求，以 `ce9283464677d27088c99b5ef9519f03394e95e1` 运行 `./build-switch.sh`，完整 Switch 交叉编译和链接成功。
+- 运行 `UPDATE=1 TITLE_VERSION=1.1.21 BASE_NSP=… ./make-nsp.sh 交付/kisaku-update-1.1.21-01008B538DE50800.nsp`；版本按已有 1.1.20 递增。更新标题 `01008B538DE50800` 关联原本体 `01008B538DE50000`，不替换素材或修改存档归属。
+- 最终 NSP 读回 35 项验证全部通过：Patch CNMT 版本 `0x10115`、本体关联与补丁历史；NACP 显示版本 1.1.21，其他字段及图标与本体一致；NCA 文件/文件系统头及内容哈希；64 KiB BKTR 全部素材指回本体；ExeFS main 与本次编译 ELF 重新 strip/elf2nso 的结果逐字节一致，NPDM ACI0 为本体标题。
+- 成品 `15791303` bytes，SHA-256 `39e5c0b77e91d49d552e41eb0e1662e9d33992e9f6b29cf5b5e97a007442fcfe`；同目录有 `.sha256` 和 `update-1.1.21-说明.txt`。构建/打包日志在 `local/story-mov-diagnosis/update-1.1.21-{build,package}.log`，验证脚本与 JSON 在 `local/update-1.1.21-verify/`。
+- 本轮只构建、打包与验证，未改运行时或重复已经通过的主机回归。仍未进行 Switch 实机安装/运行验证；不能将交付包验证视为原始闪退已全部解决。Mac 防休眠继续保留。
