@@ -1789,7 +1789,15 @@ static void test_minigame_resource_entries(const char *root,const char *saves){
         b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
         assert(!kvm_push(b->vm,(KValue){(int32_t)subs[i],NULL}));
         assert(!bootstrap_dispatch(b)&&!b->error[0]&&bootstrap_native_screen_active(b));
-        bootstrap_frame(b);assert(!b->error[0]);bootstrap_destroy(b);
+        bootstrap_frame(b);assert(!b->error[0]);
+        if(subs[i]==711){
+            assert(b->hummer.tutorial_visible&&b->hummer.frames.width==1504&&b->hummer.frames.height==1492&&
+                   b->hummer.girl.width==1224&&b->hummer.girl.height==744&&b->hummer.tutorial.width==542&&
+                   b->hummer.tutorial.height==486);
+            bootstrap_confirm(b);assert(!b->hummer.tutorial_visible);
+            bootstrap_frame(b);assert(!b->error[0]);
+        }
+        bootstrap_destroy(b);
     }
     for(unsigned mode=0;mode<=1;mode++){
         KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);

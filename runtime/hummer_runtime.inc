@@ -7,7 +7,7 @@
 #ifndef KISAKU_HUMMER_RUNTIME_INCLUDED
 #define KISAKU_HUMMER_RUNTIME_INCLUDED
 
-static void khammer_release_art(KHummer *h){rmt_free(&h->background);rmt_free(&h->holes);rmt_free(&h->effects);}
+static void khammer_release_art(KHummer *h){rmt_free(&h->background);rmt_free(&h->frames);rmt_free(&h->girl);rmt_free(&h->tutorial);}
 
 /* GetConfig("AllMiniGame","Difficult") clamped to 0..2 (0x4647c0); the same
    key the tennis engine reads, with the bowling default of 1. */
@@ -23,9 +23,11 @@ static int khammer_begin(KBootstrap *b) {
     KHummer *h = &b->hummer;
     khammer_release_art(h);
     if (mini_load_akb(b,"hummbg.akb",&h->background)||
-       mini_load_akb(b,"hummp.akb",&h->holes)||
-       mini_load_akb(b,"hummps.akb",&h->effects)){khammer_release_art(h);return error(b,"31/711 artwork decode failed (arguments preserved)");}
+       mini_load_akb(b,"hummp.akb",&h->frames)||
+       mini_load_akb(b,"hummps.akb",&h->girl)||
+       mini_load_akb(b,"tuthum.akb",&h->tutorial)){khammer_release_art(h);return error(b,"31/711 artwork decode failed (arguments preserved)");}
     h->active = 1;
+    h->tutorial_visible = 1;
     h->clock = h->hole_clock = h->effect_clock = h->reveal_clock = 0;
     h->hole = h->revealed = h->settled = 0;
     h->result = 0;
@@ -61,15 +63,23 @@ static int khammer_pointer(KBootstrap *b, int x, int y, unsigned held) {
     return 1;
 }
 
-/* Confirmation (ISelect vtable slot 27 forwarded by 0x40b280) starts the
-   10 s round; the native blocks the framework loop while 0x4a4440 runs. */
-static int khammer_confirm(KBootstrap *b) { (void)b; return 0; }
+/* Confirmation (ISelect vtable slot 27 forwarded by 0x40b280) leaves the
+   native tuthum.akb tutorial and starts the 10 s round. */
+static int khammer_confirm(KBootstrap *b) {
+    KHummer *h=&b->hummer;
+    if (!h->active || !h->tutorial_visible) return 0;
+    h->tutorial_visible=0;
+    h->clock=h->hole_clock=h->effect_clock=h->reveal_clock=0;
+    h->meter=0.0;h->hammer_t=h->hammer_h=0.0;h->sound=0;
+    return 1;
+}
 
 /* Per-frame: `ms` elapsed since the previous frame (the caller passes the
    same 20 ms quantum the native uses for its settle step). */
 static int khammer_frame(KBootstrap *b, unsigned ms) {
     KHummer *h = &b->hummer;
     if (!h->active) return 0;
+    if (h->tutorial_visible) return 0;
     if (!ms) return 0;
     unsigned before = h->clock;
     h->clock += ms;
@@ -126,14 +136,22 @@ static void khammer_present(KBootstrap *b) {
     KHummer *h = &b->hummer;
     if (!h->active || !b->layers[0].pixels) return;
     mini_clear(&b->layers[0]);
-    mini_blit(&b->layers[0],&h->background,0,0,0,0,640,480);
-    if (h->holes.pixels) {
-        const KHummerHole *hole=&khammer_holes[h->hole%KHUMMER_HOLES];
-        mini_blit_key(&b->layers[0],&h->holes,132,64,hole->x,hole->y,376,368,0x00ff00);
+    if (h->tutorial_visible) {
+        /* tuthum is the native 542x486 tutorial surface, centered on the
+           640x480 game canvas; the lower navigation strip is clipped by the
+           same viewport as the Windows client. */
+        if(h->tutorial.pixels)mini_blit_key(&b->layers[0],&h->tutorial,49,0,0,0,542,480,0x00ff00);
+        return;
     }
-    if (h->effects.pixels) {
-        unsigned frame=(h->effect_clock/KHUMMER_EFFECT_MS)%3;
-        mini_blit_key(&b->layers[0],&h->effects,218,40,(int)frame*204,0,204,248,0x00ff00);
+    mini_blit(&b->layers[0],&h->background,0,0,0,0,640,480);
+    if (h->frames.pixels) {
+        unsigned frame=(h->clock/KHUMMER_EFFECT_MS)%KHUMMER_HOLES;
+        const KHummerFrame *cell=&khammer_frames[frame];
+        mini_blit_key(&b->layers[0],&h->frames,132,64,cell->x,cell->y,376,368,0x00ff00);
+    }
+    if (h->girl.pixels) {
+        unsigned frame=(h->clock/KHUMMER_EFFECT_MS)%18u;
+        mini_blit_key(&b->layers[0],&h->girl,218,40,(int)(frame%6u)*204,(int)(frame/6u)*248,204,248,0x00ff00);
     }
 }
 

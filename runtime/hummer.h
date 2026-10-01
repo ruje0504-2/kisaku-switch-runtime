@@ -42,16 +42,18 @@
 #define KHUMMER_THRESHOLD 30
 #define KHUMMER_HOLES 13
 
-/* hummp.akb cell grid (1504x1492, 4x4 of 376x368); the 13 reachable holes. */
-typedef struct KHummerHole { int x, y; } KHummerHole;
-static const KHummerHole khammer_holes[KHUMMER_HOLES] = {
+/* hummp.akb cell grid (1504x1492, 4x4 of 376x368); the native animation
+   table uses the first 13 cells as the hammer sequence. */
+typedef struct KHummerFrame { int x, y; } KHummerFrame;
+static const KHummerFrame khammer_frames[KHUMMER_HOLES] = {
     {0, 0}, {376, 0}, {752, 0}, {1128, 0}, {0, 368}, {376, 368}, {752, 368},
     {1128, 368}, {0, 736}, {376, 736}, {752, 736}, {1128, 736}, {0, 1104}
 };
 
 typedef struct KHummer {
-    KImage background, holes, effects;
+    KImage background, frames, girl, tutorial;
     unsigned active;            /* modal owns the VM while set */
+    unsigned tutorial_visible;  /* tuthum.akb remains until the start key */
     unsigned clock;             /* elapsed ms since the modal started */
     unsigned hole_clock;        /* 300 ms mole alternation */
     unsigned effect_clock;      /* 120 ms effect animation */
