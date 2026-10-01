@@ -5,7 +5,9 @@ static int scene_mode_hage(const KBootstrap *b){return b&&b->vm&&b->vm->global_c
 static unsigned scene_mode_base(unsigned cat){unsigned n=0;for(unsigned c=0;c<cat;c++)n+=kscene_mode_counts[c];return n;}
 static unsigned scene_mode_items(KBootstrap *b,unsigned cat){return scene_mode_hage(b)?30:kscene_mode_counts[cat];}
 static void scene_mode_at(KBootstrap *b,unsigned flat,unsigned *cat,unsigned *item){if(scene_mode_hage(b)){*cat=0;*item=flat;}else if(kscene_mode_at(flat,cat,item)){*cat=0;*item=0;}}
-static int scene_mode_bank(KBootstrap *b,unsigned index){KValue v=b->vm->globals[1][index];return v.string?0:v.number;}
+/* CScMode uses the system bank (P+0x64); the mode flag 61 is in P+0x7c.
+   scene.mes reads sys12..15, not the script's bank1 variables. */
+static int scene_mode_bank(KBootstrap *b,unsigned index){KValue v=b->vm->globals[0][index];return v.string?0:v.number;}
 static int scene_mode_finish_now(MessagePanel *p,KBootstrap *b,int result);
 static int scene_mode_copy(KImage *dst,const KImage *src){
     if(ui_canvas(dst))return -1;
@@ -58,15 +60,15 @@ static int scene_mode_unlocked(MessagePanel *p,KBootstrap *b,unsigned slot){
 static void scene_mode_page(MessagePanel *p,KBootstrap *b,unsigned cat,unsigned page){
     if(scene_mode_motion(p,b,2))return;
     p->direct_selected=(scene_mode_hage(b)?0:scene_mode_base(cat))+page*9;p->direct_page=page;p->direct_sub=-1;p->status[0]=0;
-    if(scene_mode_hage(b))b->vm->globals[1][12]=(KValue){(int32_t)page,NULL};
+    if(scene_mode_hage(b))b->vm->globals[0][12]=(KValue){(int32_t)page,NULL};
 }
 static int scene_mode_finish_now(MessagePanel *p,KBootstrap *b,int result){
     if(kvm_push(b->vm,(KValue){result,NULL})){snprintf(p->status,sizeof(p->status),"%s",ui_string(b,"status.scene_result_failed"));return -1;}
     /* Commit selector parameters only once the delayed return can be pushed. */
     if(result>=0&&!scene_mode_hage(b)){
         unsigned cat,item;scene_mode_at(b,p->direct_selected,&cat,&item);
-        b->vm->globals[1][12]=(KValue){(int32_t)cat,NULL};b->vm->globals[1][13]=(KValue){(int32_t)(item/9),NULL};
-        b->vm->globals[1][14]=(KValue){(int32_t)item,NULL};b->vm->globals[1][15]=(KValue){p->direct_sub>=0?p->direct_focus:-1,NULL};
+        b->vm->globals[0][12]=(KValue){(int32_t)cat,NULL};b->vm->globals[0][13]=(KValue){(int32_t)(item/9),NULL};
+        b->vm->globals[0][14]=(KValue){(int32_t)item,NULL};b->vm->globals[0][15]=(KValue){p->direct_sub>=0?p->direct_focus:-1,NULL};
     }
     b->vm->bytes[4012]=0;b->scene_modal=0;b->scene_panel_request=0;p->kind=0;p->direct_scene=0;return 0;
 }

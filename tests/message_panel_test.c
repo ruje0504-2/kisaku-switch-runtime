@@ -714,6 +714,60 @@ static void scene_test_action(MessagePanel *p,KBootstrap *b,int action){
     message_panel_action(p,b,action);
     if(p->direct_motion)scene_mode_tick(p,b,p->direct_clock+(uint64_t)p->direct_steps*15);
 }
+/* Check the selector against the original MES dispatch, without playing every
+   replay. The offsets are instruction boundaries in the supplied Japanese MES. */
+static void test_scene_routes(const char *root,const char *saves){
+    char folder[4096];snprintf(folder,sizeof(folder),"%s/scene-routes",saves);assert(!mkdir(folder,0700));
+    KBootstrap *b=bootstrap_create_split(root,folder);assert(b&&!b->error[0]);
+    static const char *const names[]={"nadeshiko","hiromi","momoko","madoka","yuuri","aoi","ayano","shouko","sonota","end","ura"};
+    MessagePanel p={0};unsigned checked=0;
+    memset(b->vm->bytes+3200,7,400);b->vm->bytes[4006]=1;
+    for(unsigned mode=0;mode<2;mode++){
+        uint8_t *data=NULL;size_t size=0;const char *selector=mode?"hage_scmode.mes":"scene.mes";
+        assert(!ai6_read_named(&b->scripts,selector,&data,&size));
+        int id=kvm_add_module(b->vm,selector,data,size);assert(id>=0);b->module_data[id]=data;
+        b->vm->globals[1][61]=(KValue){(int)mode,NULL};
+        if(mode)for(unsigned i=0;i<30;i++)b->vm->bytes[kscene_mode_hage_flags[i]]=1;
+        for(unsigned cat=0;cat<(mode?1u:11u);cat++)for(unsigned item=0;item<(mode?30u:kscene_mode_counts[cat]);item++){
+            unsigned variants=mode?0:kscene_mode_variants(cat,item);
+            for(unsigned variant=0;variant<(variants?variants:1);variant++){
+                assert(!kvm_start(b->vm,id));
+                b->vm->globals[0][12]=(KValue){(int)(mode?item/9:cat),NULL};
+                b->vm->globals[0][13]=(KValue){(int)(item/9),NULL};
+                b->vm->globals[0][14]=(KValue){(int)item,NULL};b->vm->globals[0][15]=(KValue){-1,NULL};
+                for(unsigned i=12;i<=15;i++)b->vm->globals[1][i]=(KValue){-1000-(int)i,NULL};
+                p.kind=20;p.direct_count=0;scene_mode_prepare(&p,b);
+                assert(p.direct_selected==(mode?item/9*9:scene_mode_base(cat)+item));
+                p.direct_focus=(int)(item%9);scene_test_action(&p,b,0);
+                if(variants){assert(p.kind==20&&p.direct_sub==0);p.direct_focus=(int)variant;scene_test_action(&p,b,0);}
+                assert(!p.kind&&b->vm->sp==1&&b->vm->stack[0].number==(mode?(int)(item/9*256+item%9):0));
+                for(unsigned i=12;i<=15;i++)assert(b->vm->globals[1][i].number==-1000-(int)i);
+                if(mode){
+                    /* Let the original script store/decode page*256+slot. */
+                    b->vm->ip=0x403;
+                    for(unsigned step=0;b->vm->ip!=0x448;step++){
+                        assert(step<20&&kvm_run(b->vm,1)==KVM_BUDGET);assert(!kvm_resume(b->vm));
+                    }
+                    assert(b->vm->globals[0][21].number==(int)(item/9)&&b->vm->globals[0][13].number==(int)(item%9));
+                }else{
+                    assert(b->vm->globals[0][12].number==(int)cat&&b->vm->globals[0][13].number==(int)(item/9));
+                    assert(b->vm->globals[0][14].number==(int)item&&b->vm->globals[0][15].number==(variants?(int)variant:-1));
+                }
+                b->vm->ip=mode?0x5db:0x49d;assert(b->vm->modules[id].boundaries[b->vm->ip]);
+                assert(kvm_run(b->vm,10000)==KVM_SYSCALL&&b->vm->syscall==22&&b->vm->sp>=2);
+                unsigned number=item+1;
+                if(!mode&&cat==0)number=item==4?19:item>4?item:item+1;
+                if(!mode&&(cat==1||cat==4))number=item==6?(cat==1?23:22):item>6?item:item+1;
+                char expected[64];snprintf(expected,sizeof(expected),"sc_%s%02u.mes",mode?"hage":names[cat],number);
+                KValue actual=b->vm->stack[b->vm->sp-2];
+                if(!actual.string||strcmp(actual.string,expected))fprintf(stderr,"Scene route %u/%u/%u: expected %s, got %s\n",cat,item,variant,expected,actual.string?actual.string:"<number>");
+                assert(actual.string&&!strcmp(actual.string,expected));checked++;
+            }
+        }
+    }
+    rmt_free(&p.image);rmt_free(&p.direct_from);rmt_free(&p.direct_background);bootstrap_destroy(b);
+    printf("Scene selector -> original MES: all 206 ordinary entries, their variants and 30 Hage entries (%u selections), separate system/script banks: PASS\n",checked);
+}
 static void test_scene_clock(void){
     unsigned from,to,alpha;
     scene_mode_cycle(0,3,0,&from,&to,&alpha);assert(from==0&&to==1&&!alpha);
@@ -751,8 +805,8 @@ static void test_scene_assets(KBootstrap *b,SDL_Renderer *r){
         for(unsigned i=3200;i<3600;i++)b->vm->bytes[i]=(uint8_t)(hage?1:v);
         b->vm->bytes[4006]=1;
         MessagePanel p={.kind=20};
-        b->vm->globals[1][12]=(KValue){0,NULL};b->vm->globals[1][13]=(KValue){0,NULL};
-        b->vm->globals[1][14]=(KValue){0,NULL};b->vm->globals[1][15]=(KValue){-1,NULL};
+        b->vm->globals[0][12]=(KValue){0,NULL};b->vm->globals[0][13]=(KValue){0,NULL};
+        b->vm->globals[0][14]=(KValue){0,NULL};b->vm->globals[0][15]=(KValue){-1,NULL};
         scene_mode_prepare(&p,b);
         for(unsigned cat=0;cat<(hage?1u:11u);cat++)for(unsigned page=0;page<(scene_mode_items(b,cat)+8)/9;page++){
             scene_mode_page(&p,b,cat,page);p.direct_focus=0;
@@ -869,17 +923,17 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
         scene_test_action(&p,b,1);assert(!p.kind&&!b->scene_modal&&b->vm->sp==1&&b->vm->stack[0].number==-1);
         /* A native completion byte, not a checkpoint, unlocks the slot. */
         b->vm->sp=0;p.kind=20;p.direct_count=0;p.status[0]=0;
-        b->vm->globals[1][12]=(KValue){0,NULL};b->vm->globals[1][13]=(KValue){0,NULL};
-        b->vm->globals[1][14]=(KValue){0,NULL};b->vm->globals[1][15]=(KValue){-1,NULL};
+        b->vm->globals[0][12]=(KValue){0,NULL};b->vm->globals[0][13]=(KValue){0,NULL};
+        b->vm->globals[0][14]=(KValue){0,NULL};b->vm->globals[0][15]=(KValue){-1,NULL};
         unsigned flag=mode?kscene_mode_hage_flags[0]:kscene_mode_flags[0][0];
         b->vm->bytes[flag]=0;scene_test_action(&p,b,0);assert(p.kind==20&&!b->vm->sp);
         b->vm->bytes[flag]=1;scene_test_action(&p,b,0);
         assert(!p.kind&&!p.scene_request&&b->vm->sp==1&&b->vm->stack[0].number==0&&!b->vm->bytes[4012]);
         if(!mode){
-            assert(b->vm->globals[1][14].number==0&&b->vm->globals[1][15].number==-1);
+            assert(b->vm->globals[0][14].number==0&&b->vm->globals[0][15].number==-1);
             /* Category 3 item 20 uses 3551/3552 even when its base is locked. */
             b->vm->sp=0;p.kind=20;p.direct_count=0;
-            b->vm->globals[1][12]=(KValue){3,NULL};b->vm->globals[1][13]=(KValue){2,NULL};b->vm->globals[1][14]=(KValue){20,NULL};
+            b->vm->globals[0][12]=(KValue){3,NULL};b->vm->globals[0][13]=(KValue){2,NULL};b->vm->globals[0][14]=(KValue){20,NULL};
             b->vm->bytes[kscene_mode_flags[3][20]]=0;b->vm->bytes[3551]=0;b->vm->bytes[3552]=1;
             scene_mode_prepare(&p,b);p.direct_focus=2;scene_test_action(&p,b,0);
             assert(p.kind==20&&p.direct_sub==0);message_panel_draw(&p,b,r);
@@ -888,9 +942,9 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
             scene_test_action(&p,b,1);assert(p.kind==20&&p.direct_sub==-1);
             scene_test_action(&p,b,0);scene_test_action(&p,b,5);scene_test_action(&p,b,5);scene_test_action(&p,b,0);
             assert(!p.kind&&b->vm->sp==1&&b->vm->stack[0].number==0);
-            assert(b->vm->globals[1][12].number==3&&b->vm->globals[1][13].number==2&&b->vm->globals[1][14].number==20&&b->vm->globals[1][15].number==2);
+            assert(b->vm->globals[0][12].number==3&&b->vm->globals[0][13].number==2&&b->vm->globals[0][14].number==20&&b->vm->globals[0][15].number==2);
         }else{
-            b->vm->sp=0;p.kind=20;p.direct_count=0;b->vm->globals[1][12]=(KValue){3,NULL};
+            b->vm->sp=0;p.kind=20;p.direct_count=0;b->vm->globals[0][12]=(KValue){3,NULL};
             b->vm->bytes[kscene_mode_hage_flags[29]]=1;scene_mode_prepare(&p,b);p.direct_focus=2;
             message_panel_draw(&p,b,r);scene_test_action(&p,b,0);
             assert(!p.kind&&b->vm->sp==1&&b->vm->stack[0].number==0x302);
@@ -901,7 +955,11 @@ static void test_letter_exit(const char *root,const char *saves,SDL_Renderer *r,
             int state=bootstrap_run(b,100000);if(state<0)fprintf(stderr,"Scene dispatch: %s\n",b->error);assert(state>=0);
             for(unsigned m=0;m<b->vm->module_count;m++){
                 const char *name=b->vm->modules[m].name;
-                if(!strncmp(name,"sc_",3)){dispatched=1;if(mode)assert(!strcmp(name,"sc_hage30.mes"));}
+                if(!strncmp(name,"sc_",3)){
+                    const char *expected=mode?"sc_hage30.mes":"sc_madoka21.mes";
+                    if(strcmp(name,expected))fprintf(stderr,"Scene route mismatch: expected %s, got %s\n",expected,name);
+                    assert(!strcmp(name,expected));dispatched=1;
+                }
             }
             if(dispatched)break;
             if(state==1)bootstrap_frame(b);
@@ -954,6 +1012,7 @@ int main(int argc,char **argv){
     SDL_Renderer *renderer=SDL_CreateSoftwareRenderer(surface);assert(renderer);
     if(argc==4&&!strcmp(argv[3],"--scene")){
         test_letter_exit(argv[1],argv[2],renderer,NULL);
+        test_scene_routes(argv[1],argv[2]);
         SDL_DestroyRenderer(renderer);SDL_FreeSurface(surface);SDL_Quit();return 0;
     }
     KBootstrap *b=bootstrap_create_split(argv[1],argv[2]);assert(b&&!b->error[0]);
@@ -1002,6 +1061,7 @@ int main(int argc,char **argv){
     test_live_character(b,renderer,argc==4?argv[3]:NULL);
 
     test_letter_exit(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
+    test_scene_routes(argv[1],argv[2]);
     test_name_editor(argv[1],argv[2],renderer,argc==4?argv[3]:NULL);
     test_appendix_media(argv[1],argv[2],renderer);
     for(unsigned i=0;i<5;i++)rmt_free(&p.config_art[i]);
