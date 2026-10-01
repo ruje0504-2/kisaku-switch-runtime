@@ -2244,6 +2244,65 @@ static void test_native_cg_dynamic_stress(const char *root,const char *saves){
     bootstrap_destroy(b);
     printf("Hage CG scripts: %u variants, %u visibly animated in 180 frames: PASS\n",alternate,alternate_moving);
 }
+static void movie_call(KBootstrap *b,int action,const char *name,unsigned entry){
+    b->vm->status=KVM_SYSCALL;b->vm->syscall=24;b->vm->sp=0;
+    if(action==1){assert(!kvm_push(b->vm,(KValue){(int)entry,NULL}));assert(!kvm_push(b->vm,(KValue){0,name}));}
+    assert(!kvm_push(b->vm,(KValue){action,NULL}));assert(!bootstrap_dispatch(b));
+}
+static void test_story_movie_composition(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    for(unsigned i=0;!b->title.active;i++){assert(i<6000&&bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+    b->title.active=0;b->logo_phase=0;b->present_hires=1;
+    KPresentWorker worker={0};assert(!present_worker_create(&worker));
+    uint8_t *data=NULL;size_t size=0;
+    assert(!ai6_read_named(&b->images,"ev148an.akb",&data,&size));
+    rmt_free(&b->layers[8]);assert(!rmt_decode(data,size,&b->layers[8]));free(data);b->layer_count=8;
+    assert(!ai6_read_named(&b->data,"ev148.ax",&data,&size));assert(ax_load(&b->ax,"ev148.ax",data,size));free(data);
+    /* These three eye tracks remain live when aoi_h1.mes starts its MOV. */
+    for(unsigned i=4;i<=6;i++){assert(ax_control(&b->ax,1,0,i));b->ax_registered[i]=1;}
+    b->vm->globals[0][50].number|=0x10;
+    if(!b->message_base.pixels)b->message_base=(KImage){0,0,640,480,2560,malloc(640*480*4)};
+    assert(b->message_base.pixels&&b->message_skin.atlas.pixels);
+    b->message_active=b->message_slide=b->message_buttons_motion=0;
+    KImage expected={0,0,640,480,2560,calloc(640*480,4)};assert(expected.pixels);
+    const char *names[]={"ev148b_2.mov","ev148b_5.mov","ev148b_6.mov"};
+    unsigned compared=0,moving=0;
+    for(unsigned pass=0;pass<6;pass++){
+        b->message_visible=pass%2;const char *name=names[pass%3];
+        assert(!ai6_read_named(&b->movies,name,&data,&size));KMov mov;
+        assert(!kmov_open(&mov,data,size,0));
+        while(kmov_next(&mov)==2){} /* Skip the optional effect event. */
+        uint8_t *vsd=NULL,*pcm=NULL;size_t vsd_size=0,pcm_size=0;
+        assert(!ai6_read_named(&b->movies,mov.video,&vsd,&vsd_size));
+        KVideo *reference=kvideo_open(vsd,vsd_size);assert(reference&&!kvideo_range(reference,mov.first,mov.last));
+        movie_call(b,1,name,0);uint64_t previous=0;
+        unsigned frames=(unsigned)(mov.last-mov.first)*2u;if(frames>100)frames=100;assert(frames>2);
+        for(unsigned frame=0;frame<frames;frame++){
+            if(frame==2){
+                movie_call(b,4,NULL,0);
+                for(unsigned pause=0;pause<8;pause++){
+                    bootstrap_frame(b);assert(!b->error[0]);
+                    assert(!memcmp(b->layers[0].pixels,expected.pixels,396*2560));
+                }
+                movie_call(b,5,NULL,0);
+            }
+            assert(!kvideo_step(reference,&expected,&pcm,&pcm_size));bootstrap_frame(b);assert(!b->error[0]);
+            /* Compare against decoding the same MOV without story/AX/UI.
+               Check the actual screen and HQ clean surface, not only buffers. */
+            assert(!memcmp(b->layers[0].pixels,expected.pixels,396*2560));
+            assert(!present_worker_submit(&worker,b));const KImage *overlay=NULL;
+            const KImage *present=present_worker_finish(&worker,&overlay);assert(present&&present->width==640);
+            assert(!memcmp(present->pixels,expected.pixels,396*2560));
+            uint64_t now=portrait_hash(&expected);if(previous&&now!=previous)moving++;previous=now;compared++;
+        }
+        kvideo_close(reference);free(vsd);free(data);free(pcm);
+        /* Next pass replaces a still-playing stream, as the story does. */
+    }
+    assert(moving&&compared>100);movie_call(b,2,NULL,0);
+    assert(!b->movie_frame.pixels&&!b->video&&!b->video_data&&!b->mov_data&&!b->movie_effect.pcm);
+    rmt_free(&expected);present_worker_clear(&worker);bootstrap_destroy(b);
+    printf("Story MOV: %u frames match isolated decoding with live eye AX, message/HQ, pause/resume and live replacement: PASS\n",compared);
+}
 static void test_movie_video_lifecycle(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     unsigned checked=0;char first_name[261]={0};
@@ -2269,7 +2328,7 @@ static void test_movie_video_lifecycle(const char *root,const char *saves){
         b->vm->status=KVM_SYSCALL;b->vm->syscall=24;b->vm->sp=0;
         assert(!kvm_push(b->vm,(KValue){2,NULL}));
         assert(!bootstrap_dispatch(b));
-        assert(!b->video&&!b->video_data&&!b->mov_data&&!b->movie_pcm&&!b->movie_effect.pcm);
+        assert(!b->video&&!b->video_data&&!b->mov_data&&!b->movie_pcm&&!b->movie_effect.pcm&&!b->movie_frame.pixels);
         checked++;
     }
     assert(checked==188&&first_name[0]);
@@ -2595,6 +2654,7 @@ int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--hires")){test_hires_present(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--native-cg")){test_native_cg(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--native-cg-stress")){test_native_cg_dynamic_stress(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--story-movie")){test_story_movie_composition(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--movie-video")){test_movie_video_lifecycle(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--audio-overlap")){test_audio_overlap(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}

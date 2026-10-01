@@ -2821,8 +2821,9 @@ int bootstrap_dispatch(KBootstrap *b){
         if((b->music_active||b->voice_active)&&(b->audio_rate!=44100||b->audio_channels!=2))return error(b,"movie mixing format unsupported");
         const char *name;uint8_t *data=NULL;size_t size=0;if(string(b,&name))return -1;
         if(read_named(&b->movies,name,&data,&size))return error(b,"VSD resource missing");
+        movie_stop(b);
         KVideo *video=kvideo_open(data,size);if(!video){free(data);return error(b,"VSD open failed");}
-        movie_stop(b);b->video=video;b->video_data=data;b->video_active=1;b->video_eof=0;
+        b->video=video;b->video_data=data;b->video_active=1;b->video_eof=0;
         free(b->movie_pcm);b->movie_pcm=NULL;b->movie_pcm_size=b->movie_read=b->movie_clock=0;
         if(!b->music_active&&!b->voice_active){free(b->audio_pcm);b->audio_pcm=NULL;b->audio_size=b->audio_cursor=b->audio_loop_start=b->audio_loop_end=0;}
         if(b->audio_rate!=44100||b->audio_channels!=2){b->audio_rate=44100;b->audio_channels=2;b->audio_serial++;}
@@ -3447,19 +3448,6 @@ void bootstrap_frame(KBootstrap *b){
         }
         b->music_gain=pow(10.0,(b->fade_db-b->music_db)/2000.0);
     }
-    if(b->video_active&&!b->video_paused){
-        if(b->movie_clock<b->movie_pcm_size){size_t n=b->movie_pcm_size-b->movie_clock;b->movie_clock+=n>2940?2940:n;}
-        KImage *target=b->choice_active?&b->choice_base:b->message_visible?&b->message_base:&b->layers[0];
-        if(!b->video_eof){int rc=kvideo_step(b->video,target,&b->movie_pcm,&b->movie_pcm_size);if(rc<0){error(b,kvideo_error(b->video));movie_stop(b);return;}b->video_eof=rc==1;}
-        if(b->video_eof&&b->movie_clock==b->movie_pcm_size){
-            if(b->video_background){
-                if(movie_next(b))return;
-                /* EOF consumes no display tick: show the next range's first
-                   frame now, without holding the old last frame for 1/60 s. */
-                if(b->video_active){int rc=kvideo_step(b->video,target,&b->movie_pcm,&b->movie_pcm_size);if(rc<0){error(b,kvideo_error(b->video));movie_stop(b);return;}b->video_eof=rc==1;}
-            }else{movie_stop(b);}
-        }
-    }
     if(b->logo_phase==1&&b->audio_cursor==b->audio_size){
         if(play_pcm(b,&b->effects,"potapota.wav")||start_logo_track(b,0))return;
         b->logo_phase=2;
@@ -3495,6 +3483,7 @@ void bootstrap_frame(KBootstrap *b){
             if(b->error[0])return;
         }
     }
+    movie_frame(b);if(b->error[0])return;
     bowling_frame(b);kkuji_frame(b);khammer_frame(b,KHUMMER_STEP_MS);kbingo_frame(b,KHUMMER_STEP_MS);ktennis_frame(b,KHUMMER_STEP_MS);kstaff_frame(b,KHUMMER_STEP_MS);
     animation522_frame(b);
     if(animation523_frame(b))return;
@@ -4047,10 +4036,11 @@ int bootstrap_gallery_movie(KBootstrap *b,unsigned item){
     if(!b||!b->extra_active||b->extra_kind!=10||b->gallery_movie_base.pixels||!bootstrap_gallery_movie_unlocked(b,item))return -1;
     char name[16];snprintf(name,sizeof(name),"m%02u.vsd",ids[item]);uint8_t *data=NULL;size_t size=0;
     if(read_named(&b->movies,name,&data,&size))return -1;
+    movie_stop(b);
     KVideo *video=kvideo_open(data,size);if(!video){free(data);return -1;}
     uint8_t *base=malloc(640*480*4);if(!base){kvideo_close(video);free(data);return -1;}
     memcpy(base,b->layers[0].pixels,640*480*4);b->gallery_movie_base=(KImage){0,0,640,480,2560,base};
-    movie_stop(b);b->video=video;b->video_data=data;b->video_active=1;
+    b->video=video;b->video_data=data;b->video_active=1;
     mam_stop(b);kvoice_worker_cancel(b->voice_worker);b->voice_loading=0;
     b->music_active=b->music_fading=b->voice_active=0;
     b->audio_size=b->audio_cursor=b->audio_loop_start=b->audio_loop_end=0;

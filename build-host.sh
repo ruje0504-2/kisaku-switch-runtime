@@ -68,3 +68,5 @@ fi
 # Hardware adapter lifecycle is exercised with injected FFmpeg failures on host.
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime tests/video_hw_test.c $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample libavutil) -o build/video-hw-test
 ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime -Ibuild runtime/video.c runtime/mov.c runtime/ai6arc.c runtime/lzss.c tests/video_test.c $(pkg-config --cflags --libs libavformat libavcodec libswscale libswresample libavutil) -o build/video-test
+
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -Iruntime runtime/lzss.c runtime/ai6arc.c runtime/rmt.c runtime/akb.c runtime/vm.c runtime/mov.c tests/movie_ownership_test.c -o build/movie-ownership-test
