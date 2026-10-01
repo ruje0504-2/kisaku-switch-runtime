@@ -5,8 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <math.h>
 #include "../tools/present_worker.inc"
+#include "../build/media_tables.h"
 static unsigned bowling_released;
 static int native_wait_call(KBootstrap *b,int action,int duration,int pump){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=29;b->vm->sp=0;
@@ -2068,6 +2070,66 @@ static void test_native_cg(const char *root,const char *saves){
     assert(b->vm->sp==1&&b->vm->stack[0].number==-1);
     free(locked);bootstrap_destroy(b);puts("Native CG: original script entry, lock, variants, isolated normal/Hage full image and appendix return: PASS");
 }
+static unsigned cg_test_variants(const KCGRecord *r){
+    unsigned n=0;while(n<30&&r->variants[n]>=0)n++;return n;
+}
+typedef struct {KImage base,screen,parts,atlas,variants;unsigned alternate,group,page,view,item,variant;int focus;KBootstrap *player;char problem[256];} KNativeCGTest;
+static int cg_test_dynamic_script(const char *name){
+    return !strcasecmp(name,"KISAKU_CG_00.MES")||!strcasecmp(name,"KISAKU_CG_03.MES")||
+           !strcasecmp(name,"KISAKU_CG_04.MES")||!strcasecmp(name,"KISAKU_CG_05.MES")||
+           !strcasecmp(name,"HAGE_CG_00.MES");
+}
+static void test_native_cg_dynamic_stress(const char *root,const char *saves){
+    static const unsigned groups[]={21,25,22,40,34,24,22,29,52,28};
+    static const unsigned starts[]={0,22,48,71,112,147,172,195,225,278};
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b);title_path_until(b,0);
+    b->vm->bytes[4005]=1;b->title.selected=2;bootstrap_confirm(b);title_path_until(b,0);
+    b->title.selected=0;bootstrap_confirm(b);
+    for(unsigned i=0;!b->native_cg;i++){assert(i<10000);assert(bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
+    b->message_request=0;
+    for(size_t i=0;i<b->vm->byte_count;i++)b->vm->bytes[i]=1;
+    unsigned checked=0;
+    for(unsigned group=0;group<10;group++){
+        unsigned pages=(groups[group]+15)/16;
+        for(unsigned page=0;page<pages;page++){
+            unsigned first=page*16,last=first+16;if(last>groups[group])last=groups[group];
+            for(unsigned item=first;item<last;item++){
+                const KCGRecord *r=&kisaku_cg_records[starts[group]+item];
+                if(!cg_test_dynamic_script(r->script))continue;
+                int x=150+(int)(item%4)*116+8,y=48+(int)(item/4%4)*96+8;
+                assert(!bootstrap_native_cg_pointer(b,x,y,1));
+                for(unsigned variant=0;variant<cg_test_variants(r);variant++){
+                    if(variant){
+                        assert(!bootstrap_native_cg_action(b,5));
+                        assert(!bootstrap_native_cg_action(b,0));
+                    }else assert(!bootstrap_native_cg_action(b,0));
+                    int focus[4];
+                    if(bootstrap_native_cg_focus(b,focus)){
+                        KNativeCGTest *c=(KNativeCGTest *)b->native_cg;
+                        fprintf(stderr,"dynamic CG left playback before frames: group=%u item=%u variant=%u script=%s view=%u item=%u variant=%u focus=%d player=%p problem=%s flag=%u\n",group,item,variant,r->script,c->view,c->item,c->variant,c->focus,(void *)c->player,c->problem,b->vm->bytes[r->variants[variant]]);
+                        abort();
+                    }
+                    for(unsigned frame=0;frame<180;frame++){
+                        bootstrap_frame(b);assert(!b->error[0]);
+                        if(bootstrap_native_cg_focus(b,focus)){
+                            fprintf(stderr,"dynamic CG playback stopped: group=%u item=%u variant=%u frame=%u script=%s\n",group,item,variant,frame,r->script);
+                            abort();
+                        }
+                    }
+                    assert(!bootstrap_native_cg_action(b,1));
+                    assert(bootstrap_native_cg_focus(b,focus));
+                    checked++;
+                }
+                assert(!bootstrap_native_cg_action(b,1));
+            }
+            if(page+1<pages)assert(!bootstrap_native_cg_action(b,9));
+        }
+        if(group+1<10)assert(!bootstrap_native_cg_action(b,6));
+    }
+    assert(checked>0);assert(!bootstrap_native_cg_action(b,1));assert(!b->native_cg);
+    bootstrap_destroy(b);
+    printf("Native dynamic CG stress: %u real AX variants opened, 180 frames each, isolated runtime returned cleanly: PASS\n",checked);
+}
 static void test_movie_video_lifecycle(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
     unsigned checked=0;
@@ -2400,6 +2462,7 @@ int main(int argc,char **argv){
 
     if(argc==4&&!strcmp(argv[3],"--hires")){test_hires_present(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--native-cg")){test_native_cg(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--native-cg-stress")){test_native_cg_dynamic_stress(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--movie-video")){test_movie_video_lifecycle(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--audio-overlap")){test_audio_overlap(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}

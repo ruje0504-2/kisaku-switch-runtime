@@ -1327,3 +1327,4 @@ Codex 照片里《鬼作》移植版停在 `liblary.lib @0x6a…`，主机的完
 - 动态 CG 的脚本在独立运行时已经生成 `fade_surface` 眨眼遮罩，但原生 CG 面板此前只复制私有运行时的 `layer[0]`，且父运行时在原生 CG 模态期间跳过通用 fade 呈现，因此所有动态角色都不会眨眼。
 - `cg_draw()` 现在在复制动态帧后，按桌面呈现器相同的 `fade_surface alpha × fade_alpha` 规则合成遮罩；普通 CG 选图页、Hage CG 和脚本时序不变。
 - 原生 CG 专项、完整 `test-host.sh` 和 `build-switch.sh` 均通过。动态视频现有生命周期专项继续覆盖 188 个 `.mov` 流的解码、停止及 `video_data`、`mov_data`、PCM 资源释放；本轮没有发现新的可复现泄漏或崩溃证据。
+- 新增 `--native-cg-stress` 专项，按真实 CG 目录遍历 `KISAKU_CG_00/03/04/05.MES` 的 673 个 AX 变体，每个变体推进 180 帧后经原生返回路径关闭；全部通过，未出现 AX 错误、父运行时错误或悬挂的独立 CG 运行时。
