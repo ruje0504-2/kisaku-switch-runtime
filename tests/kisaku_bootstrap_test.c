@@ -1974,6 +1974,31 @@ static void test_native_cg(const char *root,const char *saves){
     assert(b->vm->sp==1&&b->vm->stack[0].number==-1);
     free(locked);bootstrap_destroy(b);puts("Native CG: original script entry, lock, variants, isolated normal/Hage full image and appendix return: PASS");
 }
+static void test_movie_video_lifecycle(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    unsigned checked=0;
+    /* The plain movie.arc entries are the native CG/video command streams;
+       lzs/ contains compressed duplicates that are not selected by scripts. */
+    for(unsigned i=0;i<b->movies.count;i++){
+        const char *name=b->movies.entries[i].name;size_t n=strlen(name);
+        if(n<4||strcasecmp(name+n-4,".mov")||strstr(name,"/"))continue;
+        b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=24;b->vm->sp=0;
+        assert(!kvm_push(b->vm,(KValue){0,NULL}));
+        assert(!kvm_push(b->vm,(KValue){0,name}));
+        assert(!kvm_push(b->vm,(KValue){1,NULL}));
+        assert(!bootstrap_dispatch(b)&&b->video&&b->video_data&&b->video_active);
+        for(unsigned frame=0;frame<3&&b->video_active;frame++){
+            bootstrap_frame(b);assert(!b->error[0]);
+        }
+        b->vm->status=KVM_SYSCALL;b->vm->syscall=24;b->vm->sp=0;
+        assert(!kvm_push(b->vm,(KValue){2,NULL}));
+        assert(!bootstrap_dispatch(b));
+        assert(!b->video&&!b->video_data&&!b->mov_data&&!b->movie_pcm&&!b->movie_effect.pcm);
+        checked++;
+    }
+    assert(checked==188);bootstrap_destroy(b);
+    printf("Native dynamic movie lifecycle: %u .mov streams opened, decoded and stopped with decoder/PCM cleanup: PASS\n",checked);
+}
 static void test_hires_present(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b);b->present_hires=1;
     KPresentWorker worker={0};assert(!present_worker_create(&worker));
@@ -2281,6 +2306,7 @@ int main(int argc,char **argv){
 
     if(argc==4&&!strcmp(argv[3],"--hires")){test_hires_present(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--native-cg")){test_native_cg(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--movie-video")){test_movie_video_lifecycle(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--audio-overlap")){test_audio_overlap(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title-paths")){test_title_paths(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--calendar")){test_week(argv[1],argv[2]);test_calendar_persistence(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);return 0;}
