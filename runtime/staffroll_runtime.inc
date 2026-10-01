@@ -1,22 +1,23 @@
 /* CStaff modal runtime: 31/210 (staff roll end screen).
  *
  * Contract (0x4fb9e0): exactly one integer operand = mode
- * (staffroll.mes passes 1 for the full 11-segment end_p01..p11.ax roll,
- * staffroll_s.mes and the inline sc_end04.mes call pass 0 for the short
- * end_p1m..p11m set), and there is NO VM write-back: the handler only
+ * (staffroll.mes passes 1 for the full end roll, staffroll_s.mes and the
+ * inline sc_end04.mes call pass 0 for the short end roll), and there is NO
+ * VM write-back: the handler only
  * maintains the "native modal owns the screen" byte, bytes[4012] = 1 on
  * entry and 0 on exit.  Returning to the title is the caller's job
  * (nazo19_z.mes does `22/1 "staffroll.mes"` then `22/0 "open.mes"`).
  *
  * The native builds .?AVCStaff@@ (vtable 0x5480ec), starts imomushi.wav
  * (0x469c33) and runs 24 steps around an independent CFuncAnime instance
- * ([0x5d3c60]) whose eleven AX segments total about 2100 ticks at 20 ms
+ * ([0x5d3c60]) whose twelve AX resources total about 2100 ticks at 20 ms
  * (~42 s), scrolling 44 pre-rendered subtitle pages (pages < 27 live in
  * layer 2, the rest in layer 3) through a 256x136 window at (192,296) with
  * [this+0xdc] += 4 and a -640 wrap.
  *
- * The AX files are played as the native eleven (full) or nine (short)
- * segments.  The page artwork is already present in the layer archive; the
+ * The AX files are played in the native resource order.  Both rolls include
+ * a distinct sixth transition resource (end_p06s/end_p6ms), followed by the
+ * regular p06 resource.  The page artwork is already present in the layer archive; the
  * renderer below scrolls the matching pre-rendered atlas through the native
  * 256x136 window.
  */
@@ -27,15 +28,26 @@
 #define KSTAFF_SHORT_TICKS 1050
 #define KSTAFF_TICK_MS 20
 
+static const char *const kstaff_full_segments[] = {
+    "end_p01.ax", "end_p02.ax", "end_p03.ax", "end_p04.ax",
+    "end_p05.ax", "end_p06s.ax", "end_p06.ax", "end_p07.ax",
+    "end_p08.ax", "end_p09.ax", "end_p10.ax", "end_p11.ax"
+};
+static const char *const kstaff_short_segments[] = {
+    "end_p1m.ax", "end_p2m.ax", "end_p3m.ax", "end_p4m.ax",
+    "end_p5m.ax", "end_p6ms.ax", "end_p6m.ax", "end_p7m.ax",
+    "end_p8m.ax", "end_p9m.ax", "end_p10m.ax", "end_p11m.ax"
+};
+
 static void kstaff_release_art(KStaffroll *s){
     rmt_free(&s->background);rmt_free(&s->part1);rmt_free(&s->part2);rmt_free(&s->part3);
     rmt_free(&s->staff1);rmt_free(&s->staff2);
 }
 
 static int kstaff_load_segment(KBootstrap *b, KStaffroll *s, unsigned segment) {
-    char name[32];
-    if (s->mode) snprintf(name, sizeof(name), "end_p%02u.ax", segment + 1);
-    else snprintf(name, sizeof(name), "end_p%um.ax", segment + 1);
+    const char *const *names = s->mode ? kstaff_full_segments : kstaff_short_segments;
+    if (segment >= s->segment_count) return 0;
+    const char *name = names[segment];
     uint8_t *data = NULL; size_t size = 0;
     if (read_named(&b->data, name, &data, &size) || !ax_load(&s->ax, name, data, size)) {
         free(data);
@@ -59,6 +71,7 @@ static int kstaff_begin(KBootstrap *b, int mode) {
     *s = (KStaffroll){0};
     s->mode = (unsigned)mode;
     s->ticks = mode ? KSTAFF_FULL_TICKS : KSTAFF_SHORT_TICKS;
+    s->segment_count = (unsigned)(sizeof(kstaff_full_segments) / sizeof(kstaff_full_segments[0]));
     /* CStaff starts at -640 (0xFFFFFD80), then advances the active
        subtitle layer by four pixels on every 20 ms update. */
     s->scroll = -640;
@@ -113,7 +126,7 @@ static int kstaff_frame(KBootstrap *b, unsigned ms) {
             return error(b,"31/210 invalid ending AX instruction");
         }
         s->segment_clock++;
-        unsigned count = s->mode ? 11u : 9u;
+        unsigned count = s->segment_count;
         unsigned segment_ticks = s->ticks / count;
         if (segment_ticks && s->segment + 1 < count && s->segment_clock >= segment_ticks) {
             s->segment++;
