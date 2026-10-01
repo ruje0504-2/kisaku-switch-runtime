@@ -1415,3 +1415,11 @@ Codex 照片里《鬼作》移植版停在 `liblary.lib @0x6a…`，主机的完
 - 根因：`tools/navigation_panel.inc` 错将场景参数读写为 `globals[1][12..15]`。原版4735ca..473655明确使用P+0x64系统变量组；`scene.mes`的04操作码也读取系统组0。改为sys12..15，并将秃作翻页记忆改回sys12；bank1[61]模式判断保留。
 - 专项使用实际前端选择函数和原始MES分派段核对206个普通条目及全部菜单分支、30个秃作条目，共297次选择；系统变量/脚本变量隔离、原版插入条目（19/23/22）、分页编号均通过。保留实际信件退出→选择→加载回放模块测试，并新增普通模式精确脚本名断言。
 - 主机专项 `message-panel-test --scene` 通过（含189个普通页面/进度组合、4页秃作、锁定/取消/分支/动画）；日志 `local/scene-routing-before.log`（修复前精确错配失败）、`local/scene-routing-after.log`（修复后通过）。Switch主入口 `runtime_viewer.c` 使用devkitA64和实际Switch依赖头文件的 `-Wall -Wextra -Werror -fsyntax-only` 检查通过（`local/scene-routing-switch-check.log`）；`git diff --check`通过。未播放全部回想至结束，未新增实机验证。本轮不生成NRO/NSP或更新ZIP。
+
+## 2026-10-02 update NSP 1.1.22、NRO与两个ZIP交付
+
+- 按用户请求，以 `fc22071f0079649322da4e0be73e2e96a44d38a6` 编译Switch主程序并打包update NSP 1.1.22，包含场景回想参数组修复；保留此前剧情MOV修复。
+- `./build-switch.sh`及`UPDATE=1 TITLE_VERSION=1.1.22 BASE_NSP=… ./make-nsp.sh`成功。NSP成品35项校验通过，CNMT版本0x10116、NACP显示1.1.22、ExeFS与本次ELF一致、BKTR素材继续指回本体，标题与存档归属保持不变。验证JSON与日志在`local/update-1.1.22-verify/`，构建/打包日志`local/update-1.1.22-{build,package}.log`。
+- `交付/kisaku-update-1.1.22-01008B538DE50800.nsp`：15791303 bytes，SHA-256 `cd1ddd7cc4e1adf494cab9fd880cf3f73872bc17d92d62d6bbd75e985d9f7fb1`。`交付/kisaku-1.1.22.nro`与`build-switch/kisaku.nro`逐字节一致：23409149 bytes，SHA-256 `cb827c340175aeda7c10059b47221521162b2ca848d49d5027c6f43d3d6d46bb`；NRO0/ASET结构和兼容入口一致性通过。NRO使用现有构建元数据，说明中的1.1.22为同源更新批次。
+- 更新根目录`kisaku-NRO-update.zip`与`kisaku-update-NSP.zip`，各含对应程序及UTF-8 BOM安装说明，两个成员均使用密码1234的ZipCrypto加密。正确密码解压/CRC与原程序SHA-256一致，说明逐字节一致，错误密码被拒绝。ZIP SHA-256分别为 `a2100e584c0c3e8d398031dc5d6750a7fa01dee6b3eedb0a46967bfd1a5490a4`、`3e14a96e30ee89183ef25e9a40b4f665d6ba2317516b96533f1b6f2b53e79a24`。
+- 原ZIP备份保存在`local/zip-refresh-1.1.22-b2rdvi7m/backup/`，该目录亦有暂存说明与验证JSON。源码、原版素材和存档未删除；交付包不入库。本轮无新增实机验证，不将此前1.1.21的用户闪退修复反馈扩大到1.1.22新验证。Mac防休眠继续保留。
