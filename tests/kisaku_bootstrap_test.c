@@ -1730,6 +1730,16 @@ static void tennis_expect_art(const KImage *frame,const KImage *art,int dx,int d
     }
     if(checked<=100){fprintf(stderr,"tennis art mismatch dx=%d dy=%d sx=%d sy=%d w=%u h=%u checked=%u\n",dx,dy,sx,sy,w,h,checked);abort();}
 }
+static void bingo_expect_logo(const KImage *frame,const KImage *logo,unsigned sy){
+    unsigned checked=0;
+    for(unsigned y=0;y<88;y++)for(unsigned x=0;x<640;x++){
+        const uint8_t *s=logo->pixels+(size_t)(sy+y)*logo->stride+(size_t)x*4;
+        if(!s[3]||(s[0]==0&&s[1]==255&&s[2]==0))continue;
+        const uint8_t *d=frame->pixels+(size_t)(196+y)*frame->stride+(size_t)x*4;
+        assert(!memcmp(s,d,4));checked++;
+    }
+    assert(checked>100);
+}
 static void tennis_award(KBootstrap *b,int player){
     for(unsigned seed=1;;seed++){
         uint32_t state=seed;
@@ -1796,6 +1806,16 @@ static void test_minigame_resource_entries(const char *root,const char *saves){
                    b->hummer.tutorial.height==486);
             bootstrap_confirm(b);assert(!b->hummer.tutorial_visible);
             bootstrap_frame(b);assert(!b->error[0]);
+        } else if(subs[i]==611) {
+            assert(b->bingo.logo.width==640&&b->bingo.logo.height==616);
+            b->bingo.lines=1;b->bingo.tail=0;
+            bootstrap_frame(b);assert(!b->error[0]&&b->bingo.tail==20);
+            bingo_expect_logo(&b->layers[0],&b->bingo.logo,0);
+            while(b->bingo.tail<KBINGO_SUCCESS_INTRO_MS)bootstrap_frame(b);
+            assert(b->bingo.tail==KBINGO_SUCCESS_INTRO_MS);
+            bingo_expect_logo(&b->layers[0],&b->bingo.logo,440);
+            while(b->bingo.active)bootstrap_frame(b);
+            assert(!b->error[0]&&b->vm->sp==1&&b->vm->stack[0].number==1);
         }
         bootstrap_destroy(b);
     }

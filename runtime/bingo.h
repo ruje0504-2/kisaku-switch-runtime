@@ -24,6 +24,14 @@
 #define KBINGO_SIDE 5
 #define KBINGO_WAIT_MS 1000
 #define KBINGO_FASTFORWARD_MS 250          /* 4x, native [vt+0xa8] 0x102/0x103 */
+#define KBINGO_TICK_MS 20                  /* 0x4d72a0's 50 ticks = one second */
+#define KBINGO_SUCCESS_ROWS 6              /* 0x4d7f61 .. 0x4d7fcc */
+#define KBINGO_SUCCESS_ROW_TICKS 2
+#define KBINGO_SUCCESS_FLASHES 60          /* 0x4d7fde .. 0x4d8061 */
+#define KBINGO_SUCCESS_FLASH_TICKS 3
+#define KBINGO_SUCCESS_INTRO_MS (KBINGO_SUCCESS_ROWS * KBINGO_SUCCESS_ROW_TICKS * KBINGO_TICK_MS)
+#define KBINGO_SUCCESS_FLASH_MS (KBINGO_SUCCESS_FLASHES * KBINGO_SUCCESS_FLASH_TICKS * KBINGO_TICK_MS)
+#define KBINGO_SUCCESS_MS (KBINGO_SUCCESS_INTRO_MS + KBINGO_SUCCESS_FLASH_MS)
 
 typedef struct KBingo {
     KImage background, logo, parts, animation;
