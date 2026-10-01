@@ -8,6 +8,7 @@ static void ktennis_release_art(KTennis *t){
     rmt_free(&t->background);rmt_free(&t->player1);rmt_free(&t->court1);rmt_free(&t->court2);
     rmt_free(&t->player2);rmt_free(&t->pieces);
 }
+static void ktennis_rally_start(KTennis *t);
 
 static unsigned ktennis_difficulty(KBootstrap *b) {
     int difficulty = option(b, "Difficult", "AllMiniGame", 1);   /* 0x4647c0 */
@@ -26,6 +27,7 @@ static int ktennis_begin(KBootstrap *b) {
        mini_load_akb(b,"tennisc2.akb",&t->court2)||mini_load_akb(b,"tennisp2.akb",&t->player2)||
        mini_load_akb(b,"tennis_p.akb",&t->pieces)){ktennis_release_art(t);return error(b,"31/610 sprite resources decode failed (arguments preserved)");}
     t->active = 1;
+    ktennis_rally_start(t);
     return 0;
 }
 
@@ -35,6 +37,14 @@ static int ktennis_active(const KBootstrap *b) { return b->tennis.active; }
    port's fast-forward for length reasons and is documented as such). */
 static int ktennis_confirm(KBootstrap *b) { b->tennis.fast = 1; return 0; }
 static int ktennis_pointer(KBootstrap *b, int x, int y, unsigned held) { (void)b; (void)x; (void)y; (void)held; return 0; }
+
+static void ktennis_rally_start(KTennis *t) {
+    /* The native path is driven by CTennisBall, not by the VM RNG.  The
+       landing slot remains stable while 20 ms ball updates run. */
+    t->rally_code=(t->points_played+t->server+t->difficulty*2u)%6u;
+    t->rally_clock=0;
+    t->rally_active=1;
+}
 
 static void ktennis_point(KBootstrap *b, KTennis *t) {
     /* Player point probability falls as the configured difficulty rises
@@ -76,12 +86,14 @@ static int ktennis_frame(KBootstrap *b, unsigned ms) {
         t->hud_clock = t->hud_mode = 0;
         return 0;
     }
-    unsigned step = t->fast ? KTENNIS_FASTFORWARD_MS : KTENNIS_POINT_MS;
-    t->clock += ms;
-    while (t->clock >= step) {
-        t->clock -= step;
+    unsigned elapsed = t->fast ? ms * KTENNIS_POINT_MS / KTENNIS_FASTFORWARD_MS : ms;
+    t->rally_clock += elapsed;
+    while (t->rally_clock >= KTENNIS_POINT_MS) {
+        t->rally_clock -= KTENNIS_POINT_MS;
+        t->rally_active=0;
         ktennis_point(b, t);
         if (t->games_player >= KTENNIS_GAMES_TO_WIN || t->games_cpu >= KTENNIS_GAMES_TO_WIN) break;
+        ktennis_rally_start(t);
     }
     if (t->games_player < KTENNIS_GAMES_TO_WIN && t->games_cpu < KTENNIS_GAMES_TO_WIN) return 0;
     if (t->settled) return 0;
@@ -128,11 +140,23 @@ static void ktennis_present(KBootstrap *b) {
     if(b->layers[0].width==640&&b->layers[0].height>=480){
         /* The native places one character on each side of the net.  The
            source cells at 0x463764/0x463664: c1=136x160, c2=112x120. */
-        unsigned f=t->points_played%6u;
-        unsigned r1=(t->points_played/6u)%8u,r2=r1;
+        unsigned animation_tick=t->points_played*30u+(t->rally_clock/KTENNIS_RALLY_TICK_MS);
+        unsigned f=animation_tick%6u;
+        unsigned r1=(animation_tick/6u)%8u,r2=r1;
         if(t->court1.pixels)mini_blit_key(&b->layers[0],&t->court1,122,268,(int)f*136,(int)r1*160,136,160,0x00ff00);
         if(t->court2.pixels)mini_blit_key(&b->layers[0],&t->court2,406,116,(int)f*112,(int)r2*120,112,120,0x00ff00);
-        if(t->pieces.pixels){unsigned frame=(t->points_played%3u)*22u;mini_blit_key(&b->layers[0],&t->pieces,309,214,0,(int)frame,22,22,0x00ff00);}
+        if(t->pieces.pixels&&t->rally_active){
+            const KTennisLanding *land=&ktennis_landing[t->rally_code%6u];
+            int progress=(int)(t->rally_clock>KTENNIS_POINT_MS?KTENNIS_POINT_MS:t->rally_clock);
+            int x=180+(270*progress)/KTENNIS_POINT_MS;
+            int y=326-(150*progress)/KTENNIS_POINT_MS;
+            x+=(land->x1000*progress)/(KTENNIS_POINT_MS*1000/8);
+            y+=(land->y1000*progress)/(KTENNIS_POINT_MS*1000/8);
+            int arc=(land->h1000*4*progress*(KTENNIS_POINT_MS-progress))/(KTENNIS_POINT_MS*KTENNIS_POINT_MS*1000);
+            y-=arc;
+            unsigned frame=(t->rally_clock/80u)%3u;
+            mini_blit_key(&b->layers[0],&t->pieces,x-11,y-11,0,(int)frame*22,22,22,0x00ff00);
+        }
     }
     ktennis_present_hud(b,t);
 }

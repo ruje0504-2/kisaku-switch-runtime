@@ -35,6 +35,23 @@
 #define KTENNIS_POINT_MS 600
 #define KTENNIS_HUD_MS 1600               /* 0x462b5e: 80 updates of 20 ms */
 #define KTENNIS_FASTFORWARD_MS 75          /* 8x while the skip key is held */
+#define KTENNIS_RALLY_TICK_MS 20           /* 0x462ba0 -> 0x460ba0 */
+
+/* The native CTennisBall uses six 20-byte records at 0x548328.  The first
+ * word is the return code (2..7); the remaining values are the x/y/z landing
+ * vector and the projected height.  Keep the original fixed-point values so
+ * the portable renderer does not accumulate platform-dependent float error. */
+typedef struct KTennisLanding {
+    int x1000, y1000, z1000, h1000;
+} KTennisLanding;
+static const KTennisLanding ktennis_landing[6] = {
+    {-4115, -6400,  4115, -11885}, /* return 2 */
+    {    0,     0,  4115,  -6400}, /* return 3 */
+    {-4115,     0,     0,  -6400}, /* return 4 */
+    {-4115, 11885,  4115,   6400}, /* return 5 */
+    {-4115,  6400,     0,      0}, /* return 6 */
+    {    0,  6400,  4115,      0}, /* return 7 */
+};
 
 typedef struct KTennis {
     KImage background, player1, court1, court2, player2, pieces;
@@ -43,7 +60,8 @@ typedef struct KTennis {
     unsigned points_player, points_cpu;
     unsigned server;                   /* flips every game (native +0x104) */
     unsigned difficulty;
-    unsigned clock, fast, points_played;
+    unsigned fast, points_played;
+    unsigned rally_clock, rally_code, rally_active;
     unsigned hud_mode, hud_clock;       /* 0=hidden, 1=points, 2=advantage, 3=games */
     unsigned sound;
 } KTennis;

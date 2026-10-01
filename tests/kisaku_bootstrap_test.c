@@ -1813,7 +1813,8 @@ static void tennis_award(KBootstrap *b,int player){
         if((kkuji_rand(&state,100)<50)==player){b->vm->random_state=seed;break;}
     }
     b->tennis.hud_clock=b->tennis.hud_mode=0;
-    b->tennis.clock=KTENNIS_POINT_MS-20;
+    b->tennis.rally_clock=KTENNIS_POINT_MS-20;
+    b->tennis.rally_active=1;
     bootstrap_frame(b);assert(!b->error[0]);
 }
 static void test_tennis_art_and_scores(const char *root,const char *saves){
@@ -1825,9 +1826,10 @@ static void test_tennis_art_and_scores(const char *root,const char *saves){
     /* Real atlas pixels in the six first-row cells: catches the wrong row
        stride and the lost feet/adjacent-frame fragments from 128/160 crops. */
     for(unsigned frame=0;frame<6;frame++){
-        t->points_played=frame;t->clock=0;bootstrap_frame(b);
-        tennis_expect_art(&b->layers[0],&t->court1,122,268,(frame%6)*136,(frame/6)*160,136,160);
-        tennis_expect_art(&b->layers[0],&t->court2,406,116,(frame%6)*112,(frame/6)*120,112,120);
+        t->points_played=frame;t->rally_clock=0;t->rally_active=0;bootstrap_frame(b);
+        unsigned tick=frame*30u+1u;
+        tennis_expect_art(&b->layers[0],&t->court1,122,268,(tick%6)*136,((tick/6)%8)*160,136,160);
+        tennis_expect_art(&b->layers[0],&t->court2,406,116,(tick%6)*112,((tick/6)%8)*120,112,120);
     }
     t->points_played=0;
     for(unsigned point=1;point<=3;point++){
