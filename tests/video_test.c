@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 static uint64_t hash(const uint8_t *p,size_t n){uint64_t h=1469598103934665603ULL;while(n--)h=(h^*p++)*1099511628211ULL;return h;}
 static void test_video_target_guard(const uint8_t *data,size_t size){
     KVideo *v=kvideo_open_mode(data,size,KVIDEO_SOFTWARE);assert(v);
@@ -71,11 +72,37 @@ static void test_video_slots(Ai6Archive *arc){
     }
     free(image.pixels);
 }
+static void test_all_movie_first_segments(Ai6Archive *arc){
+    KImage image={0,0,640,480,2560,calloc(480,2560)};assert(image.pixels);
+    unsigned movies=0,frames=0;
+    for(unsigned i=0;i<arc->count;i++){
+        const char *name=arc->entries[i].name;size_t n=strlen(name);
+        if(n<4||strcasecmp(name+n-4,".mov")||strchr(name,'/'))continue;
+        uint8_t *commands=NULL,*data=NULL;size_t command_size=0,size=0;
+        assert(!ai6_read(arc,i,&commands,&command_size));
+        KMov mov={0};assert(!kmov_open(&mov,commands,command_size,0));
+        assert(!ai6_read_named(arc,mov.video,&data,&size));
+        KVideo *v=kvideo_open_mode(data,size,KVIDEO_SOFTWARE);assert(v);
+        int event=0;
+        for(unsigned guard=0;guard<10000&&event!=1;guard++){event=kmov_next(&mov);assert(event>=0);}
+        assert(event==1&&!kvideo_range(v,mov.first,mov.last));
+        uint8_t *pcm=NULL;size_t bytes=0;unsigned segment_frames=0;
+        for(;;){
+            int rc=kvideo_step(v,&image,&pcm,&bytes);assert(rc>=0);
+            if(rc==1)break;
+            assert(segment_frames++<200000);frames++;
+        }
+        assert(segment_frames>0);free(pcm);kvideo_close(v);free(data);free(commands);movies++;
+    }
+    assert(movies==188&&frames>20000);free(image.pixels);
+    printf("Full native movie first segments: %u .mov streams, %u decoded frames, clean close: PASS\n",movies,frames);
+}
 int main(int argc,char **argv){
     assert(argc==2);char path[4096];snprintf(path,sizeof(path),"%s/movie.arc",argv[1]);
     test_video_header_guard();
     Ai6Archive arc={0};assert(!ai6_open(&arc,path));uint8_t *data=NULL;size_t size=0;
     test_video_slots(&arc);
+    test_all_movie_first_segments(&arc);
     assert(!ai6_read_named(&arc,"endfilm.VSD",&data,&size));test_video(data,size,0);free(data);
     assert(!ai6_read_named(&arc,"endfilm.VSD",&data,&size));test_video_target_guard(data,size);free(data);
     int found=0;
