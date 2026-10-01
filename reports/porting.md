@@ -1370,3 +1370,12 @@ Codex 照片里《鬼作》移植版停在 `liblary.lib @0x6a…`，主机的完
 - `bootstrap_destroy()` 现在先调用与正常停止、切段和解码错误共用的 `movie_stop()`，统一关闭解码器并释放 MOV 命令、VSD 数据、视频 PCM 和动态音效；`movie_stop()` 对空 Bootstrap/空 VM 也安全返回，避免异常退出阶段再次访问 VM。
 - `--movie-video` 新增播放中直接销毁 Bootstrap 的场景；188 个 `.mov` 首段完整解码、显式停止和播放中退出均通过。完整 `test-host.sh` 与 `build-switch.sh` 通过。
 - 这修复了退出时释放路径分叉造成的生命周期风险，但 macOS 没有可用 LeakSanitizer，且当前仍没有可访问的 Switch 实机，因此不把该专项表述为实机或泄漏检测结论。
+
+
+## 2026-10-01：按请求编译 update NSP 1.1.20
+
+- 基于源码 `013114afcb556fbb86493c7b306354e870a36027` 重新运行 `./build-switch.sh`，交叉编译退出码 0；本轮没有修改运行时。
+- 以本地 `[01008B538DE50000][v0][Base].nsp` 为只读输入，运行 `UPDATE=1 TITLE_VERSION=1.1.20 BASE_NSP=… ./make-nsp.sh`，生成 `交付/鬼作-update-1.1.20-01008B538DE50800.nsp`。本包不更新素材，64 KiB BKTR 段全部指回本体。
+- 从最终 NSP 读回完成 35 项校验：三个 NCA 类型/归属/大小/哈希与文件系统头哈希；Patch CNMT 版本 `0x10114`、本体引用、补丁历史和内容哈希；NACP `display_version=1.1.20`，其余字段及图标与本体一致；BKTR IVFC、重定位/子段表；ExeFS main 与本轮 ELF 重新 strip+elf2nso 后逐字节一致，NPDM ACI0 为本体 ID。
+- 产物为 15,792,327 bytes，SHA-256 `7e8637c55fbbe721967eb327e9a27103d0e81d3a74f2c20f1572fb449f97423e`。构建/打包日志位于 `/tmp/kisaku-update-1.1.20-{build,package}.log`；校验脚本、读回文件与 JSON 在 `local/update-1.1.20-verify/`，不提交素材或 NSP。
+- 本轮未重复上一轮已通过的主机回归，没有 Switch 实机安装/运行证据；不能把本次打包认作完整移植完成。已有 `/usr/bin/caffeinate -ims` 仍保持运行。
