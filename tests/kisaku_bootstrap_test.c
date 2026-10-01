@@ -1690,14 +1690,25 @@ static void test_kuji(const char *root,const char *saves){
            !kvm_push(b->vm,(KValue){7,NULL})&&!kvm_push(b->vm,(KValue){1,NULL})&&
            !kvm_push(b->vm,(KValue){710,NULL}));
     assert(!bootstrap_dispatch(b)&&!b->vm->sp&&b->kuji.active&&!b->error[0]);
+    assert(b->kuji.background.width==640&&b->kuji.background.height==736&&
+           b->kuji.prompt.width==640&&b->kuji.prompt.height==480&&
+           b->kuji.cursor.width==960&&b->kuji.cursor.height==192);
     unsigned seen[10]={0};
     for(unsigned i=0;i<5;i++){unsigned v=b->kuji.slot[i];assert(v<=9);seen[v]++;}
     assert(seen[1]==1&&seen[3]==1&&seen[5]==1&&seen[7]==1&&seen[9]==1);
     /* The modal keeps the VM busy until the player confirms a column and the
        20 ms walk plus the trailing second elapse. */
-    b->kuji.select=2;bootstrap_confirm(b);assert(b->kuji.chosen);
-    unsigned frames=0;while(b->kuji.active&&frames<200){bootstrap_frame(b);frames++;}
-    assert(!b->kuji.active&&frames<200);
+    b->kuji.select=2;bootstrap_confirm(b);assert(b->kuji.chosen&&b->kuji.path_length>500);
+    unsigned frames=0;bootstrap_frame(b);frames++;
+    assert(!b->error[0]&&b->kuji.cursor_x>0&&b->kuji.cursor_y>0&&b->kuji.viewport_y==0);
+    unsigned red=0;
+    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+        const uint8_t *p=b->layers[0].pixels+(size_t)y*b->layers[0].stride+x*4;
+        if(p[2]>180&&p[1]<100&&p[0]<100)red++;
+    }
+    assert(red>1000);
+    while(b->kuji.active&&frames<700){bootstrap_frame(b);frames++;}
+    assert(!b->kuji.active&&frames<700);
     assert(b->vm->sp==1&&b->vm->stack[0].number>=0&&b->vm->stack[0].number<=9);
     assert(b->vm->stack[0].number==(int32_t)b->kuji.slot[kkuji_perm[b->kuji.select]]);
     /* Pointer hover maps to the native hit rectangles; a click confirms. */
@@ -1708,8 +1719,9 @@ static void test_kuji(const char *root,const char *saves){
     assert(!bootstrap_dispatch(b)&&b->kuji.active);
     bootstrap_pointer(b,kkuji_column_x[3],344,0);assert(b->kuji.select==3);
     bootstrap_pointer(b,kkuji_column_x[3],344,1);assert(b->kuji.chosen);
-    frames=0;while(b->kuji.active&&frames<200){bootstrap_frame(b);frames++;}
-    assert(!b->kuji.active&&b->vm->sp==1&&b->vm->stack[0].number==(int32_t)b->kuji.slot[kkuji_perm[3]]);
+    assert(b->kuji.path_length>500);
+    frames=0;while(b->kuji.active&&frames<700){bootstrap_frame(b);frames++;}
+    assert(!b->kuji.active&&frames<700&&b->vm->sp==1&&b->vm->stack[0].number==(int32_t)b->kuji.slot[kkuji_perm[3]]);
     /* A string prize id and a short vector keep every operand. */
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
     assert(!kvm_push(b->vm,(KValue){0,"text"})&&!kvm_push(b->vm,(KValue){1,NULL})&&

@@ -19,9 +19,10 @@
  *   bottom slots   = 80x80 at (cx-40, 600)
  *   hit rectangles = (cx-60, cy-98, cx+60, cy+48) around the path end
  *   highlight cursor = column centre - (54, 92)
- * The logical canvas is at least 640x736 while the display surface is
- * 640x480, so the native must scroll or page; that part is still unresolved
- * (see deepseek/analysis/minigame-kuji.md section 8.2). */
+ * The logical canvas is 640x736 while the display surface is 640x480.  The
+ * portable renderer follows the native path and keeps the moving character
+ * in the visible part of that canvas instead of flattening the result to a
+ * static bottom crop. */
 #define KKUJI_COLUMNS 5
 #define KKUJI_BLANK 9
 #define KKUJI_STEP_MS 20          /* 0x4e2ee0(1,20) */
@@ -41,6 +42,8 @@ typedef struct KKuji {
     unsigned clock;                 /* milliseconds since the walk started */
     unsigned drawn;                 /* result picture requested for this column */
     unsigned viewport_y;            /* 640x480 window into the native 640x736 canvas */
+    unsigned path_length;           /* selected red route length in pixels */
+    int cursor_x, cursor_y;          /* current character anchor in canvas space */
 } KKuji;
 
 /* 415710 / 0x435775: shared MSVC LCG, identical to VM opcode 0x39. */
