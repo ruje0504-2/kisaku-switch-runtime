@@ -36,6 +36,23 @@ static int cg_copy(KImage *dst,const KImage *src,int dx,int dy,int sx,int sy,int
         unsigned a=s[3];for(unsigned k=0;k<3;k++)d[k]=(uint8_t)(s[k]*a/255+d[k]*(255-a)/255);d[3]=255;
     }return 0;
 }
+/* Dynamic CG scripts run in a private bootstrap.  Its fade surface is normally
+   composed by the desktop viewer, but native CG presents the copied frame
+   directly, so apply the same source-alpha * fade-alpha operation here. */
+static void cg_apply_fade(KImage *dst,const KBootstrap *p){
+    const KImage *fade=&p->fade_surface;
+    if(!dst||!p->fade_visible||!fade->pixels||fade->width<640||fade->height<480||
+       dst->width<640||dst->height<480||fade->stride<(size_t)fade->width*4||
+       dst->stride<(size_t)dst->width*4)return;
+    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+        const uint8_t *s=fade->pixels+y*fade->stride+x*4;
+        uint8_t *d=dst->pixels+y*dst->stride+x*4;
+        unsigned a=(unsigned)s[3]*p->fade_alpha/255;
+        if(!a)continue;
+        for(unsigned k=0;k<3;k++)d[k]=(uint8_t)(s[k]*a/255+d[k]*(255-a)/255);
+        d[3]=255;
+    }
+}
 static void cg_variant_rect(const KCGRecord *r,unsigned i,int *x,int *y){
     unsigned count=cg_variant_count(r),cols=count<5?count:5,rows=(count+4)/5;
     *x=(640-(int)(cols*108+(cols-1)*8))/2+(int)(i%5)*116;
@@ -55,7 +72,9 @@ static int cg_draw(KBootstrap *b){
     if(c->view==2&&c->player){
         KImage *layer=&c->player->layers[0];
         if(!layer->pixels||layer->width<640||layer->height<480)return -1;
-        return cg_copy(&c->screen,layer,0,0,0,0,640,480);
+        if(cg_copy(&c->screen,layer,0,0,0,0,640,480))return -1;
+        cg_apply_fade(&c->screen,c->player);
+        return 0;
     }
     if(c->view==1){
         const KCGRecord *r=cg_record(c,c->item);
