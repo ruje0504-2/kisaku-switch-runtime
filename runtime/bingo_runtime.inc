@@ -8,6 +8,19 @@
 
 static void kbingo_release_art(KBingo *k){rmt_free(&k->background);rmt_free(&k->logo);rmt_free(&k->parts);rmt_free(&k->animation);}
 
+static void kbingo_ax_draw(const uint32_t d[7],unsigned cell,void *context){
+    (void)cell;KBingo *k=context;
+    if(d[0]!=0||d[1]>k->animation.width||d[2]>k->animation.height||
+       d[3]>k->animation.width-d[1]||d[4]>k->animation.height-d[2]||
+       d[5]>640||d[6]>480||d[3]>640-d[5]||d[4]>480-d[6]){
+        k->animation_error=1;return;
+    }
+    k->animation_source_x=d[1];k->animation_source_y=d[2];
+    k->animation_source_w=d[3];k->animation_source_h=d[4];
+    k->animation_dest_x=d[5];k->animation_dest_y=d[6];
+    k->animation_source_valid=1;
+}
+
 static int kbingo_begin(KBootstrap *b) {
     if (b->bingo.active) return error(b, "31/611 already running (arguments preserved)");
     KBingo *k = &b->bingo;
@@ -18,6 +31,14 @@ static int kbingo_begin(KBootstrap *b) {
         mini_load_akb(b,"bingo_parts.akb",&k->parts)||
         mini_load_akb(b,"bingo_an.akb",&k->animation)){
         kbingo_release_art(k);return error(b,"31/611 artwork decode failed (arguments preserved)");
+    }
+    uint8_t *ax_data=NULL;size_t ax_size=0;
+    if(read_named(&b->data,"bingo_an.ax",&ax_data,&ax_size)||!ax_load(&k->animation_ax,"bingo_an.ax",ax_data,ax_size)){
+        free(ax_data);kbingo_release_art(k);return error(b,"31/611 animation AX invalid (arguments preserved)");
+    }
+    free(ax_data);memset(k->animation_events,0,sizeof(k->animation_events));
+    if(!ax_control(&k->animation_ax,1,0,0)){
+        kbingo_release_art(k);return error(b,"31/611 animation AX start invalid (arguments preserved)");
     }
     kbingo_deal(k, &b->vm->random_state);
     k->active = 1;
@@ -34,6 +55,9 @@ static int kbingo_pointer(KBootstrap *b, int x, int y, unsigned held) { (void)b;
 static int kbingo_frame(KBootstrap *b, unsigned ms) {
     KBingo *k = &b->bingo;
     if (!k->active) return 0;
+    if(!ax_tick_native(&k->animation_ax,k->animation_events,kbingo_ax_draw,k)||k->animation_error){
+        k->active=0;kbingo_release_art(k);return error(b,"31/611 animation AX frame invalid");
+    }
     unsigned step = k->fast ? KBINGO_FASTFORWARD_MS : KBINGO_WAIT_MS;
     k->clock += ms;
     while (k->clock >= step && k->drawn < KBINGO_BALLS) {
@@ -66,12 +90,6 @@ static void kbingo_present(KBootstrap *b) {
     if (!k->active || !b->layers[0].pixels) return;
     mini_clear(&b->layers[0]);
     mini_blit(&b->layers[0],&k->background,0,0,0,0,640,480);
-    /* bingo_an.akb is a 7x7 sheet of 240x268 dial frames.  The native
-       animator places the selected frame over the dial in bingo_bg. */
-    if(k->animation.pixels){
-        unsigned frame=(k->clock/40u)%49u;
-        mini_blit_key(&b->layers[0],&k->animation,376,16,(int)(frame%7u)*240,(int)(frame/7u)*268,240,268,0x00ff00);
-    }
     for (unsigned cell = 0; cell < KBINGO_SIDE * KBINGO_SIDE; cell++) {
         unsigned row = cell / KBINGO_SIDE, col = cell % KBINGO_SIDE;
         if(row==2&&col==2)continue;
@@ -79,6 +97,13 @@ static void kbingo_present(KBootstrap *b) {
         unsigned number=k->card[cell],sx=(number%20u)*32u,sy=(number/20u)*24u+(k->hit[cell]?48u:0u);
         mini_blit_key(&b->layers[0],&k->parts,ox,oy,(int)sx,(int)sy,32,24,0x00ff00);
     }
+    /* bingo_an.ax selects the 240x268 cell and places it at (368,20).  Keep
+       the last descriptor during AX delay opcodes so present() never invents
+       a frame that the native animator did not request. */
+    if(k->animation_source_valid)
+        mini_blit_key(&b->layers[0],&k->animation,(int)k->animation_dest_x,(int)k->animation_dest_y,
+                      (int)k->animation_source_x,(int)k->animation_source_y,
+                      k->animation_source_w,k->animation_source_h,0x00ff00);
     if (k->lines && k->logo.pixels) {
         unsigned source_y;
         if (k->tail < KBINGO_SUCCESS_INTRO_MS) {

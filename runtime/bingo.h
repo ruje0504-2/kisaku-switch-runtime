@@ -35,6 +35,12 @@
 
 typedef struct KBingo {
     KImage background, logo, parts, animation;
+    struct ax_player animation_ax;
+    uint8_t animation_events[AX_CELLS];
+    unsigned animation_source_valid, animation_error;
+    unsigned animation_source_x, animation_source_y;
+    unsigned animation_source_w, animation_source_h;
+    unsigned animation_dest_x, animation_dest_y;
     unsigned active, settled, result;
     unsigned pool[KBINGO_BALLS];
     unsigned card[KBINGO_SIDE * KBINGO_SIDE];

@@ -1755,6 +1755,16 @@ static void bingo_expect_logo(const KImage *frame,const KImage *logo,unsigned sy
     }
     assert(checked>100);
 }
+static void bingo_expect_animation(const KImage *frame,const KImage *art){
+    unsigned checked=0;
+    for(unsigned y=0;y<268;y++)for(unsigned x=0;x<240;x++){
+        const uint8_t *s=art->pixels+(size_t)y*art->stride+(size_t)x*4;
+        if(!s[3]||(s[0]==0&&s[1]==255&&s[2]==0))continue;
+        const uint8_t *d=frame->pixels+(size_t)(20+y)*frame->stride+(size_t)(368+x)*4;
+        assert(!memcmp(s,d,4));checked++;
+    }
+    assert(checked>100);
+}
 static void tennis_award(KBootstrap *b,int player){
     for(unsigned seed=1;;seed++){
         uint32_t state=seed;
@@ -1822,7 +1832,12 @@ static void test_minigame_resource_entries(const char *root,const char *saves){
             bootstrap_confirm(b);assert(!b->hummer.tutorial_visible);
             bootstrap_frame(b);assert(!b->error[0]);
         } else if(subs[i]==611) {
-            assert(b->bingo.logo.width==640&&b->bingo.logo.height==616);
+            assert(b->bingo.logo.width==640&&b->bingo.logo.height==616&&
+                   b->bingo.animation.width==1680&&b->bingo.animation.height==1876&&
+                   b->bingo.animation_source_valid&&b->bingo.animation_source_x==0&&
+                   b->bingo.animation_source_y==0&&b->bingo.animation_dest_x==368&&
+                   b->bingo.animation_dest_y==20);
+            bingo_expect_animation(&b->layers[0],&b->bingo.animation);
             b->bingo.lines=1;b->bingo.tail=0;
             bootstrap_frame(b);assert(!b->error[0]&&b->bingo.tail==20);
             bingo_expect_logo(&b->layers[0],&b->bingo.logo,0);
