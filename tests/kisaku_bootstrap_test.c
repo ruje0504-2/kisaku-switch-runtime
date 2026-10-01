@@ -2213,7 +2213,12 @@ static void test_movie_video_lifecycle(const char *root,const char *saves){
         assert(!kvm_push(b->vm,(KValue){0,name}));
         assert(!kvm_push(b->vm,(KValue){1,NULL}));
         assert(!bootstrap_dispatch(b)&&b->video&&b->video_data&&b->video_active);
-        for(unsigned frame=0;frame<3&&b->video_active;frame++){
+        unsigned duration=(b->mov.last>b->mov.first)?(unsigned)(b->mov.last-b->mov.first):1u;
+        /* MOV coordinates are 30 fps while bootstrap_frame is 60 Hz.  Run
+           one complete first segment plus a small boundary margin so this
+           exercises movie_next(), effect replacement and the next segment's
+           first frame before the explicit stop below. */
+        for(unsigned frame=0;frame<duration*2u+10u&&b->video_active;frame++){
             bootstrap_frame(b);assert(!b->error[0]);
         }
         b->vm->status=KVM_SYSCALL;b->vm->syscall=24;b->vm->sp=0;
