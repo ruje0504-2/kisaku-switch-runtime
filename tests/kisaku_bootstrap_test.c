@@ -1720,7 +1720,69 @@ static void test_kuji(const char *root,const char *saves){
     bootstrap_destroy(b);
     puts("CKuji 31/710 four-prize pool, shared-LCG shuffle, perm table and result push: PASS");
 }
+static void tennis_expect_art(const KImage *frame,const KImage *art,int dx,int dy,int sx,int sy,unsigned w,unsigned h){
+    unsigned checked=0;
+    for(unsigned y=0;y<h;y++)for(unsigned x=0;x<w;x++){
+        const uint8_t *s=art->pixels+(size_t)(sy+y)*art->stride+(size_t)(sx+x)*4;
+        if(s[3]!=255||(s[0]==0&&s[1]==255&&s[2]==0))continue;
+        const uint8_t *d=frame->pixels+(size_t)(dy+y)*frame->stride+(size_t)(dx+x)*4;
+        assert(!memcmp(s,d,4));checked++;
+    }
+    if(checked<=100){fprintf(stderr,"tennis art mismatch dx=%d dy=%d sx=%d sy=%d w=%u h=%u checked=%u\n",dx,dy,sx,sy,w,h,checked);abort();}
+}
+static void tennis_award(KBootstrap *b,int player){
+    for(unsigned seed=1;;seed++){
+        uint32_t state=seed;
+        if((kkuji_rand(&state,100)<50)==player){b->vm->random_state=seed;break;}
+    }
+    b->tennis.hud_clock=b->tennis.hud_mode=0;
+    b->tennis.clock=KTENNIS_POINT_MS-20;
+    bootstrap_frame(b);assert(!b->error[0]);
+}
+static void test_tennis_art_and_scores(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->vm->syscall=31;b->vm->status=KVM_SYSCALL;b->vm->sp=0;
+    assert(!kvm_push(b->vm,(KValue){610,NULL})&&!bootstrap_dispatch(b));
+    KTennis *t=&b->tennis;t->difficulty=1;
+    assert(t->court1.width==816&&t->court1.height==1280&&t->court2.width==672&&t->court2.height==960);
+    /* Real atlas pixels in the six first-row cells: catches the wrong row
+       stride and the lost feet/adjacent-frame fragments from 128/160 crops. */
+    for(unsigned frame=0;frame<6;frame++){
+        t->points_played=frame;t->clock=0;bootstrap_frame(b);
+        tennis_expect_art(&b->layers[0],&t->court1,122,268,(frame%6)*136,(frame/6)*160,136,160);
+        tennis_expect_art(&b->layers[0],&t->court2,406,116,(frame%6)*112,(frame/6)*120,112,120);
+    }
+    t->points_played=0;
+    for(unsigned point=1;point<=3;point++){
+        tennis_award(b,1);assert(t->points_player==point&&!t->games_player&&t->hud_mode==1);
+        tennis_expect_art(&b->layers[0],&t->player1,90,180,point*70,414,70,40);
+        tennis_expect_art(&b->layers[0],&t->player1,200,180,0,414,70,40);
+    }
+    tennis_award(b,1);assert(t->games_player==1&&!t->points_player&&t->hud_mode==3);
+    tennis_expect_art(&b->layers[0],&t->player1,90,180,278,374,70,40);
+    unsigned played=t->points_played;
+    for(unsigned i=0;i<80;i++)bootstrap_frame(b);
+    assert(!t->hud_clock&&!t->hud_mode&&t->points_played==played);
+    /* Deuce -> advantage -> deuce -> advantage -> game. */
+    t->points_player=t->points_cpu=3;
+    tennis_award(b,1);assert(t->points_player==4&&t->points_cpu==3&&t->hud_mode==2&&t->games_player==1);
+    tennis_expect_art(&b->layers[0],&t->player1,120,180,208,294,120,40);
+    tennis_award(b,0);assert(t->points_player==3&&t->points_cpu==3&&t->hud_mode==1);
+    tennis_expect_art(&b->layers[0],&t->player1,76,146,208,174,208,60);
+    tennis_award(b,0);assert(t->points_player==3&&t->points_cpu==4&&t->hud_mode==2&&!t->games_cpu);
+    tennis_expect_art(&b->layers[0],&t->player1,120,180,208,334,120,40);
+    tennis_award(b,0);assert(t->games_cpu==1&&!t->points_player&&!t->points_cpu&&t->server==0);
+    /* Losing 3-4 must stay advantage; old unsigned a-c ended the game. */
+    t->games_player=2;t->points_player=3;t->points_cpu=0;
+    tennis_award(b,1);assert(!t->active&&t->settled&&t->result==1&&b->vm->sp==1);
+    assert(b->vm->stack[0].number==1&&!t->background.pixels&&!t->player1.pixels&&!t->court1.pixels&&
+           !t->court2.pixels&&!t->player2.pixels&&!t->pieces.pixels);
+    bootstrap_frame(b);assert(b->vm->sp==1);
+    bootstrap_destroy(b);
+    puts("CTennis native 136x160/112x120 crops, score HUD/80-tick hold, deuce/advantage and final release: PASS");
+}
 static void test_minigame_resource_entries(const char *root,const char *saves){
+    test_tennis_art_and_scores(root,saves);
     const unsigned subs[]={711,611,610};
     for(unsigned i=0;i<sizeof(subs)/sizeof(subs[0]);i++){
         KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
@@ -2319,6 +2381,7 @@ int main(int argc,char **argv){
     if(argc==4&&!strcmp(argv[3],"--exec-410")){test_exec_410(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--music-status")){test_music_status(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--kuji")){test_kuji(argv[1],argv[2]);return 0;}
+    if(argc==4&&!strcmp(argv[3],"--tennis")){test_tennis_art_and_scores(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--transition")){test_transition_30_1(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--title")){test_title_appendix(argv[1],argv[2]);return 0;}
     if(argc==4&&!strcmp(argv[3],"--backlog")){

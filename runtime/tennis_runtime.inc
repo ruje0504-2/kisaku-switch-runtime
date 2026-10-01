@@ -46,18 +46,36 @@ static void ktennis_point(KBootstrap *b, KTennis *t) {
     if (player_point) t->points_player++; else t->points_cpu++;
     t->points_played++;
     unsigned a = t->points_player, c = t->points_cpu;
-    int game_over = 0;
-    if (a >= KTENNIS_POINTS_TO_WIN && a - c >= 2) game_over = 1;
-    if (c >= KTENNIS_POINTS_TO_WIN && c - a >= 2) game_over = 1;
+    t->hud_clock = KTENNIS_HUD_MS;
+    /* 0x463d8e..0x463e52: 00/15/30/40, then advantage.  Returning
+       from advantage to a tie resets both counters to 3, bounding the atlas
+       index.  Unsigned subtraction must not decide a losing side's game. */
+    if (a == c && a >= KTENNIS_POINTS_TO_WIN) {
+        t->points_player = t->points_cpu = 3;
+        t->hud_mode = 1;
+        return;
+    }
+    int game_over = (a >= KTENNIS_POINTS_TO_WIN && a >= c + 2) ||
+                    (c >= KTENNIS_POINTS_TO_WIN && c >= a + 2);
+    t->hud_mode = a >= 4 || c >= 4 ? 2 : 1;
     if (!game_over) return;
     if (a > c) t->games_player++; else t->games_cpu++;
     t->points_player = t->points_cpu = 0;
     t->server ^= 1u;                     /* native flips [+0x104] each game */
+    t->hud_mode = 3;
+    if (t->games_player >= KTENNIS_GAMES_TO_WIN || t->games_cpu >= KTENNIS_GAMES_TO_WIN)
+        t->hud_clock = 0;                /* 0x463e9c skips the final games panel */
 }
 
 static int ktennis_frame(KBootstrap *b, unsigned ms) {
     KTennis *t = &b->tennis;
     if (!t->active) return 0;
+    if (t->hud_clock) {
+        unsigned elapsed = t->fast ? ms * 8 : ms;
+        if (elapsed < t->hud_clock) { t->hud_clock -= elapsed; return 0; }
+        t->hud_clock = t->hud_mode = 0;
+        return 0;
+    }
     unsigned step = t->fast ? KTENNIS_FASTFORWARD_MS : KTENNIS_POINT_MS;
     t->clock += ms;
     while (t->clock >= step) {
@@ -79,6 +97,29 @@ static int ktennis_frame(KBootstrap *b, unsigned ms) {
     return 0;
 }
 
+static void ktennis_present_hud(KBootstrap *b, const KTennis *t) {
+    if (!t->hud_clock || !t->player1.pixels) return;
+    /* Sprite +0xd4 at (60,120), 240x114 (0x463803).  All following
+       local rectangles are copied by 0x462830 from tennisp1.akb. */
+    KImage *dst = &b->layers[0];
+    const KImage *src = &t->player1;
+    mini_blit_key(dst,src,60,120,0,60,240,114,0x00ff00);
+    if (t->hud_mode == 3) {
+        mini_blit_key(dst,src,76,146,0,354,208,60,0x00ff00);
+        mini_blit_key(dst,src,90,180,208+(int)t->games_player*70,374,70,40,0x00ff00);
+        mini_blit_key(dst,src,200,180,208+(int)t->games_cpu*70,374,70,40,0x00ff00);
+    } else if (t->hud_mode == 2) {
+        mini_blit_key(dst,src,76,146,208,234,208,60,0x00ff00);
+        mini_blit_key(dst,src,120,180,208,t->points_player>t->points_cpu?294:334,120,40,0x00ff00);
+    } else if (t->points_player == t->points_cpu && t->points_player >= 3) {
+        mini_blit_key(dst,src,76,146,208,174,208,60,0x00ff00);
+    } else {
+        mini_blit_key(dst,src,76,146,0,354,208,60,0x00ff00);
+        mini_blit_key(dst,src,90,180,(int)t->points_player*70,414,70,40,0x00ff00);
+        mini_blit_key(dst,src,200,180,(int)t->points_cpu*70,414,70,40,0x00ff00);
+    }
+}
+
 static void ktennis_present(KBootstrap *b) {
     KTennis *t = &b->tennis;
     if (!t->active || !b->layers[0].pixels) return;
@@ -86,12 +127,13 @@ static void ktennis_present(KBootstrap *b) {
     mini_blit(&b->layers[0],&t->background,0,0,0,0,640,480);
     if(b->layers[0].width==640&&b->layers[0].height>=480){
         /* The native places one character on each side of the net.  The
-           source sheets are 6-column strips: c1=136x128, c2=112x160. */
+           source cells at 0x463764/0x463664: c1=136x160, c2=112x120. */
         unsigned f=t->points_played%6u;
-        unsigned r1=(t->points_played/6u)%10u,r2=(t->points_played/6u)%6u;
-        if(t->court1.pixels)mini_blit_key(&b->layers[0],&t->court1,122,268,(int)f*136,(int)r1*128,136,128,0x00ff00);
-        if(t->court2.pixels)mini_blit_key(&b->layers[0],&t->court2,406,116,(int)f*112,(int)r2*160,112,160,0x00ff00);
+        unsigned r1=(t->points_played/6u)%8u,r2=r1;
+        if(t->court1.pixels)mini_blit_key(&b->layers[0],&t->court1,122,268,(int)f*136,(int)r1*160,136,160,0x00ff00);
+        if(t->court2.pixels)mini_blit_key(&b->layers[0],&t->court2,406,116,(int)f*112,(int)r2*120,112,120,0x00ff00);
         if(t->pieces.pixels){unsigned frame=(t->points_played%3u)*22u;mini_blit_key(&b->layers[0],&t->pieces,309,214,0,(int)frame,22,22,0x00ff00);}
     }
+    ktennis_present_hud(b,t);
 }
 #endif

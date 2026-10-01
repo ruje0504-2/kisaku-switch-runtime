@@ -15,8 +15,8 @@
  * sun03_1.mes+0x5dd7 reads 394: 1 -> victory branch, 0 -> the other branch.
  *
  * Rules (native): best of five games (first to 3 games), each game first to
- * 3 points with 3-3 going to a two point margin (the display is clamped by
- * min(x,3)), the server side flips every game ([+0x104]).  A point runs
+ * 4 points with 3-3 going to a two point margin (4-4 resets to 3-3 at
+ * 0x463da8), the server side flips every game ([+0x104]).  A point runs
  * 0x462dd0 -> 0x4623a0 -> 0x4613b0/0x461ba0 (mirrored teams) -> per-frame
  * ball advance 0x460ba0 (return codes 0/1/2..7 index the landing table
  * 0x548328; 8 = user hit, 9 = cpu hit).  The difficulty comes from
@@ -31,8 +31,9 @@
  * win probability is reduced by the configured difficulty.  This deviation is
  * recorded in reports/porting.md. */
 #define KTENNIS_GAMES_TO_WIN 3
-#define KTENNIS_POINTS_TO_WIN 3
+#define KTENNIS_POINTS_TO_WIN 4
 #define KTENNIS_POINT_MS 600
+#define KTENNIS_HUD_MS 1600               /* 0x462b5e: 80 updates of 20 ms */
 #define KTENNIS_FASTFORWARD_MS 75          /* 8x while the skip key is held */
 
 typedef struct KTennis {
@@ -43,6 +44,7 @@ typedef struct KTennis {
     unsigned server;                   /* flips every game (native +0x104) */
     unsigned difficulty;
     unsigned clock, fast, points_played;
+    unsigned hud_mode, hud_clock;       /* 0=hidden, 1=points, 2=advantage, 3=games */
     unsigned sound;
 } KTennis;
 #endif
