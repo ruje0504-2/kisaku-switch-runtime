@@ -1,10 +1,6 @@
 /* 31/310: 4fb090; normal 49b2e0/49c5d0, Hage 4a9de0/4ab220.
    This modal owns its screen and a disposable runtime for native CG scripts. */
-typedef struct KNativeCG {
-    KImage base,screen,parts,atlas,variants;
-    unsigned alternate,group,page,view,item,variant;
-    int focus;KBootstrap *player;char problem[256];
-} KNativeCG;
+#include "native_cg_internal.h"
 static const unsigned cg_starts[]={0,22,48,71,112,147,172,195,225,278};
 static const unsigned cg_counts[]={21,25,22,40,34,24,22,29,52,28};
 static const char *const cg_atlases[]={"kisaku_DL_CG00nadesiko.akb","kisaku_DL_CG01hiromi.akb","kisaku_DL_CG02momoko.akb","kisaku_DL_CG03madoka.akb","kisaku_DL_CG04yuri.akb","kisaku_DL_CG05aoi.akb","kisaku_DL_CG06ayano.akb","kisaku_DL_CG07syouko.akb","kisaku_DL_CG08sonota.akb","kisaku_DL_CG09onnanoko.akb"};

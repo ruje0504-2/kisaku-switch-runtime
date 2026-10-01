@@ -9,6 +9,7 @@
 #include <math.h>
 #include "../tools/present_worker.inc"
 #include "../build/media_tables.h"
+#include "native_cg_internal.h"
 static unsigned bowling_released;
 static int native_wait_call(KBootstrap *b,int action,int duration,int pump){
     b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=29;b->vm->sp=0;
@@ -2073,11 +2074,37 @@ static void test_native_cg(const char *root,const char *saves){
 static unsigned cg_test_variants(const KCGRecord *r){
     unsigned n=0;while(n<30&&r->variants[n]>=0)n++;return n;
 }
-typedef struct {KImage base,screen,parts,atlas,variants;unsigned alternate,group,page,view,item,variant;int focus;KBootstrap *player;char problem[256];} KNativeCGTest;
 static int cg_test_dynamic_script(const char *name){
     return !strcasecmp(name,"KISAKU_CG_00.MES")||!strcasecmp(name,"KISAKU_CG_03.MES")||
            !strcasecmp(name,"KISAKU_CG_04.MES")||!strcasecmp(name,"KISAKU_CG_05.MES")||
            !strcasecmp(name,"HAGE_CG_00.MES");
+}
+static void cg_test_play_frames(KBootstrap *b,const KCGRecord *r,unsigned item,
+                                unsigned variant,unsigned *moving){
+    KNativeCG *c=b->native_cg;assert(c&&c->view==1&&c->item==item);
+    assert(c->focus==(int)variant);
+    size_t ip=b->vm->ip,sp=b->vm->sp;
+    int rc=bootstrap_native_cg_action(b,0);
+    if(rc||c->view!=2||!c->player){
+        fprintf(stderr,"CG entry failed: %s item=%u variant=%u: %s\n",r->script,item,variant,c->problem);abort();
+    }
+    assert(c->variant==variant);
+    assert(c->player->vm->globals[0][21].number==(int)item);
+    assert(c->player->vm->globals[0][13].number==(int)variant);
+    uint8_t *initial=malloc(640*480*4);assert(initial);
+    memcpy(initial,c->screen.pixels,640*480*4);unsigned changed=0;
+    for(unsigned frame=0;frame<180;frame++){
+        bootstrap_frame(b);
+        if(b->error[0]||c->view!=2||!c->player||c->player->error[0]){
+            fprintf(stderr,"CG frame failed: %s item=%u variant=%u frame=%u: %s / %s\n",
+                    r->script,item,variant,frame,b->error,c->problem);abort();
+        }
+        if(memcmp(initial,c->screen.pixels,640*480*4))changed=1;
+    }
+    free(initial);*moving+=changed;
+    assert(b->vm->ip==ip&&b->vm->sp==sp);
+    assert(!bootstrap_native_cg_action(b,1));
+    assert(c->view==1&&!c->player&&c->focus==(int)variant);
 }
 static void test_native_cg_dynamic_stress(const char *root,const char *saves){
     static const unsigned groups[]={21,25,22,40,34,24,22,29,52,28};
@@ -2086,12 +2113,19 @@ static void test_native_cg_dynamic_stress(const char *root,const char *saves){
     b->vm->bytes[4005]=1;b->title.selected=2;bootstrap_confirm(b);title_path_until(b,0);
     b->title.selected=0;bootstrap_confirm(b);
     for(unsigned i=0;!b->native_cg;i++){assert(i<10000);assert(bootstrap_run(b,100000)>=0);bootstrap_frame(b);}
-    b->message_request=0;
-    for(size_t i=0;i<b->vm->byte_count;i++)b->vm->bytes[i]=1;
-    unsigned checked=0;
+    b->message_request=0;b->vm->bytes[4006]=1;
+    /* Unlock only CG records; unrelated configuration/story flags keep their
+       real initialized values, so the test cannot enable or disable effects. */
+    for(size_t i=0;i<sizeof(kisaku_cg_records)/sizeof(*kisaku_cg_records);i++){
+        const KCGRecord *r=&kisaku_cg_records[i];if(r->flag<0)continue;
+        b->vm->bytes[r->flag]=1;
+        for(unsigned v=0;v<cg_test_variants(r);v++)b->vm->bytes[r->variants[v]]=1;
+    }
+    unsigned checked=0,moving=0;
     for(unsigned group=0;group<10;group++){
         unsigned pages=(groups[group]+15)/16;
         for(unsigned page=0;page<pages;page++){
+            assert(b->native_cg->group==group&&b->native_cg->page==page);
             unsigned first=page*16,last=first+16;if(last>groups[group])last=groups[group];
             for(unsigned item=first;item<last;item++){
                 const KCGRecord *r=&kisaku_cg_records[starts[group]+item];
@@ -2099,26 +2133,8 @@ static void test_native_cg_dynamic_stress(const char *root,const char *saves){
                 int x=150+(int)(item%4)*116+8,y=48+(int)(item/4%4)*96+8;
                 assert(!bootstrap_native_cg_pointer(b,x,y,1));
                 for(unsigned variant=0;variant<cg_test_variants(r);variant++){
-                    if(variant){
-                        assert(!bootstrap_native_cg_action(b,5));
-                        assert(!bootstrap_native_cg_action(b,0));
-                    }else assert(!bootstrap_native_cg_action(b,0));
-                    int focus[4];
-                    if(bootstrap_native_cg_focus(b,focus)){
-                        KNativeCGTest *c=(KNativeCGTest *)b->native_cg;
-                        fprintf(stderr,"dynamic CG left playback before frames: group=%u item=%u variant=%u script=%s view=%u item=%u variant=%u focus=%d player=%p problem=%s flag=%u\n",group,item,variant,r->script,c->view,c->item,c->variant,c->focus,(void *)c->player,c->problem,b->vm->bytes[r->variants[variant]]);
-                        abort();
-                    }
-                    for(unsigned frame=0;frame<180;frame++){
-                        bootstrap_frame(b);assert(!b->error[0]);
-                        if(bootstrap_native_cg_focus(b,focus)){
-                            fprintf(stderr,"dynamic CG playback stopped: group=%u item=%u variant=%u frame=%u script=%s\n",group,item,variant,frame,r->script);
-                            abort();
-                        }
-                    }
-                    assert(!bootstrap_native_cg_action(b,1));
-                    assert(bootstrap_native_cg_focus(b,focus));
-                    checked++;
+                    if(variant)assert(!bootstrap_native_cg_action(b,5));
+                    cg_test_play_frames(b,r,item,variant,&moving);checked++;
                 }
                 assert(!bootstrap_native_cg_action(b,1));
             }
@@ -2126,9 +2142,36 @@ static void test_native_cg_dynamic_stress(const char *root,const char *saves){
         }
         if(group+1<10)assert(!bootstrap_native_cg_action(b,6));
     }
-    assert(checked>0);assert(!bootstrap_native_cg_action(b,1));assert(!b->native_cg);
+    assert(checked==673&&moving>0);
+    assert(!bootstrap_native_cg_action(b,1)&&!b->native_cg);
+    printf("Normal CG scripts: %u variants, %u visibly animated in 180 frames: PASS\n",checked,moving);
+    b->vm->globals[1][61].number=1;b->vm->sp=0;
+    for(size_t i=0;i<sizeof(hage_cg_records)/sizeof(*hage_cg_records);i++){
+        const KCGRecord *r=&hage_cg_records[i];b->vm->bytes[r->flag]=1;
+        for(unsigned v=0;v<cg_test_variants(r);v++)b->vm->bytes[r->variants[v]]=1;
+    }
+    b->title.active=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;
+    assert(!kvm_push(b->vm,(KValue){310,NULL}));assert(!bootstrap_dispatch(b));b->message_request=0;
+    unsigned alternate=0,alternate_moving=0;
+    for(unsigned page=0;page<2;page++){
+        assert(b->native_cg->alternate&&b->native_cg->page==page);
+        for(unsigned item=page*20;item<27&&item<(page+1)*20;item++){
+            const KCGRecord *r=&hage_cg_records[item];
+            if(!cg_test_dynamic_script(r->script))continue;
+            int x=34+(int)(item%5)*116+8,y=48+(int)(item/5%4)*96+8;
+            assert(!bootstrap_native_cg_pointer(b,x,y,1));
+            for(unsigned variant=0;variant<cg_test_variants(r);variant++){
+                if(variant)assert(!bootstrap_native_cg_action(b,5));
+                cg_test_play_frames(b,r,item,variant,&alternate_moving);alternate++;
+            }
+            assert(!bootstrap_native_cg_action(b,1));
+        }
+        if(!page)assert(!bootstrap_native_cg_action(b,9));
+    }
+    assert(alternate&&alternate_moving);
+    assert(!bootstrap_native_cg_action(b,1)&&!b->native_cg);
     bootstrap_destroy(b);
-    printf("Native dynamic CG stress: %u real AX variants opened, 180 frames each, isolated runtime returned cleanly: PASS\n",checked);
+    printf("Hage CG scripts: %u variants, %u visibly animated in 180 frames: PASS\n",alternate,alternate_moving);
 }
 static void test_movie_video_lifecycle(const char *root,const char *saves){
     KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
