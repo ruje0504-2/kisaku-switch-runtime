@@ -252,6 +252,21 @@ static int call(KBootstrap *b,int sub,int action){
     kvm_push(b->vm,(KValue){action,NULL});kvm_push(b->vm,(KValue){sub,NULL});
     return bootstrap_dispatch(b);
 }
+static int portrait_call11(KBootstrap *b,int action,int bank,int cell,int target,int count){
+    b->error[0]=0;b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
+    if(count==3)assert(!kvm_push(b->vm,(KValue){target,NULL}));
+    if(count>=2){assert(!kvm_push(b->vm,(KValue){cell,NULL}));assert(!kvm_push(b->vm,(KValue){bank,NULL}));}
+    assert(!kvm_push(b->vm,(KValue){action,NULL}));assert(!kvm_push(b->vm,(KValue){11,NULL}));
+    return bootstrap_dispatch(b);
+}
+static uint64_t portrait_hash(const KImage *im){
+    uint64_t h=1469598103934665603ULL;
+    for(unsigned y=0;y<480;y++)for(unsigned x=0;x<640;x++){
+        const uint8_t *p=im->pixels+(size_t)y*im->stride+(size_t)x*4;
+        for(unsigned c=0;c<4;c++)h=(h^p[c])*1099511628211ULL;
+    }
+    return h;
+}
 static void week_call(KBootstrap *b,int mode,int value){
     b->vm->status=KVM_SYSCALL;b->vm->syscall=31;b->vm->sp=0;
     if(mode==5)kvm_push(b->vm,(KValue){0,NULL});
@@ -1078,6 +1093,33 @@ static void test_startup_native_ax(const char *root,const char *saves){
     puts("Portrait bank/cell setup, two-track simultaneous start, pixels and status ABI: PASS");
     bootstrap_destroy(b);
     puts("Kisaku startup AX: layer 8, RGB/keyed copy, Y wrap, enable flag and boundary timing: PASS");
+}
+static void test_real_portrait_animation(const char *root,const char *saves){
+    KBootstrap *b=bootstrap_create_split(root,saves);assert(b&&!b->error[0]);
+    b->layer_count=8;b->title.active=0;b->logo_phase=0;b->vm->globals[0][50].number|=0x10;
+    unsigned assets=0,animated=0;
+    for(unsigned i=0;i<b->data.count;i++){
+        const char *name=b->data.entries[i].name;size_t n=strlen(name);
+        if((strncmp(name,"act",3)&&strncmp(name,"hage_act",8))||n<4||strcasecmp(name+n-3,".ax"))continue;
+        char image_name[64];assert(n-3<sizeof(image_name));memcpy(image_name,name,n-3);strcpy(image_name+n-3,".akb");
+        uint8_t *ax_data=NULL,*image_data=NULL;size_t ax_size=0,image_size=0;KImage image={0};
+        assert(!ai6_read(&b->data,i,&ax_data,&ax_size));
+        if(ai6_read_named(&b->images,image_name,&image_data,&image_size)||rmt_decode(image_data,image_size,&image)){
+            free(ax_data);free(image_data);rmt_free(&image);continue;
+        }
+        free(image_data);rmt_free(&b->layers[8]);b->layers[8]=image;
+        ax_reset(&b->ax);memset(b->ax_registered,0,sizeof(b->ax_registered));memset(b->ax_events,0,sizeof(b->ax_events));
+        assert(ax_load(&b->ax,name,ax_data,ax_size));free(ax_data);
+        memset(b->layers[0].pixels,0,640*480*4);
+        assert(!portrait_call11(b,1,0,0,0,3)&&!b->error[0]);uint64_t first=portrait_hash(&b->layers[0]);
+        assert(!portrait_call11(b,2,0,0,0,2)&&!portrait_call11(b,3,0,0,0,0));
+        uint64_t previous=first;unsigned changed=0;
+        for(unsigned frame=0;frame<160;frame++){bootstrap_frame(b);uint64_t now=portrait_hash(&b->layers[0]);if(now!=previous)changed++;previous=now;}
+        assets++;if(changed)animated++;
+        assert(!b->error[0]);
+    }
+    assert(assets>=30&&animated>=assets/2);bootstrap_destroy(b);
+    printf("Real portrait AX: %u assets, %u visibly animated after 31/11 registration: PASS\n",assets,animated);
 }
 static void replay_number(uint8_t *code,size_t *at,int32_t value){
     code[(*at)++]=0x32;for(int i=3;i>=0;i--)code[(*at)++]=(uint8_t)((uint32_t)value>>(i*8));
@@ -3083,5 +3125,5 @@ int main(int argc,char **argv){
     char media_long[1025];memset(media_long,'a',sizeof(media_long)-1);media_long[1024]=0;
     assert(call_gallery_mark(b,media_long)<0&&b->vm->sp==2);
     puts("Kisaku 31/1012 native media links, case folding, absent-key no-op and atomic bounds: PASS");
-    bootstrap_destroy(b);assert(bowling_released==2);test_native_screen_present_gate(argv[1],argv[2]);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_flag_store(argv[1],argv[2]);test_exec_410(argv[1],argv[2]);test_music_status(argv[1],argv[2]);test_kuji(argv[1],argv[2]);test_minigame_resource_entries(argv[1],argv[2]);test_transition_30_1(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
+    bootstrap_destroy(b);assert(bowling_released==2);test_native_screen_present_gate(argv[1],argv[2]);test_message_fade(argv[1],argv[2]);test_message_reveal(argv[1],argv[2]);test_letter_pages(argv[1],argv[2]);test_letter_body(argv[1],argv[2]);test_startup_native_ax(argv[1],argv[2]);test_real_portrait_animation(argv[1],argv[2]);test_choice_stack_isolation(argv[1],argv[2]);test_ui_and_logo(argv[1],argv[2]);test_portrait_key(argv[1],argv[2],"b00an.akb",0xff00);test_portrait_key(argv[1],argv[2],"ev01.akb",0xff00);test_location_label(argv[1],argv[2]);test_graphics_windows(argv[1],argv[2]);test_param_auto_change(argv[1],argv[2]);test_flag_store(argv[1],argv[2]);test_exec_410(argv[1],argv[2]);test_music_status(argv[1],argv[2]);test_kuji(argv[1],argv[2]);test_minigame_resource_entries(argv[1],argv[2]);test_transition_30_1(argv[1],argv[2]);test_animation_waits(argv[1],argv[2]);test_animation_registration(argv[1],argv[2]);test_scene_context(argv[1],argv[2]);return 0;
 }
